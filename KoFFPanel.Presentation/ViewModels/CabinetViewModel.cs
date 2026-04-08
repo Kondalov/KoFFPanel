@@ -20,12 +20,13 @@ public partial class CabinetViewModel : ObservableObject
     private readonly IXrayCoreService _xrayService;
     private readonly IXrayConfiguratorService _xrayConfigurator;
     private readonly IXrayUserManagerService _userManager;
+    private readonly IDatabaseBackupService _backupService;
+    private readonly ISubscriptionService _subscriptionService;
     private readonly Dictionary<string, long> _previousTrafficStats = new();
     private readonly Dictionary<string, HashSet<string>> _dailyIps = new();
     private readonly Dictionary<string, string> _lastKnownCountry = new();
     private readonly Dictionary<string, DateTime> _lastKnownCountryTime = new();
     private DateTime _currentDay = DateTime.Today;
-    private readonly IDatabaseBackupService _backupService;
 
     private readonly Func<ISshService> _sshServiceFactory;
 
@@ -75,7 +76,8 @@ public partial class CabinetViewModel : ObservableObject
         IXrayCoreService xrayService,
         IXrayConfiguratorService xrayConfigurator,
         IXrayUserManagerService userManager,
-        IDatabaseBackupService backupService) // Внедряем сервис бэкапа
+        IDatabaseBackupService backupService,
+        ISubscriptionService subscriptionService)
     {
         _monitorService = monitorService;
         _profileRepository = profileRepository;
@@ -84,10 +86,10 @@ public partial class CabinetViewModel : ObservableObject
         _xrayConfigurator = xrayConfigurator;
         _userManager = userManager;
         _backupService = backupService;
+        _subscriptionService = subscriptionService;
 
         _sshServiceFactory = () => _serviceProvider.GetRequiredService<ISshService>();
 
-        // Создаем бэкап при каждом старте панели!
         _ = _backupService.CreateBackupAsync();
 
         LoadData();
@@ -104,22 +106,25 @@ public partial class CabinetViewModel : ObservableObject
 
         if (result.IsSuccess)
         {
-            System.Windows.Application.Current.Dispatcher.Invoke(() => {
-                System.Windows.Clipboard.SetText(result.VlessLink);
-            });
+            await _subscriptionService.InitializeServerAsync(_currentMonitoringSsh);
 
-            // ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ТАБЛИЦЫ
-            // Заставляем панель мгновенно скачать свежий конфиг с сервера, 
-            // чтобы Админ сразу появился на экране
+            // Загружаем юзеров, чтобы получить сгенерированный UUID Админа
             await LoadUsersAsync();
 
             var admin = Clients.FirstOrDefault(c => c.Email == "Админ");
             if (admin != null)
             {
                 admin.VlessLink = result.VlessLink;
+                // Сохраняем файл подписки по UUID
+                await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, admin.Uuid, result.VlessLink);
+
+                System.Windows.Application.Current.Dispatcher.Invoke(() => {
+                    string subUrl = _subscriptionService.GetSubscriptionUrl(SelectedServer.IpAddress, admin.Uuid);
+                    System.Windows.Clipboard.SetText(subUrl);
+                });
             }
 
-            ServerStatus = "Онлайн (Сброс завершен, ссылка в буфере!)";
+            ServerStatus = "Онлайн (Сброс завершен, ссылка подписки в буфере!)";
         }
         else
         {
@@ -510,10 +515,15 @@ public partial class CabinetViewModel : ObservableObject
         {
             ServerStatus = $"Создание клиента {vm.ClientName}...";
             long limitBytes = (long)vm.TrafficLimitGb * 1024 * 1024 * 1024;
-            var (success, msg) = await _userManager.AddUserAsync(_currentMonitoringSsh, SelectedServer.IpAddress, vm.ClientName, limitBytes, vm.ExpiryDate);
+
+            var (success, msg, vlessLink) = await _userManager.AddUserAsync(_currentMonitoringSsh, SelectedServer.IpAddress, vm.ClientName, limitBytes, vm.ExpiryDate);
 
             if (success)
             {
+                // Вытаскиваем свежий UUID прямо из ссылки для создания подписки
+                string uuid = vlessLink.Substring(8, 36);
+                await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, uuid, vlessLink);
+
                 ServerStatus = $"Онлайн (Клиент {vm.ClientName} добавлен!)";
                 await LoadUsersAsync();
             }
@@ -575,6 +585,8 @@ public partial class CabinetViewModel : ObservableObject
 
         if (success)
         {
+            // Удаляем файл по UUID
+            await _subscriptionService.DeleteUserSubscriptionAsync(_currentMonitoringSsh, client.Uuid);
             ServerStatus = $"Онлайн (Клиент {client.Email} удален)";
         }
         else
@@ -611,10 +623,12 @@ public partial class CabinetViewModel : ObservableObject
     [RelayCommand]
     private void CopyClientLink(VpnClient? client)
     {
-        if (client != null && !string.IsNullOrEmpty(client.VlessLink))
+        if (client != null && SelectedServer != null)
         {
-            System.Windows.Clipboard.SetText(client.VlessLink);
-            ServerStatus = $"Ссылка для {client.Email} скопирована в буфер!";
+            // Берем ссылку по UUID
+            string subUrl = _subscriptionService.GetSubscriptionUrl(SelectedServer.IpAddress, client.Uuid);
+            System.Windows.Clipboard.SetText(subUrl);
+            ServerStatus = $"HTTP-Подписка для {client.Email} скопирована в буфер!";
         }
     }
 

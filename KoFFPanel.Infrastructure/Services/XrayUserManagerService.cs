@@ -97,25 +97,41 @@ public class XrayUserManagerService : IXrayUserManagerService
         return users;
     }
 
-    public async Task<(bool IsSuccess, string Message)> AddUserAsync(ISshService ssh, string serverIp, string email, long trafficLimitBytes, DateTime? expiryDate)
+    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string email, long trafficLimitBytes, DateTime? expiryDate)
     {
         try
         {
             string rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json");
             var root = JsonNode.Parse(rawJson);
-            if (root == null) return (false, "Ошибка чтения JSON.");
+            if (root == null) return (false, "Ошибка чтения JSON.", "");
 
             var clientsArray = root["inbounds"]?[0]?["settings"]?["clients"]?.AsArray();
-            if (clientsArray == null) return (false, "Структура повреждена.");
+            if (clientsArray == null) return (false, "Структура повреждена.", "");
 
             foreach (var c in clientsArray)
             {
                 if (c != null && c["email"]?.ToString().Trim() == email)
-                    return (false, $"Пользователь {email} уже существует!");
+                    return (false, $"Пользователь {email} уже существует!", "");
             }
 
             string newUuid = Guid.NewGuid().ToString();
             clientsArray.Add(new System.Text.Json.Nodes.JsonObject { ["id"] = newUuid, ["flow"] = "xtls-rprx-vision", ["email"] = email });
+
+            var realitySettings = root["inbounds"]?[0]?["streamSettings"]?["realitySettings"];
+            string privateKey = realitySettings?["privateKey"]?.ToString().Trim() ?? "";
+            string sni = realitySettings?["serverNames"]?[0]?.ToString().Trim() ?? "";
+            string shortId = realitySettings?["shortIds"]?[0]?.ToString().Trim() ?? "";
+
+            string pubKey = "";
+            if (!string.IsNullOrEmpty(privateKey))
+            {
+                var keyOutput = await ssh.ExecuteCommandAsync($"/usr/local/bin/xray x25519 -i {privateKey}");
+                var pubMatch = System.Text.RegularExpressions.Regex.Match(keyOutput, @"(?i)(?:Public\s*key|PublicKey|Password\s*\(PublicKey\))\s*:\s*(\S+)");
+                if (pubMatch.Success) pubKey = pubMatch.Groups[1].Value.Trim();
+            }
+
+            string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+            string vlessLink = $"vless://{newUuid}@{safeIp}:443?security=reality&encryption=none&pbk={pubKey}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={shortId}#KoFFPanel-{email}";
 
             string updatedJson = root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
             var result = await ApplyAndTestConfigAsync(ssh, updatedJson);
@@ -128,16 +144,17 @@ public class XrayUserManagerService : IXrayUserManagerService
                     Uuid = newUuid,
                     ServerIp = serverIp,
                     TrafficLimit = trafficLimitBytes,
-                    ExpiryDate = expiryDate
+                    ExpiryDate = expiryDate,
+                    VlessLink = vlessLink
                 });
                 await _dbContext.SaveChangesAsync();
             }
 
-            return result;
+            return (result.IsSuccess, result.Message, vlessLink);
         }
         catch (Exception ex)
         {
-            return (false, $"Ошибка: {ex.Message}");
+            return (false, $"Ошибка: {ex.Message}", "");
         }
     }
 
@@ -148,7 +165,6 @@ public class XrayUserManagerService : IXrayUserManagerService
             bool removedFromXray = false;
             string xrayMessage = "";
 
-            // 1. Пытаемся удалить из Xray (если конфиг доступен)
             string rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json 2>/dev/null");
             if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.Contains("{"))
             {
@@ -175,7 +191,7 @@ public class XrayUserManagerService : IXrayUserManagerService
                         string updatedJson = root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
                         var result = await ApplyAndTestConfigAsync(ssh, updatedJson);
 
-                        if (!result.IsSuccess) return result; // Ошибка применения конфига
+                        if (!result.IsSuccess) return result;
                         removedFromXray = true;
                     }
                     else
@@ -185,7 +201,6 @@ public class XrayUserManagerService : IXrayUserManagerService
                 }
             }
 
-            // 2. УДАЛЯЕМ ИЗ БАЗЫ ДАННЫХ В ЛЮБОМ СЛУЧАЕ! (Убиваем "бессмертных" юзеров)
             var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
             if (dbUser != null)
             {

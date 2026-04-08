@@ -10,7 +10,10 @@ public class XrayConfiguratorService : IXrayConfiguratorService
 {
     private readonly IAppLogger _logger;
 
-    public XrayConfiguratorService(IAppLogger logger) { _logger = logger; }
+    public XrayConfiguratorService(IAppLogger logger)
+    {
+        _logger = logger;
+    }
 
     public async Task<(bool IsSuccess, string Message, string VlessLink)> InitializeRealityAsync(ISshService ssh, string serverIp)
     {
@@ -43,7 +46,6 @@ public class XrayConfiguratorService : IXrayConfiguratorService
             string shortId = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLower();
             string sni = "www.microsoft.com";
 
-            // ИСПРАВЛЕНИЕ: Добавлен sniffing и блокировка bittorrent (Анти-DMCA)
             string configJson = $$"""
             {
               "log": { 
@@ -129,7 +131,6 @@ public class XrayConfiguratorService : IXrayConfiguratorService
             await ssh.ExecuteCommandAsync("touch /var/log/xray/access.log /var/log/xray/error.log");
             await ssh.ExecuteCommandAsync("chmod -R 777 /var/log/xray");
 
-            // ИСПРАВЛЕНИЕ: Автоматическая настройка Logrotate (архивация логов каждый день, хранение 3 дня)
             string logrotateCmd = @"cat << 'EOF' > /etc/logrotate.d/xray
 /var/log/xray/*.log {
     daily

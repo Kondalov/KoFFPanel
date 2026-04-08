@@ -30,6 +30,9 @@ public static class DependencyInjection
         services.AddTransient<Views.TerminalWindow>();
         services.AddTransient<IDatabaseBackupService, DatabaseBackupService>();
 
+        // РЕГИСТРАЦИЯ НОВОГО СЕРВИСА ПОДПИСОК
+        services.AddTransient<ISubscriptionService, SubscriptionService>();
+
         // 2. Сервисы UI (наш диалог выбора файлов)
         services.AddTransient<IFilePickerService, FilePickerService>();
 
