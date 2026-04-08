@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="KoFFPanel.Application/KoFFPanel.Application.csproj" />
+  <Project Path="KoFFPanel.Domain/KoFFPanel.Domain.csproj" />
+  <Project Path="KoFFPanel.Infrastructure/KoFFPanel.Infrastructure.csproj" />
+  <Project Path="KoFFPanel.Presentation/KoFFPanel.Presentation.csproj" />
+</Solution>
