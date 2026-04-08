@@ -31,6 +31,11 @@ public partial class CabinetViewModel : ObservableObject
     [ObservableProperty] private string _title = "KoFFPanel - Управление серверами";
     [ObservableProperty] private int _serversCount = 0;
     [ObservableProperty] private ObservableCollection<VpnProfile> _servers = new();
+    [ObservableProperty] private string _xrayVersion = "Неизвестно";
+    [ObservableProperty] private string _xrayConfigStatus = "Неизвестно";
+    [ObservableProperty] private string _xrayUptime = "Остановлен";
+    [ObservableProperty] private string _xrayMemory = "0.0 MB";
+    [ObservableProperty] private string _xrayLastError = "Нет ошибок";
 
     [ObservableProperty] private VpnProfile? _selectedServer;
 
@@ -217,7 +222,9 @@ public partial class CabinetViewModel : ObservableObject
 
                 var onlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh);
 
-                XrayStatus = await _xrayService.GetCoreStatusAsync(localSsh);
+                var coreStats = await _monitorService.GetCoreStatusInfoAsync(localSsh);
+
+                string xrayStatusStr = await _xrayService.GetCoreStatusAsync(localSsh);
 
                 string journalLogs = await _xrayService.GetCoreLogsAsync(localSsh, 5);
                 string accessLogs = await localSsh.ExecuteCommandAsync("tail -n 5 /var/log/xray/access.log 2>/dev/null");
@@ -226,14 +233,22 @@ public partial class CabinetViewModel : ObservableObject
                 if (string.IsNullOrWhiteSpace(accessLogs)) accessLogs = "[Файл access.log пуст или не читается]";
                 if (string.IsNullOrWhiteSpace(grepTest)) grepTest = "[Слово 'accepted' не найдено]";
 
-                XrayLogs = $"=== СИСТЕМНЫЙ ЖУРНАЛ ===\n{journalLogs.Trim()}\n\n" +
-                           $"=== ФАЙЛ ACCESS.LOG ===\n{accessLogs.Trim()}\n\n" +
-                           $"=== ТЕСТ ПАРСЕРА ===\n{grepTest.Trim()}";
-
                 var trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
 
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
+                    // ИСПРАВЛЕНИЕ: Жестко обновляем логи в потоке UI, чтобы WPF не терял их в скрытом аккордеоне
+                    XrayStatus = xrayStatusStr;
+                    XrayLogs = $"=== СИСТЕМНЫЙ ЖУРНАЛ ===\n{journalLogs.Trim()}\n\n" +
+                               $"=== ФАЙЛ ACCESS.LOG ===\n{accessLogs.Trim()}\n\n" +
+                               $"=== ТЕСТ ПАРСЕРА ===\n{grepTest.Trim()}";
+
+                    XrayVersion = coreStats.Version;
+                    XrayConfigStatus = coreStats.ConfigStatus;
+                    XrayUptime = coreStats.Uptime;
+                    XrayMemory = coreStats.MemoryUsage;
+                    XrayLastError = coreStats.LastError;
+
                     long currentTotalBytes = 0;
                     bool dbNeedsUpdate = false;
 
@@ -270,7 +285,6 @@ public partial class CabinetViewModel : ObservableObject
                                 client.Country = userLog.Country;
                             }
 
-                            // --- АНТИФРОД ЛОГИКА (С ПРОВЕРКОЙ ТУМБЛЕРА) ---
                             if (client.IsAntiFraudEnabled)
                             {
                                 string antiFraudReason = "";
@@ -664,6 +678,16 @@ public partial class CabinetViewModel : ObservableObject
         else
         {
             ServerStatus = $"ОШИБКА: {msg}";
+        }
+    }
+
+    [RelayCommand]
+    private void CopyXrayLogs()
+    {
+        if (!string.IsNullOrEmpty(XrayLogs))
+        {
+            System.Windows.Clipboard.SetText(XrayLogs);
+            ServerStatus = "Логи ядра скопированы в буфер!";
         }
     }
 }

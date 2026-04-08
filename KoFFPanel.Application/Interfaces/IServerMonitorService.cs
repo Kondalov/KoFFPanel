@@ -13,6 +13,7 @@ public interface IServerMonitorService
     Task<List<UserOnlineInfo>> GetUserOnlineStatsAsync(ISshService sshService);
 
     Task<(bool Success, long RoundtripTime)> PingServerAsync(string ip, int timeoutMs = 2000);
+    Task<CoreStatusInfo> GetCoreStatusInfoAsync(ISshService sshService);
 }
 
 // Вспомогательный класс для передачи данных парсера
@@ -22,4 +23,14 @@ public class UserOnlineInfo
     public string LastIp { get; set; } = "";
     public int ActiveSessions { get; set; }
     public string Country { get; set; } = ""; // Новое поле
+}
+
+// Вспомогательный класс для данных о ядре
+public class CoreStatusInfo
+{
+    public string Version { get; set; } = "Неизвестно";
+    public string ConfigStatus { get; set; } = "Неизвестно";
+    public string Uptime { get; set; } = "Остановлен";
+    public string MemoryUsage { get; set; } = "0.0 MB";
+    public string LastError { get; set; } = "Нет ошибок";
 }

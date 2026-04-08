@@ -163,4 +163,31 @@ public class ServerMonitorService : IServerMonitorService
 
         return (false, 0);
     }
+
+    public async Task<CoreStatusInfo> GetCoreStatusInfoAsync(ISshService sshService)
+    {
+        var info = new CoreStatusInfo();
+        if (!sshService.IsConnected) return info;
+
+        // Бронебойный однострочник. Извлекает: Версию | Валидность | Аптайм процесса | ОЗУ процесса | Последнюю ошибку (ИГНОРИРУЯ [Info])
+        string cmdText = "V=$(/usr/local/bin/xray -version 2>/dev/null | head -n 1 | awk '{print $2}'); V=${V:-\"Неизвестно\"}; /usr/local/bin/xray run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1 && C=\"Валиден\" || C=\"Ошибка\"; P=$(pgrep -x xray | head -n 1); if [ -n \"$P\" ]; then M=$(ps -p $P -o rss= | awk '{printf \"%.1f\", $1/1024}'); U=$(ps -p $P -o etimes= | awk '{printf \"%dd %dh %dm\", $1/86400, ($1%86400)/3600, ($1%3600)/60}'); else M=\"0.0\"; U=\"Остановлен\"; fi; E=$(tail -n 200 /var/log/xray/error.log 2>/dev/null | grep -iE 'error|fail|rejected' | grep -v '\\[Info\\]' | tail -n 1 | tr -d '\\r\\n'); if [ -z \"$E\" ]; then E=\"Нет ошибок\"; fi; echo \"$V|$C|$U|$M MB|$E\"";
+
+        try
+        {
+            string result = await sshService.ExecuteCommandAsync(cmdText);
+            var parts = result.Replace("\r", "").Split('\n').LastOrDefault(s => s.Contains('|'))?.Split('|');
+
+            if (parts != null && parts.Length >= 5)
+            {
+                info.Version = parts[0].Trim();
+                info.ConfigStatus = parts[1].Trim();
+                info.Uptime = parts[2].Trim();
+                info.MemoryUsage = parts[3].Trim();
+                info.LastError = parts[4].Trim();
+            }
+        }
+        catch { }
+
+        return info;
+    }
 }
