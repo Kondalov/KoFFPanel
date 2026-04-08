@@ -46,4 +46,19 @@ public class XrayCoreService : IXrayCoreService
         await Task.CompletedTask;
         return new List<VpnClient>();
     }
+
+    public async Task RebootServerAsync(ISshService sshService)
+    {
+        if (!sshService.IsConnected) return;
+
+        try
+        {
+            // Команда reboot оборвет SSH-соединение, поэтому ошибка здесь - это норма
+            await sshService.ExecuteCommandAsync("reboot");
+        }
+        catch
+        {
+            // Игнорируем SocketException, так как сервер ушел в перезагрузку
+        }
+    }
 }

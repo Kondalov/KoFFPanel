@@ -43,13 +43,13 @@ public class XrayConfiguratorService : IXrayConfiguratorService
             string shortId = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLower();
             string sni = "www.microsoft.com";
 
-            // ИСПРАВЛЕНИЕ: Жестко указываем пути к файлам и уровень info
+            // ИСПРАВЛЕНИЕ: Добавлен sniffing и блокировка bittorrent (Анти-DMCA)
             string configJson = $$"""
             {
               "log": { 
                 "access": "/var/log/xray/access.log", 
                 "error": "/var/log/xray/error.log", 
-                "loglevel": "info" 
+                "loglevel": "warning" 
               },
               "stats": {},
               "api": {
@@ -86,6 +86,11 @@ public class XrayConfiguratorService : IXrayConfiguratorService
                       "privateKey": "{{privKey}}",
                       "shortIds": ["{{shortId}}"]
                     }
+                  },
+                  "sniffing": {
+                    "enabled": true,
+                    "destOverride": ["http", "tls", "quic"],
+                    "routeOnly": true
                   }
                 },
                 {
@@ -101,8 +106,10 @@ public class XrayConfiguratorService : IXrayConfiguratorService
                 { "protocol": "blackhole", "tag": "block" }
               ],
               "routing": {
+                "domainStrategy": "AsIs",
                 "rules": [
-                  { "inboundTag": ["api"], "outboundTag": "api", "type": "field" }
+                  { "inboundTag": ["api"], "outboundTag": "api", "type": "field" },
+                  { "type": "field", "protocol": ["bittorrent"], "outboundTag": "block" }
                 ]
               }
             }
@@ -118,18 +125,30 @@ public class XrayConfiguratorService : IXrayConfiguratorService
                 return (false, "ОШИБКА: Ядро отклонило сгенерированный конфиг!", "");
             }
 
-            // ИСПРАВЛЕНИЕ: Бронебойное создание файлов логов с максимальными правами!
             await ssh.ExecuteCommandAsync("mkdir -p /var/log/xray");
             await ssh.ExecuteCommandAsync("touch /var/log/xray/access.log /var/log/xray/error.log");
             await ssh.ExecuteCommandAsync("chmod -R 777 /var/log/xray");
-            await ssh.ExecuteCommandAsync("chown -R nobody:nogroup /var/log/xray 2>/dev/null || true");
+
+            // ИСПРАВЛЕНИЕ: Автоматическая настройка Logrotate (архивация логов каждый день, хранение 3 дня)
+            string logrotateCmd = @"cat << 'EOF' > /etc/logrotate.d/xray
+/var/log/xray/*.log {
+    daily
+    rotate 3
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+EOF";
+            await ssh.ExecuteCommandAsync(logrotateCmd);
 
             await ssh.ExecuteCommandAsync("mv /tmp/config_test.json /usr/local/etc/xray/config.json");
             await ssh.ExecuteCommandAsync("systemctl restart xray");
 
             string vlessLink = $"vless://{uuid}@{serverIp}:443?security=reality&encryption=none&pbk={pubKey}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={shortId}#KoFFPanel-{serverIp}";
 
-            return (true, "VLESS-Reality настроен!", vlessLink);
+            return (true, "VLESS-Reality настроен (DMCA-защита включена)!", vlessLink);
         }
         catch (Exception ex)
         {

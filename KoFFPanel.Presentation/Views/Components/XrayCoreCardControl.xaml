@@ -56,9 +56,22 @@
                            Background="#3e4152"
                            BorderThickness="0"
                            Cursor="Hand"
-                           ToolTip="Перезапустить ядро"
+                           ToolTip="Перезапустить Xray"
                            HorizontalAlignment="Right">
                     <ui:SymbolIcon Symbol="ArrowClockwise24"
+                                   Foreground="White"
+                                   FontSize="14" />
+                </ui:Button>
+
+                <ui:Button Command="{Binding RebootServerCommand}"
+                           Margin="5,0,0,0"
+                           Padding="8,4"
+                           Background="#ff5555"
+                           BorderThickness="0"
+                           Cursor="Hand"
+                           ToolTip="Жесткая перезагрузка Linux (Reboot)"
+                           HorizontalAlignment="Right">
+                    <ui:SymbolIcon Symbol="Power24"
                                    Foreground="White"
                                    FontSize="14" />
                 </ui:Button>

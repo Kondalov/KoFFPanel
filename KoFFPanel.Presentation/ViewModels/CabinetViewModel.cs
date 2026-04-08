@@ -25,6 +25,7 @@ public partial class CabinetViewModel : ObservableObject
     private readonly Dictionary<string, string> _lastKnownCountry = new();
     private readonly Dictionary<string, DateTime> _lastKnownCountryTime = new();
     private DateTime _currentDay = DateTime.Today;
+    private readonly IDatabaseBackupService _backupService;
 
     private readonly Func<ISshService> _sshServiceFactory;
 
@@ -73,7 +74,8 @@ public partial class CabinetViewModel : ObservableObject
         IServiceProvider serviceProvider,
         IXrayCoreService xrayService,
         IXrayConfiguratorService xrayConfigurator,
-        IXrayUserManagerService userManager)
+        IXrayUserManagerService userManager,
+        IDatabaseBackupService backupService) // Внедряем сервис бэкапа
     {
         _monitorService = monitorService;
         _profileRepository = profileRepository;
@@ -81,8 +83,12 @@ public partial class CabinetViewModel : ObservableObject
         _xrayService = xrayService;
         _xrayConfigurator = xrayConfigurator;
         _userManager = userManager;
+        _backupService = backupService;
 
         _sshServiceFactory = () => _serviceProvider.GetRequiredService<ISshService>();
+
+        // Создаем бэкап при каждом старте панели!
+        _ = _backupService.CreateBackupAsync();
 
         LoadData();
     }
@@ -688,6 +694,17 @@ public partial class CabinetViewModel : ObservableObject
         {
             System.Windows.Clipboard.SetText(XrayLogs);
             ServerStatus = "Логи ядра скопированы в буфер!";
+        }
+    }
+
+    [RelayCommand]
+    private async Task RebootServerAsync()
+    {
+        if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
+        {
+            XrayLogs += "\n[Система]: Отправлена команда REBOOT. Ожидайте потери связи...";
+            await _xrayService.RebootServerAsync(_currentMonitoringSsh);
+            ServerStatus = "Связь потеряна (Сервер перезагружается)";
         }
     }
 }

@@ -10,4 +10,5 @@ public interface IXrayCoreService
     Task<string> GetCoreLogsAsync(ISshService ssh, int lines = 50);
     Task<List<VpnClient>> GetClientsAsync(ISshService ssh);
     Task<bool> RestartCoreAsync(ISshService ssh);
+    Task RebootServerAsync(ISshService sshService);
 }
