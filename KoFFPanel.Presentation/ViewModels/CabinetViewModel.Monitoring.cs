@@ -41,10 +41,10 @@ public partial class CabinetViewModel
                 string xrayStatusStr = await _xrayService.GetCoreStatusAsync(localSsh);
                 string journalLogs = await _xrayService.GetCoreLogsAsync(localSsh, 5);
                 string accessLogs = await localSsh.ExecuteCommandAsync("tail -n 5 /var/log/xray/access.log 2>/dev/null");
-                string grepTest = await localSsh.ExecuteCommandAsync("tail -n 50 /var/log/xray/access.log 2>/dev/null | grep 'accepted' | tail -n 3");
+                string grepTest = await localSsh.ExecuteCommandAsync("tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3");
 
-                // ИСПРАВЛЕНИЕ: Вытягиваем нарушителей (тех, чей трафик Xray перекинул в block)
-                string violationTest = await localSsh.ExecuteCommandAsync("tail -n 1000 /var/log/xray/access.log 2>/dev/null | grep 'block' | awk -F'email: ' '{print $2}' | awk -F']' '{print $1}' | sort | uniq");
+                // ИСПРАВЛЕНИЕ: Теперь ищем [torrent-logger] вместо [block], так как мы не блокируем, а просто следим!
+                string violationTest = await localSsh.ExecuteCommandAsync("tail -n 1000 /var/log/xray/access.log 2>/dev/null | awk '/\\[torrent-logger\\]/ && /email:/ { print $NF }' | sort | uniq");
                 var trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
 
                 var trafficBatch = new Dictionary<string, long>();
@@ -57,7 +57,7 @@ public partial class CabinetViewModel
                     var violatorEmails = violationTest.Split('\n', StringSplitOptions.RemoveEmptyEntries);
                     foreach (var ve in violatorEmails)
                     {
-                        if (!string.IsNullOrWhiteSpace(ve)) violationsBatch.Add((ve.Trim(), "P2P / Торрент (DMCA)"));
+                        if (!string.IsNullOrWhiteSpace(ve)) violationsBatch.Add((ve.Trim(), "Использование Torrent (Трекер/P2P)"));
                     }
                 }
 
@@ -132,7 +132,6 @@ public partial class CabinetViewModel
                     TotalUsers = Clients.Count; ActiveUsers = Clients.Count(c => c.IsActive); TotalTraffic = FormatBytes(currentTotalBytes);
                 });
 
-                // Пишем сразу 3 батча: трафик, IP и нарушения!
                 _ = _analyticsService.SaveBatchAsync(profile.IpAddress, trafficBatch, connectionBatch, violationsBatch);
                 await Task.Delay(5000, token);
             }

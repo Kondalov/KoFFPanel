@@ -3,6 +3,7 @@ using System;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Text.Json.Nodes;
 
 namespace KoFFPanel.Infrastructure.Services;
 
@@ -46,6 +47,8 @@ public class XrayConfiguratorService : IXrayConfiguratorService
             string shortId = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLower();
             string sni = "www.microsoft.com";
 
+            // ИСПРАВЛЕНИЕ: Убрали geosite из базового шаблона, чтобы конфиг 100% прошел тест без скачанной базы.
+            // Оставили ручные домены для моментальной работы аналитики.
             string configJson = $$"""
             {
               "log": { 
@@ -105,19 +108,32 @@ public class XrayConfiguratorService : IXrayConfiguratorService
               ],
               "outbounds": [
                 { "protocol": "freedom", "tag": "direct" },
+                { "protocol": "freedom", "tag": "torrent-logger" },
                 { "protocol": "blackhole", "tag": "block" }
               ],
               "routing": {
                 "domainStrategy": "AsIs",
                 "rules": [
                   { "inboundTag": ["api"], "outboundTag": "api", "type": "field" },
-                  { "type": "field", "protocol": ["bittorrent"], "outboundTag": "block" }
+                  { "type": "field", "protocol": ["bittorrent"], "outboundTag": "torrent-logger" },
+                  { 
+                    "type": "field", 
+                    "domain": [
+                      "domain:nnmclub.to",
+                      "domain:rutracker.org",
+                      "domain:rutor.info",
+                      "domain:kinozal.tv",
+                      "domain:tapochek.net",
+                      "keyword:torrent"
+                    ], 
+                    "outboundTag": "torrent-logger" 
+                  }
                 ]
               }
             }
             """;
 
-            string base64Json = Convert.ToBase64String(Encoding.UTF8.GetBytes(configJson));
+            string base64Json = Convert.ToBase64String(Encoding.UTF8.GetBytes(configJson.Replace("\r", "")));
             await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /tmp/config_test.json");
 
             var testResult = await ssh.ExecuteCommandAsync("/usr/local/bin/xray run -test -config /tmp/config_test.json");
@@ -154,6 +170,112 @@ EOF";
         catch (Exception ex)
         {
             return (false, $"КРИТИЧЕСКАЯ ОШИБКА: {ex.Message}", "");
+        }
+    }
+
+    public async Task<(bool IsSuccess, string Message)> UpdateGeoDataAsync(ISshService ssh)
+    {
+        if (!ssh.IsConnected) return (false, "Нет подключения");
+
+        try
+        {
+            _logger.Log("GEO", "Запуск обновления базы GeoSite (Защита от торрент-трекеров)...");
+
+            string script = @"
+mkdir -p /usr/local/share/xray
+rm -f /tmp/geosite.dat
+
+URLS=(
+    'https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat'
+    'https://mirror.ghproxy.com/https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat'
+    'https://fastly.jsdelivr.net/gh/Loyalsoldier/v2ray-rules-dat@release/geosite.dat'
+    'https://raw.githubusercontent.com/Loyalsoldier/v2ray-rules-dat/release/geosite.dat'
+)
+
+for url in ""${URLS[@]}""; do
+    if command -v curl >/dev/null 2>&1; then
+        curl -sL -A 'Mozilla/5.0' --connect-timeout 10 -o /tmp/geosite.dat ""$url""
+    else
+        wget -qU 'Mozilla/5.0' -O /tmp/geosite.dat --timeout=10 ""$url""
+    fi
+    
+    if [ -f /tmp/geosite.dat ]; then
+        SIZE=$(wc -c < /tmp/geosite.dat | tr -d ' ')
+        if [ ""$SIZE"" -gt 1000000 ]; then
+            mv /tmp/geosite.dat /usr/local/share/xray/geosite.dat
+            cp /usr/local/share/xray/geosite.dat /usr/local/bin/geosite.dat 2>/dev/null
+            echo 'SUCCESS'
+            exit 0
+        fi
+        rm -f /tmp/geosite.dat
+    fi
+done
+
+echo 'ERROR_ALL_FAILED'
+";
+            string safeScriptBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script.Replace("\r", "")));
+            string result = await ssh.ExecuteCommandAsync($"echo '{safeScriptBase64}' | base64 -d | bash");
+
+            if (result.Contains("SUCCESS"))
+            {
+                // ИСПРАВЛЕНИЕ: База скачана. Теперь C# элегантно обновляет JSON и добавляет мощные правила GeoSite!
+                string rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json 2>/dev/null");
+                if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.Contains("{"))
+                {
+                    try
+                    {
+                        var root = JsonNode.Parse(rawJson);
+                        var rules = root?["routing"]?["rules"]?.AsArray();
+                        if (rules != null)
+                        {
+                            bool configChanged = false;
+                            foreach (var rule in rules)
+                            {
+                                if (rule?["outboundTag"]?.ToString() == "torrent-logger" && rule["domain"] != null)
+                                {
+                                    var domains = rule["domain"].AsArray();
+                                    bool hasGeosite = false;
+                                    foreach (var d in domains)
+                                    {
+                                        if (d?.ToString() == "geosite:category-torrent") hasGeosite = true;
+                                    }
+                                    if (!hasGeosite)
+                                    {
+                                        domains.Add("geosite:category-torrent");
+                                        configChanged = true;
+                                    }
+                                }
+                            }
+
+                            if (configChanged)
+                            {
+                                string updatedJson = root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                                string base64Config = Convert.ToBase64String(Encoding.UTF8.GetBytes(updatedJson.Replace("\r", "")));
+                                await ssh.ExecuteCommandAsync($"echo '{base64Config}' | base64 -d > /tmp/config_geo.json");
+
+                                var test = await ssh.ExecuteCommandAsync("/usr/local/bin/xray run -test -config /tmp/config_geo.json");
+                                if (test.Contains("Configuration OK"))
+                                {
+                                    await ssh.ExecuteCommandAsync("mv /tmp/config_geo.json /usr/local/etc/xray/config.json");
+                                }
+                            }
+                        }
+                    }
+                    catch { _logger.Log("GEO", "Ошибка парсинга JSON, но база загружена."); }
+                }
+
+                await ssh.ExecuteCommandAsync("systemctl restart xray");
+                return (true, "Базы успешно обновлены и применены!");
+            }
+            else
+            {
+                _logger.Log("GEO-ERROR", $"Сбой скачивания. Ответ сервера: {result}");
+                return (false, "Сбой скачивания баз (серверы недоступны).");
+            }
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Ошибка обновления: {ex.Message}");
         }
     }
 }

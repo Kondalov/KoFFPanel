@@ -124,4 +124,18 @@ public partial class CabinetViewModel : ObservableObject
     [RelayCommand] private void OpenDeployWizard() { if (SelectedServer == null) return; var w = _serviceProvider.GetRequiredService<Views.DeployWizardWindow>(); if (System.Windows.Application.Current.MainWindow != null) w.Owner = System.Windows.Application.Current.MainWindow; if (w.DataContext is DeployWizardViewModel vm) { vm.OnInstallRequested = OpenTerminalWithCommand; _ = vm.InitializeAsync(SelectedServer); } w.ShowDialog(); }
     [RelayCommand] private void OpenTerminal() { if (SelectedServer == null) return; OpenTerminalWithCommand(""); }
     private void OpenTerminalWithCommand(string command) { if (SelectedServer == null) return; var w = _serviceProvider.GetRequiredService<Views.TerminalWindow>(); if (System.Windows.Application.Current.MainWindow != null) w.Owner = System.Windows.Application.Current.MainWindow; if (w.DataContext is TerminalViewModel vm) vm.Initialize(SelectedServer, command); w.Show(); }
+
+    [RelayCommand]
+    private async Task UpdateGeoDataAsync()
+    {
+        if (_currentMonitoringSsh == null || !_currentMonitoringSsh.IsConnected || SelectedServer == null) return;
+
+        ServerStatus = "Скачивание и обновление баз GeoSite...";
+        var (success, msg) = await _xrayConfigurator.UpdateGeoDataAsync(_currentMonitoringSsh);
+
+        if (success)
+            ServerStatus = "Онлайн (Базы GeoSite успешно обновлены!)";
+        else
+            ServerStatus = $"ОШИБКА: {msg}";
+    }
 }

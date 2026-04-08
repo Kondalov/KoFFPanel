@@ -65,6 +65,19 @@
                             Orientation="Horizontal"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center">
+
+                    <ui:Button Command="{Binding UpdateGeoDataCommand}"
+                               Background="#ff5555"
+                               Foreground="White"
+                               BorderThickness="0"
+                               Padding="15,8"
+                               Cursor="Hand"
+                               ToolTip="Обновить базы Anti-Torrent (GeoSite)"
+                               Margin="0,0,15,0">
+                        <ui:SymbolIcon Symbol="ShieldTask24"
+                                       FontSize="20" />
+                    </ui:Button>
+
                     <ui:Button Command="{Binding OpenDeployWizardCommand}"
                                Background="#ffcc00"
                                Foreground="#13151b"
@@ -260,12 +273,10 @@
                                                Foreground="#50fa7b"
                                                FontSize="16"
                                                Margin="5,0,0,0" />
-
                                     <TextBlock Text=" • "
                                                Foreground="#3e4152"
                                                FontSize="16"
                                                Margin="10,0" />
-
                                     <ui:SymbolIcon Symbol="Clock24"
                                                    Foreground="#8be9fd"
                                                    FontSize="16"
@@ -276,12 +287,10 @@
                                                FontSize="14"
                                                FontWeight="SemiBold"
                                                VerticalAlignment="Center" />
-
                                     <TextBlock Text=" • "
                                                Foreground="#3e4152"
                                                FontSize="16"
                                                Margin="10,0" />
-
                                     <ui:SymbolIcon Symbol="DataArea24"
                                                    Foreground="#ff79c6"
                                                    FontSize="16"
