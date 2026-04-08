@@ -21,6 +21,10 @@ public partial class CabinetViewModel : ObservableObject
     private readonly IXrayConfiguratorService _xrayConfigurator;
     private readonly IXrayUserManagerService _userManager;
     private readonly Dictionary<string, long> _previousTrafficStats = new();
+    private readonly Dictionary<string, HashSet<string>> _dailyIps = new();
+    private readonly Dictionary<string, string> _lastKnownCountry = new();
+    private readonly Dictionary<string, DateTime> _lastKnownCountryTime = new();
+    private DateTime _currentDay = DateTime.Today;
 
     private readonly Func<ISshService> _sshServiceFactory;
 
@@ -92,6 +96,11 @@ public partial class CabinetViewModel : ObservableObject
             System.Windows.Application.Current.Dispatcher.Invoke(() => {
                 System.Windows.Clipboard.SetText(result.VlessLink);
             });
+
+            // ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ТАБЛИЦЫ
+            // Заставляем панель мгновенно скачать свежий конфиг с сервера, 
+            // чтобы Админ сразу появился на экране
+            await LoadUsersAsync();
 
             var admin = Clients.FirstOrDefault(c => c.Email == "Админ");
             if (admin != null)
@@ -204,11 +213,10 @@ public partial class CabinetViewModel : ObservableObject
                 XrayProcesses = resources.XrayProcesses;
                 TcpConnections = resources.TcpConnections;
                 SynRecv = resources.SynRecv;
-                ErrorRate = resources.ErrorRate; // Подхватываем ошибки для UI
+                ErrorRate = resources.ErrorRate;
 
                 var onlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh);
 
-                // ================= РАСШИРЕННАЯ ДИАГНОСТИКА =================
                 XrayStatus = await _xrayService.GetCoreStatusAsync(localSsh);
 
                 string journalLogs = await _xrayService.GetCoreLogsAsync(localSsh, 5);
@@ -221,7 +229,6 @@ public partial class CabinetViewModel : ObservableObject
                 XrayLogs = $"=== СИСТЕМНЫЙ ЖУРНАЛ ===\n{journalLogs.Trim()}\n\n" +
                            $"=== ФАЙЛ ACCESS.LOG ===\n{accessLogs.Trim()}\n\n" +
                            $"=== ТЕСТ ПАРСЕРА ===\n{grepTest.Trim()}";
-                // ==========================================================
 
                 var trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
 
@@ -230,12 +237,19 @@ public partial class CabinetViewModel : ObservableObject
                     long currentTotalBytes = 0;
                     bool dbNeedsUpdate = false;
 
+                    if (DateTime.Today != _currentDay)
+                    {
+                        _dailyIps.Clear();
+                        _currentDay = DateTime.Today;
+                    }
+
                     foreach (var client in Clients)
                     {
+                        long delta = 0;
                         if (trafficStats.TryGetValue(client.Email, out long currentXrayBytes))
                         {
                             long previousXrayBytes = _previousTrafficStats.TryGetValue(client.Email, out long prev) ? prev : 0;
-                            long delta = currentXrayBytes >= previousXrayBytes ? currentXrayBytes - previousXrayBytes : currentXrayBytes;
+                            delta = currentXrayBytes >= previousXrayBytes ? currentXrayBytes - previousXrayBytes : currentXrayBytes;
                             if (delta > 0)
                             {
                                 client.TrafficUsed += delta;
@@ -251,10 +265,60 @@ public partial class CabinetViewModel : ObservableObject
                             client.ActiveConnections = userLog.ActiveSessions;
                             client.LastOnline = DateTime.Now;
 
-                            // Подхватываем страну для UI
                             if (!string.IsNullOrEmpty(userLog.Country))
                             {
                                 client.Country = userLog.Country;
+                            }
+
+                            // --- АНТИФРОД ЛОГИКА (С ПРОВЕРКОЙ ТУМБЛЕРА) ---
+                            if (client.IsAntiFraudEnabled)
+                            {
+                                string antiFraudReason = "";
+
+                                if (!_dailyIps.ContainsKey(client.Email)) _dailyIps[client.Email] = new HashSet<string>();
+                                _dailyIps[client.Email].Add(userLog.LastIp);
+
+                                bool geoJumpDetected = false;
+                                string currentCountryCode = userLog.Country.Length >= 2 ? userLog.Country.Substring(userLog.Country.Length - 2) : "";
+
+                                if (!string.IsNullOrEmpty(currentCountryCode) && currentCountryCode != "??")
+                                {
+                                    if (_lastKnownCountry.TryGetValue(client.Email, out string lastCountry))
+                                    {
+                                        if (lastCountry != currentCountryCode)
+                                        {
+                                            if (_lastKnownCountryTime.TryGetValue(client.Email, out DateTime lastTime))
+                                            {
+                                                if ((DateTime.Now - lastTime).TotalHours < 2)
+                                                {
+                                                    geoJumpDetected = true;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (!geoJumpDetected)
+                                    {
+                                        _lastKnownCountry[client.Email] = currentCountryCode;
+                                        _lastKnownCountryTime[client.Email] = DateTime.Now;
+                                    }
+                                }
+
+                                if (client.ActiveConnections > 2)
+                                    antiFraudReason = "ФРОД: >2 Устройств";
+                                else if (_dailyIps[client.Email].Count > 5)
+                                    antiFraudReason = "ФРОД: >5 IP за сутки";
+                                else if (geoJumpDetected)
+                                    antiFraudReason = "ФРОД: Резкая смена страны";
+                                else if (delta > 1073741824L)
+                                    antiFraudReason = "ФРОД: Скачок трафика";
+
+                                if (!string.IsNullOrEmpty(antiFraudReason) && client.IsActive)
+                                {
+                                    client.IsActive = false;
+                                    client.Note = antiFraudReason;
+                                    dbNeedsUpdate = true;
+                                    _ = BlockUserAsync(client, antiFraudReason);
+                                }
                             }
                         }
                         else
@@ -582,6 +646,19 @@ public partial class CabinetViewModel : ObservableObject
         if (success)
         {
             client.IsActive = newState;
+
+            // Если мы разблокируем пользователя, очищаем причину бана в заметках
+            if (newState && (client.Note?.StartsWith("ФРОД:") == true || client.Note == "Превышен лимит" || client.Note == "Истек срок"))
+            {
+                client.Note = "";
+            }
+
+            // Сбрасываем счетчик IP для этого пользователя, чтобы система не забанила его повторно мгновенно
+            if (newState && _dailyIps.ContainsKey(client.Email))
+            {
+                _dailyIps[client.Email].Clear();
+            }
+
             ServerStatus = $"Онлайн ({client.Email} {(newState ? "разблокирован" : "заблокирован")})";
         }
         else

@@ -800,6 +800,22 @@
                                                     </DataGridTextColumn.Header>
                                                 </DataGridTextColumn>
 
+                                                <DataGridTemplateColumn Width="60">
+                                                    <DataGridTemplateColumn.Header>
+                                                        <ui:SymbolIcon Symbol="ShieldCheckmark24"
+                                                                       ToolTip="Контроль (Антифрод)"
+                                                                       Foreground="#a0aabf" />
+                                                    </DataGridTemplateColumn.Header>
+                                                    <DataGridTemplateColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox IsChecked="{Binding IsAntiFraudEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                                                      HorizontalAlignment="Center"
+                                                                      VerticalAlignment="Center"
+                                                                      ToolTip="Включить/Выключить автоматический бан" />
+                                                        </DataTemplate>
+                                                    </DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+
                                                 <DataGridTemplateColumn Width="Auto">
                                                     <DataGridTemplateColumn.Header>
                                                         <ui:SymbolIcon Symbol="Settings24"

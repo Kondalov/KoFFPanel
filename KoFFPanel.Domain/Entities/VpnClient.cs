@@ -11,6 +11,13 @@ public class VpnClient : INotifyPropertyChanged
     public int Id { get; set; }
     public string ServerIp { get; set; } = "";
 
+    private bool _isAntiFraudEnabled = true;
+    public bool IsAntiFraudEnabled
+    {
+        get => _isAntiFraudEnabled;
+        set { _isAntiFraudEnabled = value; OnPropertyChanged(); }
+    }
+
     private string _uuid = "";
     public string Uuid
     {
