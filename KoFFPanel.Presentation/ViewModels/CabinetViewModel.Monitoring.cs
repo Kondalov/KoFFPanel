@@ -43,21 +43,28 @@ public partial class CabinetViewModel
                 string accessLogs = await localSsh.ExecuteCommandAsync("tail -n 5 /var/log/xray/access.log 2>/dev/null");
                 string grepTest = await localSsh.ExecuteCommandAsync("tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3");
 
-                // ИСПРАВЛЕНИЕ: Теперь ищем [torrent-logger] вместо [block], так как мы не блокируем, а просто следим!
-                string violationTest = await localSsh.ExecuteCommandAsync("tail -n 1000 /var/log/xray/access.log 2>/dev/null | awk '/\\[torrent-logger\\]/ && /email:/ { print $NF }' | sort | uniq");
+                // ИСПРАВЛЕНИЕ: Супер-парсер. Он берет $6 (целевой адрес), вырезает "tcp:" и порт ":443", и отдает связку "email|domain"
+                string violationTest = await localSsh.ExecuteCommandAsync("tail -n 1000 /var/log/xray/access.log 2>/dev/null | awk '/\\[torrent-logger\\]/ && /email:/ { dest=$6; gsub(/^tcp:|^udp:|:[0-9]+$/, \"\", dest); email=$NF; print email \"|\" dest }' | sort | uniq");
+
                 var trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
 
                 var trafficBatch = new Dictionary<string, long>();
                 var connectionBatch = new List<(string Email, string Ip, string Country)>();
                 var violationsBatch = new List<(string Email, string ViolationType)>();
 
-                // Парсим нарушителей из вывода команды
+                // ИСПРАВЛЕНИЕ: Разбиваем строку на email и сам домен
                 if (!string.IsNullOrWhiteSpace(violationTest))
                 {
-                    var violatorEmails = violationTest.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var ve in violatorEmails)
+                    var lines = violationTest.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
                     {
-                        if (!string.IsNullOrWhiteSpace(ve)) violationsBatch.Add((ve.Trim(), "Использование Torrent (Трекер/P2P)"));
+                        var parts = line.Split('|');
+                        if (parts.Length == 2)
+                        {
+                            string email = parts[0].Trim();
+                            string domain = parts[1].Trim();
+                            violationsBatch.Add((email, $"Трекер / P2P: {domain}")); // Теперь в БД запишется конкретный сайт!
+                        }
                     }
                 }
 
