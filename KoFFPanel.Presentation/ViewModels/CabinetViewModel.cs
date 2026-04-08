@@ -21,6 +21,7 @@ public partial class CabinetViewModel : ObservableObject
     private readonly IXrayUserManagerService _userManager;
     private readonly IDatabaseBackupService _backupService;
     private readonly ISubscriptionService _subscriptionService;
+    private readonly IClientAnalyticsService _analyticsService;
 
     private readonly Dictionary<string, long> _previousTrafficStats = new();
     private readonly Dictionary<string, HashSet<string>> _dailyIps = new();
@@ -67,7 +68,7 @@ public partial class CabinetViewModel : ObservableObject
     public CabinetViewModel(
         IServerMonitorService monitorService, IProfileRepository profileRepository, IServiceProvider serviceProvider,
         IXrayCoreService xrayService, IXrayConfiguratorService xrayConfigurator, IXrayUserManagerService userManager,
-        IDatabaseBackupService backupService, ISubscriptionService subscriptionService)
+        IDatabaseBackupService backupService, ISubscriptionService subscriptionService, IClientAnalyticsService analyticsService)
     {
         _monitorService = monitorService; _profileRepository = profileRepository; _serviceProvider = serviceProvider;
         _xrayService = xrayService; _xrayConfigurator = xrayConfigurator; _userManager = userManager;
@@ -75,7 +76,9 @@ public partial class CabinetViewModel : ObservableObject
         _sshServiceFactory = () => _serviceProvider.GetRequiredService<ISshService>();
 
         _ = _backupService.CreateBackupAsync();
+        _analyticsService = analyticsService;
         LoadData();
+        
     }
 
     private string FormatBytes(long bytes)

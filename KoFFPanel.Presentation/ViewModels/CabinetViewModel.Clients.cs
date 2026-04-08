@@ -59,6 +59,20 @@ public partial class CabinetViewModel
     }
 
     [RelayCommand]
+    private void OpenAnalytics(VpnClient? client)
+    {
+        if (client == null || SelectedServer == null) return;
+        var window = _serviceProvider.GetRequiredService<Views.ClientAnalyticsWindow>();
+        if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
+
+        if (window.DataContext is ClientAnalyticsViewModel vm)
+        {
+            vm.Initialize(SelectedServer.IpAddress, client.Email);
+        }
+        window.ShowDialog();
+    }
+
+    [RelayCommand]
     private async Task EditClientAsync(VpnClient? client)
     {
         if (client == null || _currentMonitoringSsh == null || !_currentMonitoringSsh.IsConnected || SelectedServer == null) return;

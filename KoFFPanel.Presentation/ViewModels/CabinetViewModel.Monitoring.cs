@@ -25,6 +25,8 @@ public partial class CabinetViewModel
         ServerStatus = "Онлайн (Сбор данных)";
         await LoadUsersAsync();
 
+        _ = _analyticsService.CleanupOldLogsAsync();
+
         try
         {
             while (!token.IsCancellationRequested)
@@ -40,7 +42,24 @@ public partial class CabinetViewModel
                 string journalLogs = await _xrayService.GetCoreLogsAsync(localSsh, 5);
                 string accessLogs = await localSsh.ExecuteCommandAsync("tail -n 5 /var/log/xray/access.log 2>/dev/null");
                 string grepTest = await localSsh.ExecuteCommandAsync("tail -n 50 /var/log/xray/access.log 2>/dev/null | grep 'accepted' | tail -n 3");
+
+                // ИСПРАВЛЕНИЕ: Вытягиваем нарушителей (тех, чей трафик Xray перекинул в block)
+                string violationTest = await localSsh.ExecuteCommandAsync("tail -n 1000 /var/log/xray/access.log 2>/dev/null | grep 'block' | awk -F'email: ' '{print $2}' | awk -F']' '{print $1}' | sort | uniq");
                 var trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
+
+                var trafficBatch = new Dictionary<string, long>();
+                var connectionBatch = new List<(string Email, string Ip, string Country)>();
+                var violationsBatch = new List<(string Email, string ViolationType)>();
+
+                // Парсим нарушителей из вывода команды
+                if (!string.IsNullOrWhiteSpace(violationTest))
+                {
+                    var violatorEmails = violationTest.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var ve in violatorEmails)
+                    {
+                        if (!string.IsNullOrWhiteSpace(ve)) violationsBatch.Add((ve.Trim(), "P2P / Торрент (DMCA)"));
+                    }
+                }
 
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
@@ -58,7 +77,12 @@ public partial class CabinetViewModel
                         {
                             long prev = _previousTrafficStats.TryGetValue(client.Email, out long p) ? p : 0;
                             delta = currentXrayBytes >= prev ? currentXrayBytes - prev : currentXrayBytes;
-                            if (delta > 0) { client.TrafficUsed += delta; dbNeedsUpdate = true; }
+                            if (delta > 0)
+                            {
+                                client.TrafficUsed += delta;
+                                dbNeedsUpdate = true;
+                                trafficBatch[client.Email] = delta;
+                            }
                             _previousTrafficStats[client.Email] = currentXrayBytes;
                         }
 
@@ -67,6 +91,8 @@ public partial class CabinetViewModel
                         {
                             client.LastIp = userLog.LastIp; client.ActiveConnections = userLog.ActiveSessions; client.LastOnline = DateTime.Now;
                             if (!string.IsNullOrEmpty(userLog.Country)) client.Country = userLog.Country;
+
+                            connectionBatch.Add((client.Email, userLog.LastIp, client.Country));
 
                             if (client.IsAntiFraudEnabled)
                             {
@@ -105,6 +131,9 @@ public partial class CabinetViewModel
                     if (dbNeedsUpdate && SelectedServer != null) _ = _userManager.SaveTrafficToDbAsync(SelectedServer.IpAddress, Clients);
                     TotalUsers = Clients.Count; ActiveUsers = Clients.Count(c => c.IsActive); TotalTraffic = FormatBytes(currentTotalBytes);
                 });
+
+                // Пишем сразу 3 батча: трафик, IP и нарушения!
+                _ = _analyticsService.SaveBatchAsync(profile.IpAddress, trafficBatch, connectionBatch, violationsBatch);
                 await Task.Delay(5000, token);
             }
         }

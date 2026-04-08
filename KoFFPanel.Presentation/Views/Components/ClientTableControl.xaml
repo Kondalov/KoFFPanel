@@ -141,6 +141,17 @@
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal"
                                             HorizontalAlignment="Right">
+                                    <ui:Button Command="{Binding DataContext.OpenAnalyticsCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                               CommandParameter="{Binding}"
+                                               Background="Transparent"
+                                               BorderThickness="0"
+                                               Padding="6"
+                                               Cursor="Hand"
+                                               ToolTip="Аналитика (Трафик и IP)">
+                                        <ui:SymbolIcon Symbol="DataArea24"
+                                                       Foreground="#f1fa8c"
+                                                       FontSize="16" />
+                                    </ui:Button>
                                     <ui:Button Command="{Binding DataContext.EditClientCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                CommandParameter="{Binding}"
                                                Background="Transparent"

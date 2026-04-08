@@ -29,11 +29,14 @@ public static class DependencyInjection
         services.AddTransient<ViewModels.TerminalViewModel>();
         services.AddTransient<Views.TerminalWindow>();
         services.AddTransient<IDatabaseBackupService, DatabaseBackupService>();
-
-        // РЕГИСТРАЦИЯ НОВОГО СЕРВИСА ПОДПИСОК
         services.AddTransient<ISubscriptionService, SubscriptionService>();
 
-        // 2. Сервисы UI (наш диалог выбора файлов)
+        // РЕГИСТРАЦИЯ АНАЛИТИКИ
+        services.AddSingleton<IClientAnalyticsService, ClientAnalyticsService>();
+        services.AddTransient<ClientAnalyticsViewModel>();
+        services.AddTransient<ClientAnalyticsWindow>();
+
+        // 2. Сервисы UI
         services.AddTransient<IFilePickerService, FilePickerService>();
 
         // 3. ViewModels
