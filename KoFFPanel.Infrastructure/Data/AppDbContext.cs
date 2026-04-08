@@ -30,6 +30,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<VpnClient>().Ignore(c => c.TrafficUsageString);
         modelBuilder.Entity<VpnClient>().Ignore(c => c.ExpiryString);
         modelBuilder.Entity<VpnClient>().Ignore(c => c.StatusString);
-        modelBuilder.Entity<VpnClient>().Ignore(c => c.LastOnlineString); // Игнорируем новую строку
+        modelBuilder.Entity<VpnClient>().Ignore(c => c.LastOnlineString);
+
+        // ИСПРАВЛЕНИЕ: Игнорируем новую колонку страны, так как она вычисляется на лету
+        modelBuilder.Entity<VpnClient>().Ignore(c => c.Country);
     }
 }

@@ -53,6 +53,7 @@ public partial class CabinetViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<VpnClient> _clients = new();
     [ObservableProperty] private string _vlessLink = "";
     [ObservableProperty] private bool _isLinkVisible = false;
+    [ObservableProperty] private int _errorRate = 0;
 
     private CancellationTokenSource? _monitoringCts;
     private ISshService? _currentMonitoringSsh;
@@ -203,6 +204,7 @@ public partial class CabinetViewModel : ObservableObject
                 XrayProcesses = resources.XrayProcesses;
                 TcpConnections = resources.TcpConnections;
                 SynRecv = resources.SynRecv;
+                ErrorRate = resources.ErrorRate; // Подхватываем ошибки для UI
 
                 var onlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh);
 
@@ -248,6 +250,12 @@ public partial class CabinetViewModel : ObservableObject
                             client.LastIp = userLog.LastIp;
                             client.ActiveConnections = userLog.ActiveSessions;
                             client.LastOnline = DateTime.Now;
+
+                            // Подхватываем страну для UI
+                            if (!string.IsNullOrEmpty(userLog.Country))
+                            {
+                                client.Country = userLog.Country;
+                            }
                         }
                         else
                         {

@@ -9,9 +9,9 @@ namespace KoFFPanel.Infrastructure.Services;
 
 public class ServerMonitorService : IServerMonitorService
 {
-    public async Task<(int Cpu, int Ram, int Ssd, string Uptime, string LoadAvg, string NetworkSpeed, int XrayProcesses, int TcpConnections, int SynRecv)> GetResourcesAsync(ISshService sshService)
+    public async Task<(int Cpu, int Ram, int Ssd, string Uptime, string LoadAvg, string NetworkSpeed, int XrayProcesses, int TcpConnections, int SynRecv, int ErrorRate)> GetResourcesAsync(ISshService sshService)
     {
-        if (!sshService.IsConnected) return (0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0);
+        if (!sshService.IsConnected) return (0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
 
         string cmdText = @"
             CPU=$(top -bn1 | grep -i '%Cpu' | head -n 1 | awk '{print $2+$4}' | cut -d. -f1 | cut -d, -f1)
@@ -38,7 +38,11 @@ public class ServerMonitorService : IServerMonitorService
             TCP_CONN=$(ss -Htun state established 2>/dev/null | wc -l)
             SYN_RECV=$(ss -Ht state syn-recv 2>/dev/null | wc -l)
 
-            echo ""${CPU:-0}|${RAM:-0}|${DISK:-0}|${UPTIME:-N/A}|${LOADAVG:-0}|↓${RX_MBPS} ↑${TX_MBPS} Mbps|${XRAY_PROC:-0}|${TCP_CONN:-0}|${SYN_RECV:-0}""
+            ERR_ACC=$(tail -n 1000 /var/log/xray/access.log 2>/dev/null | grep -ic ""rejected"")
+            ERR_ERR=$(tail -n 1000 /var/log/xray/error.log 2>/dev/null | grep -ic ""error\|fail\|rejected"")
+            ERR_TOTAL=$((ERR_ACC + ERR_ERR))
+
+            echo ""${CPU:-0}|${RAM:-0}|${DISK:-0}|${UPTIME:-N/A}|${LOADAVG:-0}|↓${RX_MBPS} ↑${TX_MBPS} Mbps|${XRAY_PROC:-0}|${TCP_CONN:-0}|${SYN_RECV:-0}|${ERR_TOTAL:-0}""
         ";
 
         try
@@ -47,7 +51,7 @@ public class ServerMonitorService : IServerMonitorService
             string cleanResult = result.Replace("\r", "").Replace("\n", "").Trim();
             string[] parts = cleanResult.Split('|');
 
-            if (parts.Length == 9)
+            if (parts.Length == 10)
             {
                 int.TryParse(parts[0], out int cpu);
                 int.TryParse(parts[1], out int ram);
@@ -58,13 +62,14 @@ public class ServerMonitorService : IServerMonitorService
                 int.TryParse(parts[6], out int xrayProc);
                 int.TryParse(parts[7], out int tcpConn);
                 int.TryParse(parts[8], out int synRecv);
+                int.TryParse(parts[9], out int errorRate);
 
-                return (cpu, ram, ssd, uptime, loadAvg, network, xrayProc, tcpConn, synRecv);
+                return (cpu, ram, ssd, uptime, loadAvg, network, xrayProc, tcpConn, synRecv, errorRate);
             }
         }
         catch { }
 
-        return (0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0);
+        return (0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
     }
 
     public async Task<List<UserOnlineInfo>> GetUserOnlineStatsAsync(ISshService sshService)
@@ -72,9 +77,6 @@ public class ServerMonitorService : IServerMonitorService
         var stats = new List<UserOnlineInfo>();
         if (!sshService.IsConnected) return stats;
 
-        // ПАРСЕР 7.0 (Однострочный):
-        // Убираем многострочность (@""), так как Windows \r\n ломает bash-скрипты при передаче по SSH.
-        // Выполняем 100% надежную однострочную команду.
         string logCmd = "tail -n 1000 /var/log/xray/access.log 2>/dev/null | awk '/accepted/ && /email:/ { ip=$4; sub(/:[0-9]+$/, \"\", ip); email=$NF; print email \"|\" ip; }' | sort | uniq";
 
         try
@@ -89,7 +91,6 @@ public class ServerMonitorService : IServerMonitorService
                 var parts = line.Split('|');
                 if (parts.Length >= 2)
                 {
-                    // Жесткая очистка от скобок
                     var email = parts[0].Replace("]", "").Replace("[", "").Trim();
                     var ip = parts[1].Trim();
 
@@ -100,15 +101,48 @@ public class ServerMonitorService : IServerMonitorService
                 }
             }
 
+            // Инициализация локальной базы GeoIP
+            string dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-Country.mmdb");
+            MaxMind.GeoIP2.DatabaseReader? reader = null;
+            if (System.IO.File.Exists(dbPath))
+            {
+                reader = new MaxMind.GeoIP2.DatabaseReader(dbPath);
+            }
+
             foreach (var kvp in userIps)
             {
+                string ip = kvp.Value.First();
+                string country = "??";
+                string flag = "🌍";
+
+                if (reader != null)
+                {
+                    try
+                    {
+                        var response = reader.Country(ip);
+                        string isoCode = response.Country.IsoCode ?? "";
+                        if (isoCode.Length == 2)
+                        {
+                            country = isoCode;
+                            // Умная конвертация ISO-кода (US, RU) в Юникод Эмодзи-флаг
+                            int charA = char.ToUpper(isoCode[0]) + 0x1F1A5;
+                            int charB = char.ToUpper(isoCode[1]) + 0x1F1A5;
+                            flag = char.ConvertFromUtf32(charA) + char.ConvertFromUtf32(charB);
+                        }
+                    }
+                    catch { /* Игнорируем локальные и кривые IP */ }
+                }
+
                 stats.Add(new UserOnlineInfo
                 {
                     Email = kvp.Key,
-                    LastIp = kvp.Value.First(),
-                    ActiveSessions = kvp.Value.Count
+                    LastIp = ip,
+                    ActiveSessions = kvp.Value.Count,
+                    Country = $"{flag} {country}"
                 });
             }
+
+            reader?.Dispose();
         }
         catch { }
         return stats;

@@ -18,6 +18,13 @@ public class VpnClient : INotifyPropertyChanged
         set { _uuid = value; OnPropertyChanged(); }
     }
 
+    private string _country = "🌍 ??";
+    public string Country
+    {
+        get => _country;
+        set { _country = value; OnPropertyChanged(); }
+    }
+
     private DateTime? _expiryDate;
     public DateTime? ExpiryDate
     {
