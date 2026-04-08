@@ -3,6 +3,7 @@ using KoFFPanel.Infrastructure.Services;
 using KoFFPanel.Presentation.Services;
 using KoFFPanel.Presentation.ViewModels;
 using KoFFPanel.Presentation.Views;
+using KoFFPanel.Presentation.Views.Pages; // Подключаем папку с будущими страницами
 using Microsoft.Extensions.DependencyInjection;
 
 namespace KoFFPanel.Presentation;
@@ -44,10 +45,14 @@ public static class DependencyInjection
         services.AddTransient<TerminalViewModel>();
         services.AddTransient<AddServerViewModel>();
 
-        // 4. Views
+        // 4. Views (Окна)
         services.AddTransient<CabinetWindow>();
         services.AddTransient<TerminalWindow>();
         services.AddTransient<AddServerWindow>();
+
+        // 5. Pages (НАШИ НОВЫЕ СТРАНИЦЫ НАВИГАЦИИ)
+        services.AddTransient<DashboardView>();
+        services.AddTransient<ClientsView>();
 
         return services;
     }

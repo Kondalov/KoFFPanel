@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
@@ -31,6 +32,9 @@ public partial class CabinetViewModel : ObservableObject
     private readonly Func<ISshService> _sshServiceFactory;
     private CancellationTokenSource? _monitoringCts;
     private ISshService? _currentMonitoringSsh;
+
+    [ObservableProperty] private object? _currentView;
+    [ObservableProperty] private string _activeMenu = "Dashboard";
 
     [ObservableProperty] private string _title = "KoFFPanel - Управление серверами";
     [ObservableProperty] private int _serversCount = 0;
@@ -78,7 +82,24 @@ public partial class CabinetViewModel : ObservableObject
         _ = _backupService.CreateBackupAsync();
         _analyticsService = analyticsService;
         LoadData();
-        
+    }
+
+    [RelayCommand]
+    private void NavigateToDashboard()
+    {
+        ActiveMenu = "Dashboard";
+        var view = _serviceProvider.GetRequiredService<Views.Pages.DashboardView>();
+        view.DataContext = this;
+        CurrentView = view;
+    }
+
+    [RelayCommand]
+    private void NavigateToClients()
+    {
+        ActiveMenu = "Clients";
+        var view = _serviceProvider.GetRequiredService<Views.Pages.ClientsView>();
+        view.DataContext = this;
+        CurrentView = view;
     }
 
     private string FormatBytes(long bytes)
@@ -108,6 +129,7 @@ public partial class CabinetViewModel : ObservableObject
         Clients.Clear();
         if (value != null)
         {
+            NavigateToDashboard();
             _monitoringCts = new CancellationTokenSource();
             _ = StartMonitoringLoopAsync(value, _monitoringCts.Token);
         }
