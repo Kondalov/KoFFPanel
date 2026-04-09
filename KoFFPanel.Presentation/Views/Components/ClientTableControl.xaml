@@ -340,7 +340,8 @@
                           CellStyle="{StaticResource StandardDataGridCell}">
 
                     <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow">
+                        <Style TargetType="DataGridRow"
+                               BasedOn="{StaticResource {x:Type DataGridRow}}">
                             <Setter Property="Background"
                                     Value="Transparent" />
                             <Setter Property="BorderBrush"
@@ -349,8 +350,6 @@
                                     Value="0,0,0,1" />
                             <Setter Property="Margin"
                                     Value="0,2" />
-                            <Setter Property="Padding"
-                                    Value="0,8" />
                             <Style.Triggers>
                                 <Trigger Property="IsMouseOver"
                                          Value="True">
@@ -372,29 +371,90 @@
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal"
                                                 Margin="10,5">
-                                        <Border Width="40"
-                                                Height="40"
-                                                CornerRadius="12"
-                                                Margin="0,0,16,0">
-                                            <Border.Background>
-                                                <LinearGradientBrush StartPoint="0,0"
-                                                                     EndPoint="1,1">
-                                                    <GradientStop Color="#00f2ff"
-                                                                  Offset="0" />
-                                                    <GradientStop Color="#7000ff"
-                                                                  Offset="1" />
-                                                </LinearGradientBrush>
-                                            </Border.Background>
-                                            <Border.Effect>
-                                                <DropShadowEffect Color="#00f2ff"
-                                                                  BlurRadius="10"
-                                                                  ShadowDepth="0"
-                                                                  Opacity="0.5" />
-                                            </Border.Effect>
-                                            <ui:SymbolIcon Symbol="Person24"
-                                                           Foreground="White"
-                                                           FontSize="20" />
-                                        </Border>
+                                        <Button Command="{Binding DataContext.ChangeAvatarCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Padding="0"
+                                                Cursor="Hand"
+                                                Margin="0,0,16,0"
+                                                ToolTip="Нажмите, чтобы изменить аватар">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Grid Width="40"
+                                                          Height="40">
+                                                        <Border CornerRadius="12">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Visibility"
+                                                                            Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding AvatarPath}"
+                                                                                     Value="">
+                                                                            <Setter Property="Visibility"
+                                                                                    Value="Visible" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding AvatarPath}"
+                                                                                     Value="{x:Null}">
+                                                                            <Setter Property="Visibility"
+                                                                                    Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <Border.Background>
+                                                                <LinearGradientBrush StartPoint="0,0"
+                                                                                     EndPoint="1,1">
+                                                                    <GradientStop Color="#00f2ff"
+                                                                                  Offset="0" />
+                                                                    <GradientStop Color="#7000ff"
+                                                                                  Offset="1" />
+                                                                </LinearGradientBrush>
+                                                            </Border.Background>
+                                                            <Border.Effect>
+                                                                <DropShadowEffect Color="#00f2ff"
+                                                                                  BlurRadius="10"
+                                                                                  ShadowDepth="0"
+                                                                                  Opacity="0.5" />
+                                                            </Border.Effect>
+                                                            <ui:SymbolIcon Symbol="Person24"
+                                                                           Foreground="White"
+                                                                           FontSize="20" />
+                                                        </Border>
+                                                        <Border CornerRadius="12"
+                                                                Background="#2d2d2d">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Visibility"
+                                                                            Value="Visible" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding AvatarPath}"
+                                                                                     Value="">
+                                                                            <Setter Property="Visibility"
+                                                                                    Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding AvatarPath}"
+                                                                                     Value="{x:Null}">
+                                                                            <Setter Property="Visibility"
+                                                                                    Value="Collapsed" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <Border.Clip>
+                                                                <RectangleGeometry Rect="0,0,40,40"
+                                                                                   RadiusX="12"
+                                                                                   RadiusY="12" />
+                                                            </Border.Clip>
+                                                            <Image Source="{Binding AvatarPath}"
+                                                                   Stretch="UniformToFill"
+                                                                   RenderOptions.BitmapScalingMode="HighQuality" />
+                                                        </Border>
+                                                    </Grid>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+
                                         <StackPanel VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Note}"
                                                        FontWeight="Bold"

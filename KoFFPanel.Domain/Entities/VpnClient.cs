@@ -1,15 +1,25 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.ComponentModel.DataAnnotations.Schema; // <-- ДОБАВЛЕНО ДЛЯ NOTMAPPED
 
 namespace KoFFPanel.Domain.Entities;
 
-// Используем нативный INotifyPropertyChanged, чтобы не тащить внешние UI-библиотеки в слой Domain
 public class VpnClient : INotifyPropertyChanged
 {
     private string _email = "";
     public int Id { get; set; }
     public string ServerIp { get; set; } = "";
+
+    // ИСПРАВЛЕНИЕ: Говорим базе данных (EF Core/SQLite) ИГНОРИРОВАТЬ это поле, 
+    // чтобы она не искала колонку AvatarPath и не падала с ошибкой.
+    private string _avatarPath = "";
+    [NotMapped]
+    public string AvatarPath
+    {
+        get => _avatarPath;
+        set { _avatarPath = value; OnPropertyChanged(); }
+    }
 
     private bool _isAntiFraudEnabled = true;
     public bool IsAntiFraudEnabled
@@ -60,7 +70,7 @@ public class VpnClient : INotifyPropertyChanged
         {
             _isActive = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(StatusString)); // Обновляем зависимое свойство
+            OnPropertyChanged(nameof(StatusString));
         }
     }
 
@@ -79,7 +89,7 @@ public class VpnClient : INotifyPropertyChanged
         {
             _trafficUsed = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(TrafficUsageString)); // Магия: обновляем строку в UI при изменении байтов
+            OnPropertyChanged(nameof(TrafficUsageString));
         }
     }
 
@@ -94,8 +104,6 @@ public class VpnClient : INotifyPropertyChanged
             OnPropertyChanged(nameof(TrafficUsageString));
         }
     }
-
-    // --- НОВЫЕ ПОЛЯ ДЛЯ КОНТРОЛЯ ПОЛЬЗОВАТЕЛЕЙ ---
 
     private string _note = "";
     public string Note
@@ -130,8 +138,6 @@ public class VpnClient : INotifyPropertyChanged
         }
     }
 
-    // --- ВЫЧИСЛЯЕМЫЕ СВОЙСТВА ДЛЯ UI ---
-
     public string TrafficUsageString
     {
         get
@@ -152,7 +158,6 @@ public class VpnClient : INotifyPropertyChanged
         ? LastOnline.Value.ToString("dd MMM HH:mm")
         : "Никогда";
 
-    // Умный конвертер байтов в KB, MB, GB, TB
     private string FormatBytes(long bytes)
     {
         if (bytes == 0) return "0 B";
@@ -169,7 +174,6 @@ public class VpnClient : INotifyPropertyChanged
         return string.Format("{0:n2} {1}", number, suffixes[counter]);
     }
 
-    // Стандартная реализация уведомлений интерфейса об изменениях
     public event PropertyChangedEventHandler? PropertyChanged;
 
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

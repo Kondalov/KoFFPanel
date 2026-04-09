@@ -6,9 +6,13 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Text.Json; // <-- ИСПРАВЛЕНИЕ: Добавлена библиотека для сохранения реестра
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows.Media.Imaging;
+using System.Windows.Media;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
@@ -32,6 +36,10 @@ public partial class CabinetViewModel : ObservableObject
     private readonly Func<ISshService> _sshServiceFactory;
     private CancellationTokenSource? _monitoringCts;
     private ISshService? _currentMonitoringSsh;
+
+    // ИСПРАВЛЕНИЕ: Переменные для локального реестра аватаров
+    private readonly string _avatarsRegistryPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Avatars", "registry.json");
+    private Dictionary<string, string> _avatarRegistry = new();
 
     [ObservableProperty] private object? _currentView;
     [ObservableProperty] private string _activeMenu = "Dashboard";
@@ -81,8 +89,58 @@ public partial class CabinetViewModel : ObservableObject
 
         _ = _backupService.CreateBackupAsync();
         _analyticsService = analyticsService;
+
+        // ИСПРАВЛЕНИЕ: Загружаем пути к аватаркам из JSON и подписываемся на появление клиентов
+        LoadAvatarRegistry();
+        Clients.CollectionChanged += Clients_CollectionChanged;
+
         LoadData();
     }
+
+    // --- НОВАЯ ЛОГИКА АВТО-ПОДГРУЗКИ АВАТАРОВ ---
+    private void LoadAvatarRegistry()
+    {
+        try
+        {
+            if (File.Exists(_avatarsRegistryPath))
+            {
+                string json = File.ReadAllText(_avatarsRegistryPath);
+                _avatarRegistry = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new();
+            }
+        }
+        catch { }
+    }
+
+    private void SaveAvatarRegistry()
+    {
+        try
+        {
+            string dir = Path.GetDirectoryName(_avatarsRegistryPath)!;
+            Directory.CreateDirectory(dir);
+            string json = JsonSerializer.Serialize(_avatarRegistry);
+            File.WriteAllText(_avatarsRegistryPath, json);
+        }
+        catch { }
+    }
+
+    private void Clients_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        // Магия: как только система добавляет клиентов в список, мы смотрим в реестр и выдаем им их фото
+        if (e.NewItems != null)
+        {
+            foreach (VpnClient c in e.NewItems)
+            {
+                if (!string.IsNullOrEmpty(c.Email) && _avatarRegistry.TryGetValue(c.Email, out string path))
+                {
+                    if (File.Exists(path))
+                    {
+                        c.AvatarPath = path;
+                    }
+                }
+            }
+        }
+    }
+    // ---------------------------------------------
 
     [RelayCommand]
     private void NavigateToDashboard()
@@ -159,5 +217,65 @@ public partial class CabinetViewModel : ObservableObject
             ServerStatus = "Онлайн (Базы GeoSite успешно обновлены!)";
         else
             ServerStatus = $"ОШИБКА: {msg}";
+    }
+
+    [RelayCommand]
+    private async Task ChangeAvatarAsync(VpnClient? client)
+    {
+        if (client == null) return;
+
+        var openFileDialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Выберите аватар (Изображение будет автоматически сжато)",
+            Filter = "Изображения|*.jpg;*.jpeg;*.png;*.bmp|Все файлы|*.*"
+        };
+
+        if (openFileDialog.ShowDialog() != true) return;
+
+        try
+        {
+            string sourcePath = openFileDialog.FileName;
+            string avatarsFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Avatars");
+            Directory.CreateDirectory(avatarsFolder);
+
+            string destFileName = $"avatar_{client.Email}_{Guid.NewGuid().ToString("N").Substring(0, 8)}.jpg";
+            string destPath = Path.Combine(avatarsFolder, destFileName);
+
+            await Task.Run(() =>
+            {
+                var originalImage = new BitmapImage();
+                originalImage.BeginInit();
+                originalImage.UriSource = new Uri(sourcePath);
+                originalImage.CacheOption = BitmapCacheOption.OnLoad;
+                originalImage.EndInit();
+                originalImage.Freeze();
+
+                int size = Math.Min(originalImage.PixelWidth, originalImage.PixelHeight);
+                int x = (originalImage.PixelWidth - size) / 2;
+                int y = (originalImage.PixelHeight - size) / 2;
+
+                var croppedBitmap = new CroppedBitmap(originalImage, new System.Windows.Int32Rect(x, y, size, size));
+                var scaledBitmap = new TransformedBitmap(croppedBitmap, new ScaleTransform(64.0 / size, 64.0 / size));
+
+                var encoder = new JpegBitmapEncoder { QualityLevel = 85 };
+                encoder.Frames.Add(BitmapFrame.Create(scaledBitmap));
+
+                using var fileStream = new FileStream(destPath, FileMode.Create);
+                encoder.Save(fileStream);
+            });
+
+            client.AvatarPath = destPath;
+
+            // ИСПРАВЛЕНИЕ: Сохраняем путь в наш независимый реестр!
+            if (!string.IsNullOrEmpty(client.Email))
+            {
+                _avatarRegistry[client.Email] = destPath;
+                SaveAvatarRegistry();
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Ошибка при сжатии аватара: {ex.Message}");
+        }
     }
 }
