@@ -8,7 +8,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
-using System.Text.Json; // <-- ИСПРАВЛЕНИЕ: Добавлена библиотека для сохранения реестра
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
@@ -37,7 +37,6 @@ public partial class CabinetViewModel : ObservableObject
     private CancellationTokenSource? _monitoringCts;
     private ISshService? _currentMonitoringSsh;
 
-    // ИСПРАВЛЕНИЕ: Переменные для локального реестра аватаров
     private readonly string _avatarsRegistryPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Avatars", "registry.json");
     private Dictionary<string, string> _avatarRegistry = new();
 
@@ -90,14 +89,12 @@ public partial class CabinetViewModel : ObservableObject
         _ = _backupService.CreateBackupAsync();
         _analyticsService = analyticsService;
 
-        // ИСПРАВЛЕНИЕ: Загружаем пути к аватаркам из JSON и подписываемся на появление клиентов
         LoadAvatarRegistry();
         Clients.CollectionChanged += Clients_CollectionChanged;
 
         LoadData();
     }
 
-    // --- НОВАЯ ЛОГИКА АВТО-ПОДГРУЗКИ АВАТАРОВ ---
     private void LoadAvatarRegistry()
     {
         try
@@ -123,9 +120,9 @@ public partial class CabinetViewModel : ObservableObject
         catch { }
     }
 
+    // ИСПРАВЛЕНИЕ: Умный наблюдатель. Подписывается на КАЖДОГО клиента в таблице
     private void Clients_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        // Магия: как только система добавляет клиентов в список, мы смотрим в реестр и выдаем им их фото
         if (e.NewItems != null)
         {
             foreach (VpnClient c in e.NewItems)
@@ -137,10 +134,38 @@ public partial class CabinetViewModel : ObservableObject
                         c.AvatarPath = path;
                     }
                 }
+                // Слушаем изменения внутри этого клиента
+                c.PropertyChanged += Client_PropertyChanged;
             }
         }
+
+        if (e.OldItems != null)
+        {
+            foreach (VpnClient c in e.OldItems)
+            {
+                // Отписываемся при удалении
+                c.PropertyChanged -= Client_PropertyChanged;
+            }
+        }
+
+        RecalculateActiveUsers();
     }
-    // ---------------------------------------------
+
+    // ИСПРАВЛЕНИЕ: Мгновенно реагируем, если у кого-то поменялся онлайн
+    private void Client_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(VpnClient.ActiveConnections))
+        {
+            RecalculateActiveUsers();
+        }
+    }
+
+    // ИСПРАВЛЕНИЕ: Считаем реальных онлайн клиентов (у кого подключений > 0)
+    private void RecalculateActiveUsers()
+    {
+        TotalUsers = Clients.Count;
+        ActiveUsers = Clients.Count(c => c.ActiveConnections > 0);
+    }
 
     [RelayCommand]
     private void NavigateToDashboard()
@@ -266,7 +291,6 @@ public partial class CabinetViewModel : ObservableObject
 
             client.AvatarPath = destPath;
 
-            // ИСПРАВЛЕНИЕ: Сохраняем путь в наш независимый реестр!
             if (!string.IsNullOrEmpty(client.Email))
             {
                 _avatarRegistry[client.Email] = destPath;

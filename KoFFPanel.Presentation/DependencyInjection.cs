@@ -44,11 +44,13 @@ public static class DependencyInjection
         services.AddTransient<CabinetViewModel>();
         services.AddTransient<TerminalViewModel>();
         services.AddTransient<AddServerViewModel>();
+        services.AddTransient<CustomConfigViewModel>(); // <-- ДОБАВЛЕНО: ViewModel Своей конфигурации
 
         // 4. Views (Окна)
         services.AddTransient<CabinetWindow>();
         services.AddTransient<TerminalWindow>();
         services.AddTransient<AddServerWindow>();
+        services.AddTransient<CustomConfigWindow>(); // <-- ДОБАВЛЕНО: Окно Своей конфигурации
 
         // 5. Pages (НАШИ НОВЫЕ СТРАНИЦЫ НАВИГАЦИИ)
         services.AddTransient<DashboardView>();

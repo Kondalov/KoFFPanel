@@ -2,6 +2,8 @@
 using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
+using KoFFPanel.Application.Strategies;
+using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Threading.Tasks;
 
@@ -12,39 +14,39 @@ public partial class DeployWizardViewModel : ObservableObject
     private readonly ISshService _sshService;
     private readonly IGitHubReleaseService _gitHubService;
     private readonly ICoreDeploymentService _deploymentService;
-    public Action<string>? OnInstallRequested { get; set; }
+    private readonly IServiceProvider _serviceProvider;
+    private readonly IProfileRepository _profileRepository;
 
+    public Action<string>? OnInstallRequested { get; set; }
     public Action? CloseAction { get; set; }
 
     [ObservableProperty] private VpnProfile? _targetServer;
 
-    // Состояние выбора
     [ObservableProperty] private bool _isXraySelected = true;
     [ObservableProperty] private bool _isSingBoxSelected = false;
     [ObservableProperty] private bool _isCustomSelected = false;
 
-    // Умное обновление
-    [ObservableProperty] private bool _isAutoUpdateEnabled = false;
-
-    // Версии
     [ObservableProperty] private string _xrayCurrentVersion = "Загрузка...";
     [ObservableProperty] private string _xrayLatestVersion = "Загрузка...";
     [ObservableProperty] private string _singBoxCurrentVersion = "Загрузка...";
     [ObservableProperty] private string _singBoxLatestVersion = "Загрузка...";
 
-    // Статусы UI
     [ObservableProperty] private string _statusMessage = "Анализ сервера...";
     [ObservableProperty] private bool _isInstalling = false;
-    [ObservableProperty] private bool _isNotInstalling = false; // Блокируем кнопки до окончания проверок
+    [ObservableProperty] private bool _isNotInstalling = false;
 
     public DeployWizardViewModel(
         ISshService sshService,
         IGitHubReleaseService gitHubService,
-        ICoreDeploymentService deploymentService)
+        ICoreDeploymentService deploymentService,
+        IServiceProvider serviceProvider,
+        IProfileRepository profileRepository)
     {
         _sshService = sshService;
         _gitHubService = gitHubService;
         _deploymentService = deploymentService;
+        _serviceProvider = serviceProvider;
+        _profileRepository = profileRepository;
     }
 
     public async Task InitializeAsync(VpnProfile server)
@@ -52,26 +54,15 @@ public partial class DeployWizardViewModel : ObservableObject
         TargetServer = server;
         IsNotInstalling = false;
 
-        // 1. Подключаемся к серверу
-        var connResult = await _sshService.ConnectAsync(server.IpAddress, server.Port, server.Username, server.Password, server.KeyPath);
+        var connResult = await _sshService.ConnectAsync(server.IpAddress, server.Port, server.Username, server.Password, server.KeyPath ?? "");
         if (connResult != "SUCCESS")
         {
-            StatusMessage = $"❌ Ошибка подключения: {connResult}";
+            StatusMessage = $"❌ Ошибка: {connResult}";
             return;
         }
 
-        // 2. УМНАЯ ЗАЩИТА: Pre-flight checks
-        var (isReady, checkMsg) = await _deploymentService.RunPreFlightChecksAsync(_sshService);
-        if (!isReady)
-        {
-            StatusMessage = $"⛔ Отказ: {checkMsg}";
-            _sshService.Disconnect();
-            return;
-        }
+        StatusMessage = "Получение актуальных версий...";
 
-        StatusMessage = "Сервер прошел проверку. Получение версий...";
-
-        // 3. Параллельно запрашиваем версии (С сервера и с GitHub)
         var xrayTask = _deploymentService.GetInstalledXrayVersionAsync(_sshService);
         var singBoxTask = _deploymentService.GetInstalledSingBoxVersionAsync(_sshService);
         var gitXrayTask = _gitHubService.GetLatestReleaseVersionAsync("XTLS/Xray-core");
@@ -81,49 +72,77 @@ public partial class DeployWizardViewModel : ObservableObject
 
         XrayCurrentVersion = xrayTask.Result;
         XrayLatestVersion = gitXrayTask.Result;
-
         SingBoxCurrentVersion = singBoxTask.Result;
         SingBoxLatestVersion = gitSingBoxTask.Result;
 
-        StatusMessage = "Готов к установке.";
-        IsNotInstalling = true; // Разблокируем UI
+        StatusMessage = "Готов к умной установке.";
+        IsNotInstalling = true;
     }
 
     [RelayCommand]
-    private void StartInstall() // Теперь это синхронный метод!
+    private async Task StartInstallAsync()
     {
         if (TargetServer == null || !_sshService.IsConnected) return;
 
-        string installCmd = "";
-
-        // Формируем команду в зависимости от выбора ( \r - это имитация нажатия Enter )
-        if (IsXraySelected)
+        if (IsCustomSelected)
         {
-            installCmd = "bash -c \"$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)\" @ install\r";
-        }
-        else if (IsSingBoxSelected)
-        {
-            installCmd = "bash <(curl -fsSL https://sing-box.app/install.sh)\r";
-        }
-        else if (IsCustomSelected)
-        {
-            StatusMessage = "Загрузка кастомного конфига пока в разработке!";
+            _sshService.Disconnect();
+            CloseAction?.Invoke();
+            var customConfigWindow = _serviceProvider.GetRequiredService<Views.CustomConfigWindow>();
+            customConfigWindow.ShowDialog();
             return;
         }
 
-        // Если включено умное автообновление, "приклеиваем" команду добавления в cron
-        if (IsAutoUpdateEnabled && IsXraySelected)
+        IsNotInstalling = false;
+        IsInstalling = true;
+        StatusMessage = "🔍 Проверка конфигурации...";
+
+        ICoreInstallStrategy? strategy = null;
+        if (IsXraySelected) strategy = new XrayInstallStrategy();
+        else if (IsSingBoxSelected) strategy = new SingBoxInstallStrategy();
+
+        if (strategy != null)
         {
-            installCmd += "echo '0 3 * * * root /bin/bash -c \"$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)\" @ install' > /etc/cron.d/xray_updater\r";
+            // ПЕРЕДАЕМ СТАРЫЕ КЛЮЧИ (ЕСЛИ ЕСТЬ), ЧТОБЫ НЕ СБРАСЫВАТЬ ПОЛЬЗОВАТЕЛЕЙ
+            var (success, msg, resultObj) = await strategy.ExecuteFullInstall(
+                _sshService,
+                TargetServer.IpAddress,
+                443,
+                "www.microsoft.com",
+                TargetServer.Uuid ?? "",
+                TargetServer.PrivateKey ?? "",
+                TargetServer.PublicKey ?? "",
+                TargetServer.ShortId ?? ""
+            );
+
+            StatusMessage = msg;
+
+            if (success && resultObj is XrayInstallResult result)
+            {
+                TargetServer.PrivateKey = result.PrivateKey;
+                TargetServer.PublicKey = result.PublicKey;
+                TargetServer.Uuid = result.Uuid;
+                TargetServer.ShortId = result.ShortId;
+                TargetServer.VpnPort = result.Port;
+                TargetServer.Sni = result.Sni;
+
+                _profileRepository.UpdateProfile(TargetServer);
+
+                StatusMessage = "✅ Готово! Сохранение конфигурации...";
+
+                var successWin = new Views.InstallationSuccessWindow();
+                successWin.DataContext = result;
+                successWin.ShowDialog();
+
+                _sshService.Disconnect();
+                CloseAction?.Invoke();
+            }
+            else
+            {
+                IsNotInstalling = true;
+                IsInstalling = false;
+            }
         }
-
-        // Отключаем фоновый SSH мастера, чтобы терминал мог нормально подключиться
-        _sshService.Disconnect();
-
-        CloseAction?.Invoke(); // Закрываем Мастера
-
-        // Вызываем событие, передавая сформированную команду!
-        OnInstallRequested?.Invoke(installCmd);
     }
 
     [RelayCommand]
