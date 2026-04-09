@@ -8,227 +8,715 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/KoFFPanel.Presentation;component/Styles/CabinetWindowResources.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <Style x:Key="TopMetricCardStyle"
+                   TargetType="Border">
+                <Setter Property="Background"
+                        Value="#08FFFFFF" />
+                <Setter Property="BorderBrush"
+                        Value="#1AFFFFFF" />
+                <Setter Property="BorderThickness"
+                        Value="1" />
+                <Setter Property="CornerRadius"
+                        Value="16" />
+                <Setter Property="Padding"
+                        Value="20" />
+                <Setter Property="RenderTransformOrigin"
+                        Value="0.5,0.5" />
+                <Setter Property="RenderTransform">
+                    <Setter.Value>
+                        <TranslateTransform Y="0" />
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="Background"
+                                Value="#1AFFFFFF" />
+                        <Setter Property="BorderBrush"
+                                Value="#4DFFFFFF" />
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <TranslateTransform Y="-4" />
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#000000"
+                                                  BlurRadius="15"
+                                                  ShadowDepth="8"
+                                                  Opacity="0.6"
+                                                  Direction="315" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="GridActionBtn"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Background"
+                        Value="Transparent" />
+                <Setter Property="BorderThickness"
+                        Value="0" />
+                <Setter Property="Padding"
+                        Value="6" />
+                <Setter Property="Cursor"
+                        Value="Hand" />
+            </Style>
+
+            <Style x:Key="BtnAnalytics"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource GridActionBtn}">
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#f1fa8c"
+                                                  BlurRadius="10"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="BtnEdit"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource GridActionBtn}">
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#00f2ff"
+                                                  BlurRadius="10"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="BtnCopy"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource GridActionBtn}">
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#8be9fd"
+                                                  BlurRadius="10"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="BtnReset"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource GridActionBtn}">
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#ffaa00"
+                                                  BlurRadius="10"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="BtnDelete"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource GridActionBtn}">
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#ff4444"
+                                                  BlurRadius="10"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <Border Background="#1c1e27"
-            CornerRadius="8"
-            Padding="20">
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0"
-                  Margin="0,0,0,20">
-                <StackPanel Orientation="Horizontal"
-                            VerticalAlignment="Center">
-                    <ui:SymbolIcon Symbol="People24"
-                                   Foreground="#8be9fd"
-                                   FontSize="20"
-                                   Margin="0,0,10,0" />
-                    <TextBlock Text="Пользователи (Клиенты)"
-                               Foreground="White"
-                               FontSize="16"
-                               FontWeight="SemiBold" />
+        <Grid Grid.Row="0"
+              Margin="0,0,0,24">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Style="{StaticResource TopMetricCardStyle}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Margin="0,0,0,12">
+                        <ui:SymbolIcon Symbol="People24"
+                                       Foreground="#00f2ff"
+                                       FontSize="18"
+                                       Margin="0,0,8,0" />
+                        <TextBlock Text="Всего клиентов"
+                                   Foreground="#B3FFFFFF"
+                                   FontWeight="SemiBold"
+                                   FontSize="14" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding TotalUsers}"
+                               Foreground="#ffffff"
+                               FontSize="32"
+                               FontWeight="Bold" />
                 </StackPanel>
-                <ui:Button HorizontalAlignment="Right"
-                           Command="{Binding AddClientCommand}"
-                           Content="+ Создать"
-                           Background="#ffcc00"
-                           Foreground="#13151b"
-                           BorderThickness="0"
-                           Padding="15,6"
-                           FontWeight="Bold"
-                           Cursor="Hand" />
-            </Grid>
+            </Border>
 
-            <DataGrid Grid.Row="1"
-                      ItemsSource="{Binding Clients}"
-                      AutoGenerateColumns="False"
-                      HeadersVisibility="Column"
-                      Background="Transparent"
-                      RowBackground="Transparent"
-                      BorderThickness="0"
-                      GridLinesVisibility="None"
-                      IsReadOnly="True"
-                      Foreground="White"
-                      CanUserResizeColumns="True"
-                      ColumnHeaderStyle="{StaticResource StandardDataGridHeader}"
-                      CellStyle="{StaticResource StandardDataGridCell}">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Binding="{Binding Note}"
-                                        Width="150">
-                        <DataGridTextColumn.Header>
-                            <ui:SymbolIcon Symbol="Note24"
-                                           ToolTip="Заметка"
-                                           Foreground="#a0aabf" />
-                        </DataGridTextColumn.Header>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Binding="{Binding Email}"
-                                        Width="*">
-                        <DataGridTextColumn.Header>
-                            <ui:SymbolIcon Symbol="Mail24"
-                                           ToolTip="Email"
-                                           Foreground="#a0aabf" />
-                        </DataGridTextColumn.Header>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Binding="{Binding LastIp}"
-                                        Width="110">
-                        <DataGridTextColumn.Header>
-                            <ui:SymbolIcon Symbol="Location24"
-                                           ToolTip="Последний IP"
-                                           Foreground="#a0aabf" />
-                        </DataGridTextColumn.Header>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Binding="{Binding Country}"
-                                        Width="80">
-                        <DataGridTextColumn.Header>
-                            <ui:SymbolIcon Symbol="Globe24"
-                                           ToolTip="Страна"
-                                           Foreground="#a0aabf" />
-                        </DataGridTextColumn.Header>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Binding="{Binding ActiveConnections}"
-                                        Width="60">
-                        <DataGridTextColumn.Header>
-                            <ui:SymbolIcon Symbol="Laptop24"
-                                           ToolTip="Устройства"
-                                           Foreground="#a0aabf" />
-                        </DataGridTextColumn.Header>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Binding="{Binding TrafficUsageString}"
-                                        Width="160">
-                        <DataGridTextColumn.Header>
-                            <ui:SymbolIcon Symbol="DataBarHorizontal24"
-                                           ToolTip="Трафик"
-                                           Foreground="#a0aabf" />
-                        </DataGridTextColumn.Header>
-                    </DataGridTextColumn>
-                    <DataGridTextColumn Binding="{Binding LastOnlineString}"
-                                        Width="110">
-                        <DataGridTextColumn.Header>
-                            <ui:SymbolIcon Symbol="History24"
-                                           ToolTip="Онлайн"
-                                           Foreground="#a0aabf" />
-                        </DataGridTextColumn.Header>
-                    </DataGridTextColumn>
+            <Border Grid.Column="2"
+                    Style="{StaticResource TopMetricCardStyle}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Margin="0,0,0,12">
+                        <ui:SymbolIcon Symbol="Flash24"
+                                       Foreground="#00ff88"
+                                       FontSize="18"
+                                       Margin="0,0,8,0" />
+                        <TextBlock Text="Онлайн"
+                                   Foreground="#B3FFFFFF"
+                                   FontWeight="SemiBold"
+                                   FontSize="14" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding ActiveUsers}"
+                               Foreground="#00ff88"
+                               FontSize="32"
+                               FontWeight="Bold" />
+                </StackPanel>
+            </Border>
 
-                    <DataGridTemplateColumn Width="60">
-                        <DataGridTemplateColumn.Header>
-                            <ui:SymbolIcon Symbol="ShieldCheckmark24"
-                                           ToolTip="Антифрод"
-                                           Foreground="#a0aabf" />
-                        </DataGridTemplateColumn.Header>
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsAntiFraudEnabled, UpdateSourceTrigger=PropertyChanged}"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"
-                                          ToolTip="Авто-бан" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
+            <Border Grid.Column="4"
+                    Style="{StaticResource TopMetricCardStyle}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Margin="0,0,0,12">
+                        <ui:SymbolIcon Symbol="DataBarHorizontal24"
+                                       Foreground="#ff00aa"
+                                       FontSize="18"
+                                       Margin="0,0,8,0" />
+                        <TextBlock Text="Общий трафик"
+                                   Foreground="#B3FFFFFF"
+                                   FontWeight="SemiBold"
+                                   FontSize="14" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding TotalTraffic}"
+                               Foreground="#ffffff"
+                               FontSize="32"
+                               FontWeight="Bold" />
+                </StackPanel>
+            </Border>
 
-                    <DataGridTemplateColumn Width="Auto">
-                        <DataGridTemplateColumn.Header>
-                            <ui:SymbolIcon Symbol="Settings24"
-                                           ToolTip="Действия"
-                                           Foreground="#a0aabf" />
-                        </DataGridTemplateColumn.Header>
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal"
-                                            HorizontalAlignment="Right">
-                                    <ui:Button Command="{Binding DataContext.OpenAnalyticsCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                               CommandParameter="{Binding}"
-                                               Background="Transparent"
-                                               BorderThickness="0"
-                                               Padding="6"
-                                               Cursor="Hand"
-                                               ToolTip="Аналитика (Трафик и IP)">
-                                        <ui:SymbolIcon Symbol="DataArea24"
-                                                       Foreground="#f1fa8c"
-                                                       FontSize="16" />
-                                    </ui:Button>
-                                    <ui:Button Command="{Binding DataContext.EditClientCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                               CommandParameter="{Binding}"
-                                               Background="Transparent"
-                                               BorderThickness="0"
-                                               Padding="6"
-                                               Cursor="Hand"
-                                               ToolTip="Редактировать">
-                                        <ui:SymbolIcon Symbol="Edit24"
-                                                       Foreground="#a0aabf"
-                                                       FontSize="16" />
-                                    </ui:Button>
-                                    <ui:Button Command="{Binding DataContext.CopyClientLinkCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                               CommandParameter="{Binding}"
-                                               Background="Transparent"
-                                               BorderThickness="0"
-                                               Padding="6"
-                                               Cursor="Hand"
-                                               ToolTip="Копировать ссылку">
-                                        <ui:SymbolIcon Symbol="Link24"
-                                                       Foreground="#8be9fd"
-                                                       FontSize="16" />
-                                    </ui:Button>
-                                    <ui:Button Command="{Binding DataContext.ToggleClientAccessCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                               CommandParameter="{Binding}"
-                                               Background="Transparent"
-                                               BorderThickness="0"
-                                               Padding="6"
-                                               Cursor="Hand"
-                                               ToolTip="Бан/Разбан">
-                                        <ui:SymbolIcon FontSize="16">
-                                            <ui:SymbolIcon.Style>
-                                                <Style TargetType="ui:SymbolIcon">
-                                                    <Setter Property="Symbol"
-                                                            Value="Pause24" />
-                                                    <Setter Property="Foreground"
-                                                            Value="#ffb86c" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsActive}"
-                                                                     Value="False">
-                                                            <Setter Property="Symbol"
-                                                                    Value="Play24" />
-                                                            <Setter Property="Foreground"
-                                                                    Value="#50fa7b" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </ui:SymbolIcon.Style>
-                                        </ui:SymbolIcon>
-                                    </ui:Button>
-                                    <ui:Button Command="{Binding DataContext.ResetClientTrafficCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                               CommandParameter="{Binding}"
-                                               Background="Transparent"
-                                               BorderThickness="0"
-                                               Padding="6"
-                                               Cursor="Hand"
-                                               ToolTip="Сброс трафика">
-                                        <ui:SymbolIcon Symbol="ArrowClockwise24"
-                                                       Foreground="#ffcc00"
-                                                       FontSize="16" />
-                                    </ui:Button>
-                                    <ui:Button Command="{Binding DataContext.DeleteClientCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                               CommandParameter="{Binding}"
-                                               Background="Transparent"
-                                               BorderThickness="0"
-                                               Padding="6"
-                                               Cursor="Hand"
-                                               ToolTip="Удалить">
-                                        <ui:SymbolIcon Symbol="Delete24"
-                                                       Foreground="#ff5555"
-                                                       FontSize="16" />
-                                    </ui:Button>
-                                </StackPanel>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                </DataGrid.Columns>
-            </DataGrid>
+            <Border Grid.Column="6"
+                    Style="{StaticResource TopMetricCardStyle}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Margin="0,0,0,12">
+                        <ui:SymbolIcon Symbol="Laptop24"
+                                       Foreground="#ffaa00"
+                                       FontSize="18"
+                                       Margin="0,0,8,0" />
+                        <TextBlock Text="Сетевые сессии"
+                                   Foreground="#B3FFFFFF"
+                                   FontWeight="SemiBold"
+                                   FontSize="14" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding TcpConnections}"
+                               Foreground="#ffffff"
+                               FontSize="32"
+                               FontWeight="Bold" />
+                </StackPanel>
+            </Border>
         </Grid>
-    </Border>
+
+        <Border Grid.Row="1"
+                Background="#08FFFFFF"
+                BorderBrush="#1AFFFFFF"
+                BorderThickness="1"
+                CornerRadius="20"
+                Padding="24">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0"
+                      Margin="0,0,0,24">
+                    <StackPanel Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <ui:SymbolIcon Symbol="List24"
+                                       Foreground="#00f2ff"
+                                       FontSize="22"
+                                       Margin="0,0,12,0" />
+                        <TextBlock Text="Список подключений"
+                                   Foreground="#ffffff"
+                                   FontSize="18"
+                                   FontWeight="Bold" />
+                    </StackPanel>
+
+                    <ui:Button HorizontalAlignment="Right"
+                               Command="{Binding AddClientCommand}"
+                               BorderThickness="0"
+                               Padding="20,10"
+                               Cursor="Hand"
+                               ToolTip="Добавить нового пользователя">
+                        <ui:Button.Background>
+                            <LinearGradientBrush StartPoint="0,0"
+                                                 EndPoint="1,1">
+                                <GradientStop Color="#00f2ff"
+                                              Offset="0.0" />
+                                <GradientStop Color="#7000ff"
+                                              Offset="1.0" />
+                            </LinearGradientBrush>
+                        </ui:Button.Background>
+                        <ui:Button.Effect>
+                            <DropShadowEffect Color="#00f2ff"
+                                              BlurRadius="12"
+                                              ShadowDepth="0"
+                                              Opacity="0.5" />
+                        </ui:Button.Effect>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="+"
+                                       FontSize="18"
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       Margin="0,0,8,0"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Text="Создать"
+                                       FontSize="15"
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                    </ui:Button>
+                </Grid>
+
+                <DataGrid Grid.Row="1"
+                          ItemsSource="{Binding Clients}"
+                          AutoGenerateColumns="False"
+                          HeadersVisibility="Column"
+                          Background="Transparent"
+                          RowBackground="Transparent"
+                          BorderThickness="0"
+                          GridLinesVisibility="None"
+                          IsReadOnly="True"
+                          Foreground="White"
+                          CanUserResizeColumns="True"
+                          HorizontalScrollBarVisibility="Disabled"
+                          ColumnHeaderStyle="{StaticResource StandardDataGridHeader}"
+                          CellStyle="{StaticResource StandardDataGridCell}">
+
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="Background"
+                                    Value="Transparent" />
+                            <Setter Property="BorderBrush"
+                                    Value="#0AFFFFFF" />
+                            <Setter Property="BorderThickness"
+                                    Value="0,0,0,1" />
+                            <Setter Property="Margin"
+                                    Value="0,2" />
+                            <Setter Property="Padding"
+                                    Value="0,8" />
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver"
+                                         Value="True">
+                                    <Setter Property="Background"
+                                            Value="#0800f2ff" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Width="*">
+                            <DataGridTemplateColumn.Header>
+                                <ui:SymbolIcon Symbol="Person24"
+                                               ToolTip="Пользователь"
+                                               Foreground="#B3FFFFFF" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal"
+                                                Margin="10,5">
+                                        <Border Width="40"
+                                                Height="40"
+                                                CornerRadius="12"
+                                                Margin="0,0,16,0">
+                                            <Border.Background>
+                                                <LinearGradientBrush StartPoint="0,0"
+                                                                     EndPoint="1,1">
+                                                    <GradientStop Color="#00f2ff"
+                                                                  Offset="0" />
+                                                    <GradientStop Color="#7000ff"
+                                                                  Offset="1" />
+                                                </LinearGradientBrush>
+                                            </Border.Background>
+                                            <Border.Effect>
+                                                <DropShadowEffect Color="#00f2ff"
+                                                                  BlurRadius="10"
+                                                                  ShadowDepth="0"
+                                                                  Opacity="0.5" />
+                                            </Border.Effect>
+                                            <ui:SymbolIcon Symbol="Person24"
+                                                           Foreground="White"
+                                                           FontSize="20" />
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Note}"
+                                                       FontWeight="Bold"
+                                                       FontSize="15"
+                                                       Foreground="White" />
+                                            <TextBlock Text="{Binding Email}"
+                                                       FontSize="12"
+                                                       Foreground="#999999"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto"
+                                                MinWidth="130">
+                            <DataGridTemplateColumn.Header>
+                                <ui:SymbolIcon Symbol="Location24"
+                                               ToolTip="Последний IP"
+                                               Foreground="#B3FFFFFF" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding LastIp}"
+                                               Foreground="#00f2ff"
+                                               FontFamily="Consolas"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"
+                                               Margin="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto"
+                                                MinWidth="90">
+                            <DataGridTemplateColumn.Header>
+                                <ui:SymbolIcon Symbol="Globe24"
+                                               ToolTip="Локация"
+                                               Foreground="#B3FFFFFF" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal"
+                                                VerticalAlignment="Center"
+                                                Margin="10,0">
+                                        <TextBlock Text="🌍"
+                                                   Margin="0,0,8,0"
+                                                   FontSize="14" />
+                                        <TextBlock Text="{Binding Country}"
+                                                   Foreground="#B3FFFFFF"
+                                                   FontFamily="Consolas"
+                                                   FontSize="14"
+                                                   FontWeight="Bold" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto"
+                                                MinWidth="130">
+                            <DataGridTemplateColumn.Header>
+                                <ui:SymbolIcon Symbol="Laptop24"
+                                               ToolTip="Устройства"
+                                               Foreground="#B3FFFFFF" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border CornerRadius="8"
+                                            Padding="12,6"
+                                            HorizontalAlignment="Left"
+                                            VerticalAlignment="Center"
+                                            Margin="10,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background"
+                                                        Value="#1A00ff88" />
+                                                <Setter Property="BorderBrush"
+                                                        Value="#4D00ff88" />
+                                                <Setter Property="BorderThickness"
+                                                        Value="1" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ActiveConnections}"
+                                                                 Value="0">
+                                                        <Setter Property="Background"
+                                                                Value="#1Aff4444" />
+                                                        <Setter Property="BorderBrush"
+                                                                Value="#4Dff4444" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="8"
+                                                     Height="8"
+                                                     Margin="0,0,8,0"
+                                                     VerticalAlignment="Center">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill"
+                                                                Value="#00ff88" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="#00ff88"
+                                                                                  BlurRadius="6"
+                                                                                  ShadowDepth="0" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ActiveConnections}"
+                                                                         Value="0">
+                                                                <Setter Property="Fill"
+                                                                        Value="#ff4444" />
+                                                                <Setter Property="Effect">
+                                                                    <Setter.Value>
+                                                                        <DropShadowEffect Color="#ff4444"
+                                                                                          BlurRadius="6"
+                                                                                          ShadowDepth="0" />
+                                                                    </Setter.Value>
+                                                                </Setter>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <TextBlock Text="{Binding ActiveConnections, StringFormat='{}{0} онлайн'}"
+                                                       FontWeight="Bold"
+                                                       FontSize="13">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground"
+                                                                Value="#00ff88" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ActiveConnections}"
+                                                                         Value="0">
+                                                                <Setter Property="Foreground"
+                                                                        Value="#ff4444" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto"
+                                                MinWidth="160">
+                            <DataGridTemplateColumn.Header>
+                                <ui:SymbolIcon Symbol="DataBarHorizontal24"
+                                               ToolTip="Трафик"
+                                               Foreground="#B3FFFFFF" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel VerticalAlignment="Center"
+                                                Margin="10,0">
+                                        <TextBlock Text="{Binding TrafficUsageString}"
+                                                   FontFamily="Consolas"
+                                                   FontWeight="Bold"
+                                                   FontSize="13"
+                                                   Foreground="#e0e0e0"
+                                                   Margin="0,0,0,8" />
+                                        <Border Height="4"
+                                                Background="#1AFFFFFF"
+                                                CornerRadius="2"
+                                                HorizontalAlignment="Left"
+                                                Width="100">
+                                            <Border Width="45"
+                                                    HorizontalAlignment="Left"
+                                                    CornerRadius="2">
+                                                <Border.Background>
+                                                    <LinearGradientBrush StartPoint="0,0"
+                                                                         EndPoint="1,0">
+                                                        <GradientStop Color="#00ff88"
+                                                                      Offset="0" />
+                                                        <GradientStop Color="#00f2ff"
+                                                                      Offset="1" />
+                                                    </LinearGradientBrush>
+                                                </Border.Background>
+                                                <Border.Effect>
+                                                    <DropShadowEffect Color="#00f2ff"
+                                                                      BlurRadius="6"
+                                                                      ShadowDepth="0"
+                                                                      Opacity="0.8" />
+                                                </Border.Effect>
+                                            </Border>
+                                        </Border>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto"
+                                                MinWidth="130">
+                            <DataGridTemplateColumn.Header>
+                                <ui:SymbolIcon Symbol="History24"
+                                               ToolTip="Последний вход"
+                                               Foreground="#B3FFFFFF" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding LastOnlineString}"
+                                               Foreground="#999999"
+                                               FontFamily="Consolas"
+                                               FontSize="13"
+                                               VerticalAlignment="Center"
+                                               Margin="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto"
+                                                MinWidth="60">
+                            <DataGridTemplateColumn.Header>
+                                <ui:SymbolIcon Symbol="ShieldCheckmark24"
+                                               ToolTip="Антифрод (Авто-бан)"
+                                               Foreground="#B3FFFFFF" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsAntiFraudEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              ToolTip="Авто-бан при аномалиях"
+                                              Margin="10,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Width="Auto"
+                                                MinWidth="220">
+                            <DataGridTemplateColumn.Header>
+                                <ui:SymbolIcon Symbol="Settings24"
+                                               ToolTip="Действия"
+                                               Foreground="#B3FFFFFF" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                Margin="10,0">
+                                        <ui:Button Command="{Binding DataContext.OpenAnalyticsCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   CommandParameter="{Binding}"
+                                                   ToolTip="Аналитика (Трафик и IP)"
+                                                   Style="{StaticResource BtnAnalytics}">
+                                            <ui:SymbolIcon Symbol="DataArea24"
+                                                           Foreground="#f1fa8c"
+                                                           FontSize="18" />
+                                        </ui:Button>
+
+                                        <ui:Button Command="{Binding DataContext.EditClientCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   CommandParameter="{Binding}"
+                                                   ToolTip="Редактировать"
+                                                   Style="{StaticResource BtnEdit}">
+                                            <ui:SymbolIcon Symbol="Edit24"
+                                                           Foreground="#00f2ff"
+                                                           FontSize="18" />
+                                        </ui:Button>
+
+                                        <ui:Button Command="{Binding DataContext.CopyClientLinkCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   CommandParameter="{Binding}"
+                                                   ToolTip="Копировать ссылку"
+                                                   Style="{StaticResource BtnCopy}">
+                                            <ui:SymbolIcon Symbol="Link24"
+                                                           Foreground="#8be9fd"
+                                                           FontSize="18" />
+                                        </ui:Button>
+
+                                        <ui:Button Command="{Binding DataContext.ToggleClientAccessCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   CommandParameter="{Binding}"
+                                                   ToolTip="Бан / Разбан"
+                                                   Style="{StaticResource GridActionBtn}">
+                                            <ui:SymbolIcon FontSize="18">
+                                                <ui:SymbolIcon.Style>
+                                                    <Style TargetType="ui:SymbolIcon">
+                                                        <Setter Property="Symbol"
+                                                                Value="Pause24" />
+                                                        <Setter Property="Foreground"
+                                                                Value="#ffaa00" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsActive}"
+                                                                         Value="False">
+                                                                <Setter Property="Symbol"
+                                                                        Value="Play24" />
+                                                                <Setter Property="Foreground"
+                                                                        Value="#00ff88" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ui:SymbolIcon.Style>
+                                            </ui:SymbolIcon>
+                                        </ui:Button>
+
+                                        <ui:Button Command="{Binding DataContext.ResetClientTrafficCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   CommandParameter="{Binding}"
+                                                   ToolTip="Сброс трафика"
+                                                   Style="{StaticResource BtnReset}">
+                                            <ui:SymbolIcon Symbol="ArrowClockwise24"
+                                                           Foreground="#ffaa00"
+                                                           FontSize="18" />
+                                        </ui:Button>
+
+                                        <ui:Button Command="{Binding DataContext.DeleteClientCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   CommandParameter="{Binding}"
+                                                   ToolTip="Удалить"
+                                                   Style="{StaticResource BtnDelete}">
+                                            <ui:SymbolIcon Symbol="Delete24"
+                                                           Foreground="#ff4444"
+                                                           FontSize="18" />
+                                        </ui:Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+    </Grid>
 </UserControl>

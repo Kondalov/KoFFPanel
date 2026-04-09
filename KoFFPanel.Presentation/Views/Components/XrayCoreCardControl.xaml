@@ -2,85 +2,321 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
-    <Border Background="#1c1e27"
-            CornerRadius="8"
-            Padding="20"
-            VerticalAlignment="Top">
+
+    <UserControl.Resources>
+        <Style x:Key="HeroCardStyle"
+               TargetType="Border">
+            <Setter Property="Background"
+                    Value="#08FFFFFF" />
+            <Setter Property="BorderBrush"
+                    Value="#1AFFFFFF" />
+            <Setter Property="BorderThickness"
+                    Value="1" />
+            <Setter Property="CornerRadius"
+                    Value="20" />
+            <Setter Property="Padding"
+                    Value="24" />
+            <Setter Property="Margin"
+                    Value="0,12,0,12" />
+            <Setter Property="VerticalAlignment"
+                    Value="Stretch" />
+            <Setter Property="RenderTransformOrigin"
+                    Value="0.5,0.5" />
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <TranslateTransform Y="0" />
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+                    <Setter Property="Background"
+                            Value="#1AFFFFFF" />
+                    <Setter Property="BorderBrush"
+                            Value="#4DFFFFFF" />
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="-4" />
+                        </Setter.Value>
+                    </Setter>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#000000"
+                                              BlurRadius="20"
+                                              ShadowDepth="10"
+                                              Opacity="0.8"
+                                              Direction="315" />
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="XrayActionBtnBase"
+               TargetType="ui:Button"
+               BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Background"
+                    Value="#08FFFFFF" />
+            <Setter Property="BorderBrush"
+                    Value="#1AFFFFFF" />
+            <Setter Property="BorderThickness"
+                    Value="1" />
+            <Setter Property="Width"
+                    Value="36" />
+            <Setter Property="Height"
+                    Value="36" />
+            <Setter Property="Padding"
+                    Value="0" />
+            <Setter Property="Margin"
+                    Value="0,0,8,0" />
+            <Setter Property="Cursor"
+                    Value="Hand" />
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <TranslateTransform Y="0" />
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#1a1a1a"
+                                      BlurRadius="6"
+                                      ShadowDepth="3"
+                                      Opacity="0.8"
+                                      Direction="315" />
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ShieldBtnStyle"
+               TargetType="ui:Button"
+               BasedOn="{StaticResource XrayActionBtnBase}">
+            <Setter Property="Foreground"
+                    Value="#ffaa00" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+                    <Setter Property="BorderBrush"
+                            Value="#ffaa00" />
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="-2" />
+                        </Setter.Value>
+                    </Setter>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#ffaa00"
+                                              BlurRadius="12"
+                                              ShadowDepth="0"
+                                              Opacity="0.8" />
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RestartBtnStyle"
+               TargetType="ui:Button"
+               BasedOn="{StaticResource XrayActionBtnBase}">
+            <Setter Property="Foreground"
+                    Value="#00f2ff" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+                    <Setter Property="BorderBrush"
+                            Value="#00f2ff" />
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="-2" />
+                        </Setter.Value>
+                    </Setter>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#00f2ff"
+                                              BlurRadius="12"
+                                              ShadowDepth="0"
+                                              Opacity="0.8" />
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="RebootBtnStyle"
+               TargetType="ui:Button"
+               BasedOn="{StaticResource XrayActionBtnBase}">
+            <Setter Property="Foreground"
+                    Value="#ff4444" />
+            <Setter Property="Margin"
+                    Value="0" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+                    <Setter Property="BorderBrush"
+                            Value="#ff4444" />
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="-2" />
+                        </Setter.Value>
+                    </Setter>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#ff4444"
+                                              BlurRadius="12"
+                                              ShadowDepth="0"
+                                              Opacity="0.8" />
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="VlessBtnStyle"
+               TargetType="ui:Button"
+               BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="BorderThickness"
+                    Value="0" />
+            <Setter Property="Padding"
+                    Value="0,16" />
+            <Setter Property="HorizontalAlignment"
+                    Value="Stretch" />
+            <Setter Property="Cursor"
+                    Value="Hand" />
+            <Setter Property="Margin"
+                    Value="0,0,0,24" />
+            <Setter Property="Background">
+                <Setter.Value>
+                    <LinearGradientBrush StartPoint="0,0"
+                                         EndPoint="1,1">
+                        <GradientStop Color="#7000ff"
+                                      Offset="0.0" />
+                        <GradientStop Color="#ff00aa"
+                                      Offset="1.0" />
+                    </LinearGradientBrush>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="RenderTransform">
+                <Setter.Value>
+                    <TranslateTransform Y="0" />
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect Color="#7000ff"
+                                      BlurRadius="20"
+                                      ShadowDepth="4"
+                                      Opacity="0.6"
+                                      Direction="315" />
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="-3" />
+                        </Setter.Value>
+                    </Setter>
+                    <Setter Property="Effect">
+                        <Setter.Value>
+                            <DropShadowEffect Color="#ff00aa"
+                                              BlurRadius="25"
+                                              ShadowDepth="0"
+                                              Opacity="0.9" />
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Style="{StaticResource HeroCardStyle}">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <StackPanel Grid.Row="0"
                         Orientation="Horizontal"
-                        Margin="0,0,0,20"
+                        Margin="0,0,0,24"
                         VerticalAlignment="Center">
                 <ui:SymbolIcon Symbol="Shield24"
-                               Foreground="#ffcc00"
-                               FontSize="20"
+                               Foreground="#ffaa00"
+                               FontSize="22"
                                Margin="0,0,10,0" />
                 <TextBlock Text="Ядро (Xray-core)"
-                           Foreground="White"
-                           FontSize="16"
-                           FontWeight="SemiBold" />
+                           FontSize="18"
+                           FontWeight="Bold">
+                    <TextBlock.Foreground>
+                        <LinearGradientBrush StartPoint="0,0"
+                                             EndPoint="1,1">
+                            <GradientStop Color="#00f2ff"
+                                          Offset="0.0" />
+                            <GradientStop Color="#ff00aa"
+                                          Offset="1.0" />
+                        </LinearGradientBrush>
+                    </TextBlock.Foreground>
+                </TextBlock>
             </StackPanel>
 
-            <StackPanel Grid.Row="1"
-                        Orientation="Horizontal"
-                        Margin="0,0,0,20">
-                <TextBlock Text="Статус:"
-                           Foreground="#7b8296"
-                           Margin="0,0,10,0"
-                           VerticalAlignment="Center" />
-                <Border Background="#282a36"
-                        CornerRadius="4"
-                        Padding="8,4">
-                    <TextBlock Text="{Binding XrayStatus}"
-                               Foreground="#50fa7b"
-                               FontWeight="Bold" />
-                </Border>
-                <TextBlock Text="{Binding XrayProcesses, StringFormat='PID: {0}'}"
-                           Foreground="#6272a4"
-                           FontSize="13"
-                           Margin="10,0,0,0"
-                           VerticalAlignment="Center"
-                           ToolTip="Количество запущенных процессов ядра" />
-
-                <ui:Button Command="{Binding RestartXrayCommand}"
-                           Margin="10,0,0,0"
-                           Padding="8,4"
-                           Background="#3e4152"
-                           BorderThickness="0"
-                           Cursor="Hand"
-                           ToolTip="Перезапустить Xray"
-                           HorizontalAlignment="Right">
-                    <ui:SymbolIcon Symbol="ArrowClockwise24"
-                                   Foreground="White"
-                                   FontSize="14" />
-                </ui:Button>
-
-                <ui:Button Command="{Binding RebootServerCommand}"
-                           Margin="5,0,0,0"
-                           Padding="8,4"
-                           Background="#ff5555"
-                           BorderThickness="0"
-                           Cursor="Hand"
-                           ToolTip="Жесткая перезагрузка Linux (Reboot)"
-                           HorizontalAlignment="Right">
-                    <ui:SymbolIcon Symbol="Power24"
-                                   Foreground="White"
-                                   FontSize="14" />
-                </ui:Button>
-            </StackPanel>
-
-            <Grid Grid.Row="2"
-                  Margin="0,0,0,20">
+            <Grid Grid.Row="1"
+                  Margin="0,0,0,24">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal">
+                    <Border Background="#1A00ff88"
+                            BorderBrush="#4D00ff88"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="14,6">
+                        <TextBlock Text="{Binding XrayStatus}"
+                                   Foreground="#00ff88"
+                                   FontWeight="Bold"
+                                   FontSize="13" />
+                    </Border>
+                    <TextBlock Text="{Binding XrayProcesses, StringFormat='PID: {0}'}"
+                               Foreground="#B3FFFFFF"
+                               FontSize="13"
+                               Margin="12,0,0,0"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right">
+                    <ui:Button Command="{Binding UpdateGeoDataCommand}"
+                               ToolTip="Обновить базы GeoSite"
+                               Style="{StaticResource ShieldBtnStyle}">
+                        <ui:SymbolIcon Symbol="ShieldTask24"
+                                       FontSize="16" />
+                    </ui:Button>
+                    <ui:Button Command="{Binding RestartXrayCommand}"
+                               ToolTip="Перезапустить Xray"
+                               Style="{StaticResource RestartBtnStyle}">
+                        <ui:SymbolIcon Symbol="ArrowClockwise24"
+                                       FontSize="16" />
+                    </ui:Button>
+                    <ui:Button Command="{Binding RebootServerCommand}"
+                               ToolTip="Reboot"
+                               Style="{StaticResource RebootBtnStyle}">
+                        <ui:SymbolIcon Symbol="Power24"
+                                       FontSize="16" />
+                    </ui:Button>
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="2"
+                  Margin="0,0,0,24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="100" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
@@ -91,117 +327,149 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0"
-                           Grid.Column="0"
-                           Text="Версия:"
-                           Foreground="#7b8296"
-                           Margin="0,0,10,8" />
-                <TextBlock Grid.Row="0"
-                           Grid.Column="1"
-                           Text="{Binding XrayVersion}"
-                           Foreground="White"
-                           FontWeight="SemiBold" />
+                <Border Grid.Row="0"
+                        Grid.ColumnSpan="2"
+                        BorderBrush="#0AFFFFFF"
+                        BorderThickness="0,0,0,1"
+                        Margin="0,0,0,8"
+                        Padding="0,0,0,8">
+                    <Grid>
+                        <TextBlock Text="Версия"
+                                   Foreground="#B3FFFFFF"
+                                   FontSize="14" />
+                        <TextBlock Text="{Binding XrayVersion}"
+                                   Foreground="#00f2ff"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Right" />
+                    </Grid>
+                </Border>
 
-                <TextBlock Grid.Row="1"
-                           Grid.Column="0"
-                           Text="ОЗУ (RAM):"
-                           Foreground="#7b8296"
-                           Margin="0,0,10,8" />
-                <TextBlock Grid.Row="1"
-                           Grid.Column="1"
-                           Text="{Binding XrayMemory}"
-                           Foreground="#8be9fd"
-                           FontWeight="SemiBold" />
+                <Border Grid.Row="1"
+                        Grid.ColumnSpan="2"
+                        BorderBrush="#0AFFFFFF"
+                        BorderThickness="0,0,0,1"
+                        Margin="0,0,0,8"
+                        Padding="0,0,0,8">
+                    <Grid>
+                        <TextBlock Text="ОЗУ (RAM)"
+                                   Foreground="#B3FFFFFF"
+                                   FontSize="14" />
+                        <TextBlock Text="{Binding XrayMemory}"
+                                   Foreground="#00f2ff"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Right" />
+                    </Grid>
+                </Border>
 
-                <TextBlock Grid.Row="2"
-                           Grid.Column="0"
-                           Text="Аптайм:"
-                           Foreground="#7b8296"
-                           Margin="0,0,10,8" />
-                <TextBlock Grid.Row="2"
-                           Grid.Column="1"
-                           Text="{Binding XrayUptime}"
-                           Foreground="White"
-                           FontWeight="SemiBold" />
+                <Border Grid.Row="2"
+                        Grid.ColumnSpan="2"
+                        BorderBrush="#0AFFFFFF"
+                        BorderThickness="0,0,0,1"
+                        Margin="0,0,0,8"
+                        Padding="0,0,0,8">
+                    <Grid>
+                        <TextBlock Text="Аптайм"
+                                   Foreground="#B3FFFFFF"
+                                   FontSize="14" />
+                        <TextBlock Text="{Binding XrayUptime}"
+                                   Foreground="#ffffff"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Right" />
+                    </Grid>
+                </Border>
 
-                <TextBlock Grid.Row="3"
-                           Grid.Column="0"
-                           Text="Конфиг:"
-                           Foreground="#7b8296"
-                           Margin="0,0,10,8" />
-                <TextBlock Grid.Row="3"
-                           Grid.Column="1"
-                           Text="{Binding XrayConfigStatus}"
-                           Foreground="#50fa7b"
-                           FontWeight="SemiBold" />
+                <Border Grid.Row="3"
+                        Grid.ColumnSpan="2"
+                        BorderBrush="#0AFFFFFF"
+                        BorderThickness="0,0,0,1"
+                        Margin="0,0,0,8"
+                        Padding="0,0,0,8">
+                    <Grid>
+                        <TextBlock Text="Конфиг"
+                                   Foreground="#B3FFFFFF"
+                                   FontSize="14" />
+                        <TextBlock Text="{Binding XrayConfigStatus}"
+                                   Foreground="#00ff88"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   HorizontalAlignment="Right" />
+                    </Grid>
+                </Border>
 
-                <TextBlock Grid.Row="4"
-                           Grid.Column="0"
-                           Text="Ошибка:"
-                           Foreground="#7b8296"
-                           Margin="0,0,10,0" />
-                <TextBlock Grid.Row="4"
-                           Grid.Column="1"
-                           Text="{Binding XrayLastError}"
-                           Foreground="#ff5555"
-                           FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis"
-                           ToolTip="{Binding XrayLastError}" />
+                <Grid Grid.Row="4"
+                      Grid.ColumnSpan="2">
+                    <TextBlock Text="Ошибка"
+                               Foreground="#B3FFFFFF"
+                               FontSize="14" />
+                    <TextBlock Text="{Binding XrayLastError}"
+                               Foreground="#ff4444"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Right"
+                               TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding XrayLastError}" />
+                </Grid>
             </Grid>
 
             <ui:Button Grid.Row="3"
                        Command="{Binding GenerateRealityConfigCommand}"
-                       Content="🚀 Создать VLESS-Reality"
-                       Background="#bd93f9"
-                       Foreground="#13151b"
-                       FontWeight="Bold"
-                       BorderThickness="0"
-                       HorizontalAlignment="Stretch"
-                       Cursor="Hand"
-                       Margin="0,0,0,5" />
+                       Style="{StaticResource VlessBtnStyle}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="🚀"
+                               FontSize="16"
+                               Margin="0,0,8,0" />
+                    <TextBlock Text="Создать VLESS-Reality"
+                               Foreground="White"
+                               FontSize="15"
+                               FontWeight="Bold" />
+                </StackPanel>
+            </ui:Button>
 
-            <Expander Grid.Row="4"
-                      Header="Логи ядра Xray"
-                      Foreground="#a0aabf"
-                      BorderThickness="0"
-                      Background="Transparent"
-                      Margin="0,10,0,0">
-                <Grid Margin="0,10,0,0">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+            <Grid Grid.Row="4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
 
-                    <ui:Button Grid.Row="0"
-                               Command="{Binding CopyXrayLogsCommand}"
+                <Grid Grid.Row="0"
+                      Margin="0,0,0,12">
+                    <TextBlock Text="📋 Журнал и Логи"
+                               Foreground="#B3FFFFFF"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                    <ui:Button Command="{Binding CopyXrayLogsCommand}"
                                Background="Transparent"
                                BorderThickness="0"
                                Padding="4"
                                Cursor="Hand"
                                ToolTip="Скопировать логи"
-                               HorizontalAlignment="Right"
-                               Margin="0,0,0,5">
+                               HorizontalAlignment="Right">
                         <ui:SymbolIcon Symbol="Copy24"
-                                       Foreground="#a0aabf"
-                                       FontSize="16" />
+                                       Foreground="#B3FFFFFF"
+                                       FontSize="18" />
                     </ui:Button>
-
-                    <Border Grid.Row="1"
-                            Background="#0a0b0f"
-                            CornerRadius="6"
-                            Padding="10">
-                        <ScrollViewer MaxHeight="250"
-                                      VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled">
-                            <TextBlock Text="{Binding XrayLogs}"
-                                       Foreground="#6272a4"
-                                       FontFamily="Consolas"
-                                       FontSize="12"
-                                       TextWrapping="Wrap" />
-                        </ScrollViewer>
-                    </Border>
                 </Grid>
-            </Expander>
+
+                <Border Grid.Row="1"
+                        Background="#4D000000"
+                        BorderBrush="#0AFFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="16"
+                        Padding="16">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <TextBlock Text="{Binding XrayLogs}"
+                                   Foreground="#00f2ff"
+                                   FontFamily="Consolas"
+                                   FontSize="12"
+                                   TextWrapping="Wrap" />
+                    </ScrollViewer>
+                </Border>
+            </Grid>
         </Grid>
     </Border>
 </UserControl>

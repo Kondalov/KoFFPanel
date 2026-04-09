@@ -10,448 +10,592 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/KoFFPanel.Presentation;component/Styles/CabinetWindowResources.xaml" />
             </ResourceDictionary.MergedDictionaries>
+
+            <Style x:Key="MetricCardStyle"
+                   TargetType="Border">
+                <Setter Property="Background"
+                        Value="#08FFFFFF" />
+                <Setter Property="BorderBrush"
+                        Value="#1AFFFFFF" />
+                <Setter Property="BorderThickness"
+                        Value="1" />
+                <Setter Property="CornerRadius"
+                        Value="20" />
+                <Setter Property="Margin"
+                        Value="12" />
+                <Setter Property="Padding"
+                        Value="24" />
+                <Setter Property="RenderTransformOrigin"
+                        Value="0.5,0.5" />
+                <Setter Property="RenderTransform">
+                    <Setter.Value>
+                        <TranslateTransform Y="0" />
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="Background"
+                                Value="#1AFFFFFF" />
+                        <Setter Property="BorderBrush"
+                                Value="#4DFFFFFF" />
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <TranslateTransform Y="-6" />
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#000000"
+                                                  BlurRadius="20"
+                                                  ShadowDepth="10"
+                                                  Opacity="0.8"
+                                                  Direction="315" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="TopActionBtnBase"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource {x:Type ui:Button}}">
+                <Setter Property="Background"
+                        Value="#08FFFFFF" />
+                <Setter Property="BorderBrush"
+                        Value="#1AFFFFFF" />
+                <Setter Property="BorderThickness"
+                        Value="1" />
+                <Setter Property="Width"
+                        Value="44" />
+                <Setter Property="Height"
+                        Value="44" />
+                <Setter Property="Padding"
+                        Value="0" />
+                <Setter Property="Margin"
+                        Value="0,0,12,0" />
+                <Setter Property="Cursor"
+                        Value="Hand" />
+                <Setter Property="RenderTransform">
+                    <Setter.Value>
+                        <TranslateTransform Y="0" />
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Effect">
+                    <Setter.Value>
+                        <DropShadowEffect Color="#1a1a1a"
+                                          BlurRadius="6"
+                                          ShadowDepth="3"
+                                          Opacity="0.8"
+                                          Direction="315" />
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="AddBtnStyle"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource TopActionBtnBase}">
+                <Setter Property="Foreground"
+                        Value="#00ff88" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="BorderBrush"
+                                Value="#00ff88" />
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <TranslateTransform Y="-3" />
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#00ff88"
+                                                  BlurRadius="12"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="EditBtnStyle"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource TopActionBtnBase}">
+                <Setter Property="Foreground"
+                        Value="#00f2ff" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="BorderBrush"
+                                Value="#00f2ff" />
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <TranslateTransform Y="-3" />
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#00f2ff"
+                                                  BlurRadius="12"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
+            <Style x:Key="DeleteBtnStyle"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource TopActionBtnBase}">
+                <Setter Property="Foreground"
+                        Value="#ff4444" />
+                <Setter Property="Margin"
+                        Value="0" />
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="BorderBrush"
+                                Value="#ff4444" />
+                        <Setter Property="RenderTransform">
+                            <Setter.Value>
+                                <TranslateTransform Y="-3" />
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#ff4444"
+                                                  BlurRadius="12"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled">
-        <Grid Margin="0,0,0,20">
+    <Grid Margin="0">
+        <StackPanel VerticalAlignment="Center"
+                    HorizontalAlignment="Center">
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                    <Setter Property="Visibility"
+                            Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedServer}"
+                                     Value="{x:Null}">
+                            <Setter Property="Visibility"
+                                    Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </StackPanel.Style>
+            <ui:SymbolIcon Symbol="Server24"
+                           Foreground="#404040"
+                           FontSize="80"
+                           Margin="0,0,0,20" />
+            <TextBlock Text="Сервер не выбран"
+                       Foreground="#B3FFFFFF"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       Margin="0,0,0,30" />
+            <ui:Button Command="{Binding AddServerCommand}"
+                       Content="Добавить первый сервер"
+                       Background="#00ff88"
+                       Foreground="#0a0a0a"
+                       BorderThickness="0"
+                       Padding="24,12"
+                       FontWeight="Bold"
+                       FontSize="16"
+                       Cursor="Hand">
+                <ui:Button.Effect>
+                    <DropShadowEffect Color="#00ff88"
+                                      BlurRadius="15"
+                                      ShadowDepth="0"
+                                      Opacity="0.6" />
+                </ui:Button.Effect>
+            </ui:Button>
+        </StackPanel>
 
-            <StackPanel VerticalAlignment="Center"
-                        HorizontalAlignment="Center"
-                        Margin="0,150,0,0">
-                <StackPanel.Style>
-                    <Style TargetType="StackPanel">
-                        <Setter Property="Visibility"
-                                Value="Collapsed" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding SelectedServer}"
-                                         Value="{x:Null}">
-                                <Setter Property="Visibility"
-                                        Value="Visible" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </StackPanel.Style>
-                <ui:SymbolIcon Symbol="Server24"
-                               Foreground="#3e4152"
-                               FontSize="64"
-                               Margin="0,0,0,15" />
-                <TextBlock Text="У вас пока нет активных серверов"
-                           Foreground="#7b8296"
-                           FontSize="18"
-                           Margin="0,0,0,25" />
-                <ui:Button Command="{Binding AddServerCommand}"
-                           Content="+ Добавить первый сервер"
-                           Background="#ffcc00"
-                           Foreground="#13151b"
-                           BorderThickness="0"
-                           Padding="20,10"
-                           FontWeight="Bold"
-                           FontSize="16"
-                           Cursor="Hand" />
-            </StackPanel>
+        <Grid>
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility"
+                            Value="Visible" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding SelectedServer}"
+                                     Value="{x:Null}">
+                            <Setter Property="Visibility"
+                                    Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
 
-            <Grid>
-                <Grid.Style>
-                    <Style TargetType="Grid">
-                        <Setter Property="Visibility"
-                                Value="Visible" />
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding SelectedServer}"
-                                         Value="{x:Null}">
-                                <Setter Property="Visibility"
-                                        Value="Collapsed" />
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Grid.Style>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+            <Border Grid.Row="0"
+                    Background="#08FFFFFF"
+                    BorderBrush="#1AFFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="20"
+                    Padding="28,20"
+                    Margin="0,0,0,24">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Row="0"
-                            Margin="0,0,0,25">
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Grid ToolTip="Нажмите, чтобы сменить сервер">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding SelectedServer.Name}"
+                                           FontSize="32"
+                                           FontWeight="ExtraBold"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Foreground>
+                                        <LinearGradientBrush StartPoint="0,0"
+                                                             EndPoint="1,1">
+                                            <GradientStop Color="#ffffff"
+                                                          Offset="0.0" />
+                                            <GradientStop Color="#00f2ff"
+                                                          Offset="1.0" />
+                                        </LinearGradientBrush>
+                                    </TextBlock.Foreground>
+                                </TextBlock>
+                                <TextBlock Text=" — "
+                                           FontSize="28"
+                                           Foreground="#666666"
+                                           VerticalAlignment="Center"
+                                           Margin="5,0" />
+                            </StackPanel>
+                            <ComboBox ItemsSource="{Binding Servers}"
+                                      SelectedItem="{Binding SelectedServer}"
+                                      DisplayMemberPath="Name"
+                                      Opacity="0.02"
+                                      Cursor="Hand"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch" />
+                        </Grid>
 
-                    <StackPanel Orientation="Horizontal"
-                                Margin="0,0,0,10">
-                        <ComboBox ItemsSource="{Binding Servers}"
-                                  SelectedItem="{Binding SelectedServer}"
-                                  DisplayMemberPath="Name"
-                                  Width="300"
-                                  Background="Transparent"
-                                  Foreground="White"
-                                  BorderBrush="Transparent"
-                                  BorderThickness="0"
-                                  FontSize="32"
-                                  FontWeight="Bold"
-                                  Padding="0,5"
-                                  Margin="0,0,15,0"
-                                  Cursor="Hand" />
+                        <TextBlock FontSize="20"
+                                   FontWeight="SemiBold"
+                                   Foreground="#ffaa00"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text"
+                                            Value="***.***.***.***" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ElementName=EyeToggle, Path=IsChecked}"
+                                                     Value="True">
+                                            <Setter Property="Text"
+                                                    Value="{Binding SelectedServer.IpAddress}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
 
+                        <ToggleButton x:Name="EyeToggle"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      Margin="10,0,20,0"
+                                      Cursor="Hand"
+                                      IsChecked="True"
+                                      ToolTip="Скрыть/Показать IP">
+                            <ui:SymbolIcon Symbol="Eye24"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="20" />
+                        </ToggleButton>
+
+                        <Border Background="#1A00ff88"
+                                BorderBrush="#4D00ff88"
+                                BorderThickness="1"
+                                CornerRadius="20"
+                                Padding="16,8"
+                                ToolTip="{Binding ServerStatus}">
+                            <StackPanel Orientation="Horizontal"
+                                        VerticalAlignment="Center">
+                                <Ellipse Width="8"
+                                         Height="8"
+                                         Fill="#00ff88"
+                                         Margin="0,0,8,0">
+                                    <Ellipse.Effect>
+                                        <DropShadowEffect Color="#00ff88"
+                                                          BlurRadius="6"
+                                                          ShadowDepth="0" />
+                                    </Ellipse.Effect>
+                                </Ellipse>
+                                <TextBlock Text="Active"
+                                           Foreground="#00ff88"
+                                           FontWeight="Bold"
+                                           FontSize="14" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
                         <ui:Button Command="{Binding AddServerCommand}"
-                                   ToolTip="Добавить новый сервер"
-                                   Background="#282a36"
-                                   Foreground="#50fa7b"
-                                   BorderThickness="0"
-                                   Padding="10"
-                                   Margin="0,0,5,0"
-                                   Cursor="Hand">
+                                   ToolTip="Добавить сервер"
+                                   Style="{StaticResource AddBtnStyle}">
                             <ui:SymbolIcon Symbol="Add24"
-                                           FontSize="18" />
+                                           FontSize="20" />
                         </ui:Button>
                         <ui:Button Command="{Binding EditServerCommand}"
                                    CommandParameter="{Binding SelectedServer}"
-                                   ToolTip="Настроить текущий сервер"
-                                   Background="#282a36"
-                                   Foreground="#a0aabf"
-                                   BorderThickness="0"
-                                   Padding="10"
-                                   Margin="0,0,5,0"
-                                   Cursor="Hand">
+                                   ToolTip="Настроить"
+                                   Style="{StaticResource EditBtnStyle}">
                             <ui:SymbolIcon Symbol="Edit24"
-                                           FontSize="18" />
+                                           FontSize="20" />
                         </ui:Button>
                         <ui:Button Command="{Binding DeleteServerCommand}"
                                    CommandParameter="{Binding SelectedServer}"
-                                   ToolTip="Удалить текущий сервер"
-                                   Background="#282a36"
-                                   Foreground="#ff5555"
-                                   BorderThickness="0"
-                                   Padding="10"
-                                   Cursor="Hand">
+                                   ToolTip="Удалить"
+                                   Style="{StaticResource DeleteBtnStyle}">
                             <ui:SymbolIcon Symbol="Delete24"
-                                           FontSize="18" />
+                                           FontSize="20" />
                         </ui:Button>
                     </StackPanel>
-
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding SelectedServer.IpAddress}"
-                                   Foreground="#ffcc00"
-                                   FontSize="16"
-                                   FontWeight="SemiBold" />
-                        <TextBlock Text=" • "
-                                   Foreground="#7b8296"
-                                   FontSize="16"
-                                   Margin="5,0" />
-                        <TextBlock Text="{Binding ServerStatus}"
-                                   Foreground="#a0aabf"
-                                   FontSize="16" />
-                        <TextBlock Text="{Binding PingMs, StringFormat=' (Ping: {0} ms)'}"
-                                   Foreground="#50fa7b"
-                                   FontSize="16"
-                                   Margin="5,0,0,0" />
-                        <TextBlock Text=" • "
-                                   Foreground="#3e4152"
-                                   FontSize="16"
-                                   Margin="10,0" />
-                        <ui:SymbolIcon Symbol="Clock24"
-                                       Foreground="#8be9fd"
-                                       FontSize="16"
-                                       Margin="0,0,5,0"
-                                       VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding Uptime, StringFormat='Up: {0}'}"
-                                   Foreground="#8be9fd"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Text=" • "
-                                   Foreground="#3e4152"
-                                   FontSize="16"
-                                   Margin="10,0" />
-                        <ui:SymbolIcon Symbol="DataArea24"
-                                       Foreground="#ff79c6"
-                                       FontSize="16"
-                                       Margin="0,0,5,0"
-                                       VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding LoadAverage, StringFormat='Load: {0}'}"
-                                   Foreground="#ff79c6"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </StackPanel>
-
-                <Grid Grid.Row="1"
-                      Margin="0,0,0,15">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="15" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="15" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <Border Grid.Column="0"
-                            Background="#1c1e27"
-                            CornerRadius="12"
-                            Padding="20">
-                        <Grid>
-                            <StackPanel HorizontalAlignment="Left"
-                                        VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal"
-                                            Margin="0,0,0,10">
-                                    <ui:SymbolIcon Symbol="Laptop24"
-                                                   Foreground="#ff5555"
-                                                   FontSize="16"
-                                                   Margin="0,0,8,0" />
-                                    <TextBlock Text="ЦП (CPU)"
-                                               Foreground="#a0aabf"
-                                               FontWeight="SemiBold"
-                                               FontSize="15" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding CpuUsage, StringFormat='{}{0}%'}"
-                                           Foreground="White"
-                                           FontSize="28"
-                                           FontWeight="Bold" />
-                            </StackPanel>
-                            <ui:ProgressRing Progress="{Binding CpuUsage}"
-                                             Foreground="#ff5555"
-                                             Background="#282a36"
-                                             IsIndeterminate="False"
-                                             Width="70"
-                                             Height="70"
-                                             HorizontalAlignment="Right"
-                                             VerticalAlignment="Center" />
-                        </Grid>
-                    </Border>
-
-                    <Border Grid.Column="2"
-                            Background="#1c1e27"
-                            CornerRadius="12"
-                            Padding="20">
-                        <Grid>
-                            <StackPanel HorizontalAlignment="Left"
-                                        VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal"
-                                            Margin="0,0,0,10">
-                                    <ui:SymbolIcon Symbol="Server24"
-                                                   Foreground="#ffb86c"
-                                                   FontSize="16"
-                                                   Margin="0,0,8,0" />
-                                    <TextBlock Text="ОЗУ (RAM)"
-                                               Foreground="#a0aabf"
-                                               FontWeight="SemiBold"
-                                               FontSize="15" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding RamUsage, StringFormat='{}{0}%'}"
-                                           Foreground="White"
-                                           FontSize="28"
-                                           FontWeight="Bold" />
-                            </StackPanel>
-                            <ui:ProgressRing Progress="{Binding RamUsage}"
-                                             Foreground="#ffb86c"
-                                             Background="#282a36"
-                                             IsIndeterminate="False"
-                                             Width="70"
-                                             Height="70"
-                                             HorizontalAlignment="Right"
-                                             VerticalAlignment="Center" />
-                        </Grid>
-                    </Border>
-
-                    <Border Grid.Column="4"
-                            Background="#1c1e27"
-                            CornerRadius="12"
-                            Padding="20">
-                        <Grid>
-                            <StackPanel HorizontalAlignment="Left"
-                                        VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal"
-                                            Margin="0,0,0,10">
-                                    <ui:SymbolIcon Symbol="Folder24"
-                                                   Foreground="#f1fa8c"
-                                                   FontSize="16"
-                                                   Margin="0,0,8,0" />
-                                    <TextBlock Text="Диск (SSD)"
-                                               Foreground="#a0aabf"
-                                               FontWeight="SemiBold"
-                                               FontSize="15" />
-                                </StackPanel>
-                                <TextBlock Text="{Binding SsdUsage, StringFormat='{}{0}%'}"
-                                           Foreground="White"
-                                           FontSize="28"
-                                           FontWeight="Bold" />
-                            </StackPanel>
-                            <ui:ProgressRing Progress="{Binding SsdUsage}"
-                                             Foreground="#f1fa8c"
-                                             Background="#282a36"
-                                             IsIndeterminate="False"
-                                             Width="70"
-                                             Height="70"
-                                             HorizontalAlignment="Right"
-                                             VerticalAlignment="Center" />
-                        </Grid>
-                    </Border>
                 </Grid>
+            </Border>
 
-                <Grid Grid.Row="2"
-                      Margin="0,0,0,25">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="15" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="15" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="360" />
+                    <ColumnDefinition Width="24" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0"
-                            Background="#1c1e27"
-                            CornerRadius="12"
-                            Padding="20">
-                        <StackPanel>
+                <components:XrayCoreCardControl Grid.Column="0" />
+
+                <UniformGrid Grid.Column="2"
+                             Columns="3"
+                             Rows="3">
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,10">
-                                <ui:SymbolIcon Symbol="DataBarHorizontal24"
-                                               Foreground="#bd93f9"
-                                               FontSize="16"
-                                               Margin="0,0,8,0" />
-                                <TextBlock Text="Трафик сервера"
-                                           Foreground="#a0aabf"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="Laptop24"
+                                               Foreground="#00f2ff"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="ЦП (CPU)"
+                                           Foreground="#B3FFFFFF"
                                            FontWeight="SemiBold"
-                                           FontSize="15" />
+                                           FontSize="16" />
                             </StackPanel>
-                            <TextBlock Text="{Binding TotalTraffic}"
-                                       Foreground="White"
-                                       FontSize="24"
+                            <TextBlock Text="{Binding CpuUsage, StringFormat='{}{0}%'}"
+                                       Foreground="#ffffff"
+                                       FontSize="42"
                                        FontWeight="Bold" />
-                            <TextBlock Text="{Binding NetworkSpeed}"
-                                       Foreground="#50fa7b"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="Server24"
+                                               Foreground="#ffaa00"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="ОЗУ (RAM)"
+                                           Foreground="#B3FFFFFF"
+                                           FontWeight="SemiBold"
+                                           FontSize="16" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding RamUsage, StringFormat='{}{0}%'}"
+                                       Foreground="#ffffff"
+                                       FontSize="42"
+                                       FontWeight="Bold" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="Folder24"
+                                               Foreground="#ff00aa"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="Диск (SSD)"
+                                           Foreground="#B3FFFFFF"
+                                           FontWeight="SemiBold"
+                                           FontSize="16" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding SsdUsage, StringFormat='{}{0}%'}"
+                                       Foreground="#ffffff"
+                                       FontSize="42"
+                                       FontWeight="Bold" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="Globe24"
+                                               Foreground="#00ff88"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="Ping"
+                                           Foreground="#B3FFFFFF"
+                                           FontWeight="SemiBold"
+                                           FontSize="16" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal"
+                                        VerticalAlignment="Bottom">
+                                <TextBlock Text="{Binding PingMs}"
+                                           Foreground="#ffffff"
+                                           FontSize="42"
+                                           FontWeight="Bold" />
+                                <TextBlock Text=" ms"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="22"
+                                           FontWeight="SemiBold"
+                                           Margin="4,0,0,8"
+                                           VerticalAlignment="Bottom" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="DataArea24"
+                                               Foreground="#7000ff"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="Load Average"
+                                           Foreground="#B3FFFFFF"
+                                           FontWeight="SemiBold"
+                                           FontSize="16" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding LoadAverage}"
+                                       Foreground="#ffffff"
+                                       FontSize="42"
+                                       FontWeight="Bold" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="Clock24"
+                                               Foreground="#00f2ff"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="Аптайм"
+                                           Foreground="#B3FFFFFF"
+                                           FontWeight="SemiBold"
+                                           FontSize="16" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding Uptime}"
+                                       Foreground="#ffffff"
+                                       FontSize="30"
+                                       FontWeight="Bold"
                                        Margin="0,4,0,0" />
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Column="2"
-                            Background="#1c1e27"
-                            CornerRadius="12"
-                            Padding="20">
-                        <StackPanel>
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,10">
-                                <ui:SymbolIcon Symbol="Link24"
-                                               Foreground="#ff79c6"
-                                               FontSize="16"
-                                               Margin="0,0,8,0" />
-                                <TextBlock Text="Сетевые сокеты"
-                                           Foreground="#a0aabf"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="DataBarHorizontal24"
+                                               Foreground="#7000ff"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="Трафик"
+                                           Foreground="#B3FFFFFF"
                                            FontWeight="SemiBold"
-                                           FontSize="15" />
+                                           FontSize="16" />
                             </StackPanel>
-                            <TextBlock Text="{Binding TcpConnections}"
-                                       Foreground="White"
-                                       FontSize="24"
+                            <TextBlock Text="{Binding TotalTraffic}"
+                                       Foreground="#ffffff"
+                                       FontSize="42"
                                        FontWeight="Bold" />
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,4,0,0">
-                                <TextBlock Text="{Binding SynRecv, StringFormat='Аномалии: {0}'}"
-                                           Foreground="#ffb86c"
-                                           FontSize="13"
-                                           Margin="0,0,10,0" />
-                                <TextBlock Text="{Binding ErrorRate, StringFormat='Ошибки: {0}'}"
-                                           Foreground="#ff5555"
-                                           FontSize="13" />
-                            </StackPanel>
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Column="4"
-                            Background="#1c1e27"
-                            CornerRadius="12"
-                            Padding="20">
-                        <StackPanel>
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,10">
-                                <ui:SymbolIcon Symbol="People24"
-                                               Foreground="#8be9fd"
-                                               FontSize="16"
-                                               Margin="0,0,8,0" />
-                                <TextBlock Text="Клиенты онлайн"
-                                           Foreground="#a0aabf"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="Link24"
+                                               Foreground="#ffaa00"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="Сокеты"
+                                           Foreground="#B3FFFFFF"
                                            FontWeight="SemiBold"
-                                           FontSize="15" />
+                                           FontSize="16" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding TcpConnections}"
+                                       Foreground="#ffffff"
+                                       FontSize="42"
+                                       FontWeight="Bold" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,16">
+                                <ui:SymbolIcon Symbol="People24"
+                                               Foreground="#00ff88"
+                                               FontSize="20"
+                                               Margin="0,0,10,0" />
+                                <TextBlock Text="Клиенты"
+                                           Foreground="#B3FFFFFF"
+                                           FontWeight="SemiBold"
+                                           FontSize="16" />
                             </StackPanel>
                             <StackPanel Orientation="Horizontal"
                                         VerticalAlignment="Bottom">
                                 <TextBlock Text="{Binding ActiveUsers}"
-                                           Foreground="White"
-                                           FontSize="24"
+                                           Foreground="#ffffff"
+                                           FontSize="42"
                                            FontWeight="Bold" />
                                 <TextBlock Text="{Binding TotalUsers, StringFormat=' / {0}'}"
-                                           Foreground="#6272a4"
-                                           FontSize="16"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="22"
                                            VerticalAlignment="Bottom"
-                                           Margin="0,0,0,3"
+                                           Margin="4,0,0,8"
                                            FontWeight="SemiBold" />
                             </StackPanel>
                         </StackPanel>
                     </Border>
-                </Grid>
 
-                <Grid Grid.Row="3">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="340" />
-                        <ColumnDefinition Width="20" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <components:XrayCoreCardControl Grid.Column="0" />
-
-                    <Border Grid.Column="2"
-                            Background="#1c1e27"
-                            CornerRadius="12"
-                            Padding="20"
-                            VerticalAlignment="Top">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <Border Grid.Column="0"
-                                    Background="#282a36"
-                                    CornerRadius="8"
-                                    Padding="12"
-                                    Margin="0,0,15,0">
-                                <ui:SymbolIcon Symbol="ShieldTask24"
-                                               Foreground="#ff5555"
-                                               FontSize="24" />
-                            </Border>
-
-                            <StackPanel Grid.Column="1"
-                                        VerticalAlignment="Center"
-                                        Margin="0,0,15,0">
-                                <TextBlock Text="Защита (DMCA Anti-Torrent)"
-                                           Foreground="White"
-                                           FontWeight="Bold"
-                                           FontSize="16"
-                                           Margin="0,0,0,3" />
-                                <TextBlock Text="Базы GeoSite: Loyalsoldier"
-                                           Foreground="#a0aabf"
-                                           FontSize="13" />
-                            </StackPanel>
-
-                            <ui:Button Grid.Column="2"
-                                       Command="{Binding UpdateGeoDataCommand}"
-                                       ToolTip="Нажмите для загрузки свежих списков торрент-трекеров (Loyalsoldier) и применения правил блокировки P2P-трафика."
-                                       Content="Обновить базы"
-                                       Background="#ff5555"
-                                       Foreground="White"
-                                       BorderThickness="0"
-                                       Padding="15,8"
-                                       FontWeight="Bold"
-                                       Cursor="Hand"
-                                       VerticalAlignment="Center" />
-                        </Grid>
-                    </Border>
-                </Grid>
+                </UniformGrid>
             </Grid>
         </Grid>
-    </ScrollViewer>
+    </Grid>
 </UserControl>
