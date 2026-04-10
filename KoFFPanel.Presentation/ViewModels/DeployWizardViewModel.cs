@@ -1,8 +1,9 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using KoFFPanel.Application.Interfaces;
-using KoFFPanel.Domain.Entities;
 using KoFFPanel.Application.Strategies;
+using KoFFPanel.Domain.Entities;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Threading.Tasks;
@@ -103,36 +104,53 @@ public partial class DeployWizardViewModel : ObservableObject
 
         if (strategy != null)
         {
-            // ПЕРЕДАЕМ СТАРЫЕ КЛЮЧИ (ЕСЛИ ЕСТЬ), ЧТОБЫ НЕ СБРАСЫВАТЬ ПОЛЬЗОВАТЕЛЕЙ
             var (success, msg, resultObj) = await strategy.ExecuteFullInstall(
-                _sshService,
-                TargetServer.IpAddress,
-                443,
-                "www.microsoft.com",
-                TargetServer.Uuid ?? "",
-                TargetServer.PrivateKey ?? "",
-                TargetServer.PublicKey ?? "",
-                TargetServer.ShortId ?? ""
+                _sshService, TargetServer.IpAddress, 443, "www.microsoft.com",
+                TargetServer.Uuid ?? "", TargetServer.PrivateKey ?? "",
+                TargetServer.PublicKey ?? "", TargetServer.ShortId ?? ""
             );
 
             StatusMessage = msg;
 
-            if (success && resultObj is XrayInstallResult result)
+            // ВАЖНО: Универсальная проверка для обоих ядер
+            if (success && resultObj != null)
             {
-                TargetServer.PrivateKey = result.PrivateKey;
-                TargetServer.PublicKey = result.PublicKey;
-                TargetServer.Uuid = result.Uuid;
-                TargetServer.ShortId = result.ShortId;
-                TargetServer.VpnPort = result.Port;
-                TargetServer.Sni = result.Sni;
+                string newUuid = "", newPriv = "", newPub = "", newSid = "", newSni = "";
+                int newPort = 443;
+
+                if (resultObj is XrayInstallResult xrayRes)
+                {
+                    newUuid = xrayRes.Uuid; newPriv = xrayRes.PrivateKey; newPub = xrayRes.PublicKey;
+                    newSid = xrayRes.ShortId; newPort = xrayRes.Port; newSni = xrayRes.Sni;
+                }
+                else if (resultObj is SingBoxInstallResult sbRes)
+                {
+                    newUuid = sbRes.Uuid; newPriv = sbRes.PrivateKey; newPub = sbRes.PublicKey;
+                    newSid = sbRes.ShortId; newPort = sbRes.Port; newSni = sbRes.Sni;
+                }
+
+                TargetServer.PrivateKey = newPriv; TargetServer.PublicKey = newPub;
+                TargetServer.Uuid = newUuid; TargetServer.ShortId = newSid;
+                TargetServer.VpnPort = newPort; TargetServer.Sni = newSni;
 
                 _profileRepository.UpdateProfile(TargetServer);
 
+                // Даем команду дашборду: "Эй, ядро сменилось, обнови карточки и ссылки!"
+                CommunityToolkit.Mvvm.Messaging.WeakReferenceMessenger.Default.Send(new Messages.CoreDeployedMessage(TargetServer));
+
                 StatusMessage = "✅ Готово! Сохранение конфигурации...";
 
-                var successWin = new Views.InstallationSuccessWindow();
-                successWin.DataContext = result;
-                successWin.ShowDialog();
+                // Открываем окно с ключами
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    var successWin = new Views.InstallationSuccessWindow();
+                    successWin.DataContext = resultObj; // Биндим наши ссылки из шаблона
+
+                    if (System.Windows.Application.Current.MainWindow != null)
+                        successWin.Owner = System.Windows.Application.Current.MainWindow;
+
+                    successWin.ShowDialog();
+                });
 
                 _sshService.Disconnect();
                 CloseAction?.Invoke();

@@ -160,6 +160,16 @@ public class XrayUserManagerService : IXrayUserManagerService
 
     public async Task<(bool IsSuccess, string Message)> RemoveUserAsync(ISshService ssh, string serverIp, string email)
     {
+        // Guard Clauses
+        if (!ssh.IsConnected) return (false, "Нет SSH подключения.");
+        if (string.IsNullOrWhiteSpace(email)) return (false, "Email не может быть пустым.");
+
+        // ЗАЩИТА ОТ ДУРАКА: Запрещаем удалять главного админа напрямую
+        if (email.Equals("Админ", StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "Критическая защита: Нельзя удалить системный профиль 'Админ'.");
+        }
+
         try
         {
             bool removedFromXray = false;
@@ -176,7 +186,9 @@ public class XrayUserManagerService : IXrayUserManagerService
                     int indexToRemove = -1;
                     for (int i = 0; i < clientsArray.Count; i++)
                     {
-                        if (clientsArray[i]?["email"]?.ToString().Trim() == email)
+                        // ИСПРАВЛЕНИЕ БАГА: Безопасное чтение email с дефолтом "Unknown", чтобы избежать NullReferenceException
+                        string currentEmail = clientsArray[i]?["email"]?.ToString().Trim() ?? "Unknown";
+                        if (currentEmail == email)
                         {
                             indexToRemove = i;
                             break;
@@ -185,37 +197,57 @@ public class XrayUserManagerService : IXrayUserManagerService
 
                     if (indexToRemove != -1)
                     {
-                        if (clientsArray.Count <= 1) return (false, "Нельзя удалить единственного (административного) пользователя сервера!");
+                        if (clientsArray.Count <= 1)
+                            return (false, "Защита Xray: Нельзя удалить последнего пользователя на сервере!");
 
                         clientsArray.RemoveAt(indexToRemove);
                         string updatedJson = root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+                        // Применяем и тестируем
                         var result = await ApplyAndTestConfigAsync(ssh, updatedJson);
 
-                        if (!result.IsSuccess) return result;
+                        if (!result.IsSuccess)
+                            return result; // Если тест конфига упал, ВЫХОДИМ, не трогая БД
+
                         removedFromXray = true;
                     }
                     else
                     {
-                        xrayMessage = " (в ядре его уже не было)";
+                        xrayMessage = " (В конфиге Xray этот пользователь не найден)";
                     }
                 }
             }
 
+            // ИСПРАВЛЕНИЕ БД: Умное каскадное удаление (чтобы не было мусора и осиротевших записей)
             var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
             if (dbUser != null)
             {
                 _dbContext.Clients.Remove(dbUser);
+
+                // Зачищаем логи трафика этого юзера
+                var trafficLogs = await _dbContext.TrafficLogs.Where(t => t.ServerIp == serverIp && t.Email == email).ToListAsync();
+                if (trafficLogs.Any()) _dbContext.TrafficLogs.RemoveRange(trafficLogs);
+
+                // Зачищаем логи подключений
+                var connLogs = await _dbContext.ConnectionLogs.Where(c => c.ServerIp == serverIp && c.Email == email).ToListAsync();
+                if (connLogs.Any()) _dbContext.ConnectionLogs.RemoveRange(connLogs);
+
+                // Зачищаем логи нарушений (фрода)
+                var violationLogs = await _dbContext.ViolationLogs.Where(v => v.ServerIp == serverIp && v.Email == email).ToListAsync();
+                if (violationLogs.Any()) _dbContext.ViolationLogs.RemoveRange(violationLogs);
+
                 await _dbContext.SaveChangesAsync();
             }
 
             if (removedFromXray)
-                return (true, $"Пользователь {email} полностью удален.");
+                return (true, $"Пользователь {email} полностью удален из системы.");
             else
-                return (true, $"Пользователь {email} очищен из БД{xrayMessage}.");
+                return (true, $"Пользователь {email} вычищен из базы данных{xrayMessage}.");
         }
         catch (Exception ex)
         {
-            return (false, $"Ошибка удаления: {ex.Message}");
+            _logger.Log("USER-MGR", $"Критическая ошибка при удалении: {ex.Message}");
+            return (false, $"Системная ошибка при удалении: {ex.Message}");
         }
     }
 
@@ -378,6 +410,38 @@ public class XrayUserManagerService : IXrayUserManagerService
         catch (Exception ex)
         {
             _logger.Log("USER-MGR", $"Ошибка сохранения БД: {ex.Message}");
+        }
+    }
+
+    public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> dbUsers)
+    {
+        try
+        {
+            string rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json");
+            var root = JsonNode.Parse(rawJson);
+            var clientsArray = root?["inbounds"]?[0]?["settings"]?["clients"]?.AsArray();
+
+            if (clientsArray == null) return false;
+
+            clientsArray.Clear(); // Очищаем дефолтных
+            foreach (var user in dbUsers.Where(u => u.IsActive))
+            {
+                clientsArray.Add(new JsonObject { ["id"] = user.Uuid, ["flow"] = "xtls-rprx-vision", ["email"] = user.Email });
+            }
+
+            string updatedJson = root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            string base64Json = Convert.ToBase64String(Encoding.UTF8.GetBytes(updatedJson.Replace("\r", "")));
+
+            await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /usr/local/etc/xray/config.json");
+            await ssh.ExecuteCommandAsync("systemctl restart xray");
+
+            _logger.Log("USER-SYNC", $"Успешно синхронизировано {dbUsers.Count(u => u.IsActive)} юзеров с ядром Xray.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("USER-SYNC", $"Ошибка синхронизации Xray: {ex.Message}");
+            return false;
         }
     }
 }

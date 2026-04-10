@@ -34,8 +34,8 @@ public class XrayCoreService : IXrayCoreService
     public async Task<bool> RestartCoreAsync(ISshService ssh)
     {
         if (!ssh.IsConnected) return false;
-        await ssh.ExecuteCommandAsync("systemctl restart xray");
-        _logger.Log("XRAY-CORE", "Отправлена команда на рестарт Xray.");
+        await ssh.ExecuteCommandAsync("systemctl restart xray sing-box 2>/dev/null || true");
+        _logger.Log("CORE-SERVICE", "Отправлена команда на рестарт активного ядра (Xray/Sing-box).");
         return true;
     }
 

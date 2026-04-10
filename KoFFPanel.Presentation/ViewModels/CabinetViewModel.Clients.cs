@@ -3,40 +3,25 @@ using System.Threading.Tasks;
 using KoFFPanel.Domain.Entities;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
+using System;
+using KoFFPanel.Application.Interfaces;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
 public partial class CabinetViewModel
 {
-    [RelayCommand]
-    private async Task GenerateRealityConfigAsync()
-    {
-        if (_currentMonitoringSsh == null || !_currentMonitoringSsh.IsConnected || SelectedServer == null) return;
-        ServerStatus = "Сброс ядра и генерация VLESS...";
-        var result = await _xrayConfigurator.InitializeRealityAsync(_currentMonitoringSsh, SelectedServer.IpAddress);
+    private bool IsSingBoxActive() => CoreTitleLabel != null && CoreTitleLabel.Contains("Sing-box", StringComparison.OrdinalIgnoreCase);
 
-        if (result.IsSuccess)
-        {
-            await _subscriptionService.InitializeServerAsync(_currentMonitoringSsh);
-            await LoadUsersAsync();
-            var admin = Clients.FirstOrDefault(c => c.Email == "Админ");
-            if (admin != null)
-            {
-                admin.VlessLink = result.VlessLink;
-                await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, admin.Uuid, result.VlessLink);
-                System.Windows.Application.Current.Dispatcher.Invoke(() => {
-                    System.Windows.Clipboard.SetText(_subscriptionService.GetSubscriptionUrl(SelectedServer.IpAddress, admin.Uuid));
-                });
-            }
-            ServerStatus = "Онлайн (Сброс завершен, подписка в буфере!)";
-        }
-        else ServerStatus = $"ОШИБКА: {result.Message}";
-    }
+    [RelayCommand]
+    private async Task GenerateRealityConfigAsync() { await Task.CompletedTask; }
 
     [RelayCommand]
     private async Task AddClientAsync()
     {
-        if (_currentMonitoringSsh == null || !_currentMonitoringSsh.IsConnected || SelectedServer == null) return;
+        var ssh = _currentMonitoringSsh;
+        var server = SelectedServer;
+        if (ssh == null || !ssh.IsConnected || server == null) return;
+
         var window = _serviceProvider.GetRequiredService<Views.AddClientWindow>();
         if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
         window.ShowDialog();
@@ -45,12 +30,16 @@ public partial class CabinetViewModel
         {
             ServerStatus = $"Создание клиента {vm.ClientName}...";
             long limit = (long)vm.TrafficLimitGb * 1024 * 1024 * 1024;
-            var (success, msg, vlessLink) = await _userManager.AddUserAsync(_currentMonitoringSsh, SelectedServer.IpAddress, vm.ClientName, limit, vm.ExpiryDate);
+            string ip = server.IpAddress ?? "";
+
+            var (success, msg, vlessLink) = IsSingBoxActive()
+                ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate)
+                : await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate);
 
             if (success)
             {
                 string uuid = vlessLink.Substring(8, 36);
-                await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, uuid, vlessLink);
+                await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, vlessLink);
                 ServerStatus = $"Онлайн (Клиент {vm.ClientName} добавлен!)";
                 await LoadUsersAsync();
             }
@@ -59,97 +48,164 @@ public partial class CabinetViewModel
     }
 
     [RelayCommand]
-    private void OpenAnalytics(VpnClient? client)
+    private async Task DeleteClientAsync(VpnClient? client)
     {
-        if (client == null || SelectedServer == null) return;
-        var window = _serviceProvider.GetRequiredService<Views.ClientAnalyticsWindow>();
+        var ssh = _currentMonitoringSsh;
+        var server = SelectedServer;
+        if (client == null || ssh == null || !ssh.IsConnected || server == null) return;
+
+        string email = client.Email ?? "Unknown";
+        string uuid = client.Uuid ?? "";
+        string ip = server.IpAddress ?? "";
+        ServerStatus = $"Удаление {email}...";
+
+        var (success, msg) = IsSingBoxActive()
+            ? await _singBoxUserManager.RemoveUserAsync(ssh, ip, email)
+            : await _userManager.RemoveUserAsync(ssh, ip, email);
+
+        if (success)
+        {
+            System.Windows.Application.Current.Dispatcher.Invoke(() => Clients.Remove(client));
+            await _subscriptionService.DeleteUserSubscriptionAsync(ssh, uuid);
+            ServerStatus = $"Онлайн (Клиент {email} успешно удален)";
+        }
+        else ServerStatus = $"Ошибка удаления: {msg}";
+    }
+
+    [RelayCommand]
+    private async Task ToggleClientAccessAsync(VpnClient? client)
+    {
+        var ssh = _currentMonitoringSsh;
+        var server = SelectedServer;
+        if (client == null || ssh == null || !ssh.IsConnected || server == null) return;
+
+        bool newState = !client.IsActive;
+        string email = client.Email ?? "Unknown";
+        string ip = server.IpAddress ?? "";
+        ServerStatus = $"{(newState ? "Разблокировка" : "Блокировка")} {email}...";
+
+        var (success, msg) = IsSingBoxActive()
+            ? await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, newState)
+            : await _userManager.ToggleUserStatusAsync(ssh, ip, email, newState);
+
+        if (success)
+        {
+            client.IsActive = newState;
+            if (newState && (client.Note?.StartsWith("ФРОД:") == true || client.Note == "Превышен лимит" || client.Note == "Истек срок")) client.Note = "";
+            ServerStatus = $"Онлайн ({email} {(newState ? "разблокирован" : "заблокирован")})";
+        }
+        else ServerStatus = $"ОШИБКА: {msg}";
+    }
+
+    [RelayCommand]
+    private void CopyClientLink(VpnClient? client)
+    {
+        var server = SelectedServer;
+        if (client == null || server == null) return;
+
+        string sni = server.Sni ?? "www.microsoft.com";
+        string pubKey = server.PublicKey ?? "";
+        string shortId = server.ShortId ?? "";
+        string email = client.Email ?? "Unknown";
+        string uuid = client.Uuid ?? "";
+        string ip = server.IpAddress ?? "";
+        int port = server.VpnPort > 0 ? server.VpnPort : 443;
+
+        string clientJson = "";
+
+        if (IsSingBoxActive())
+        {
+            clientJson = KoFFPanel.Application.Templates.SingBoxRealityConfigTemplate.GenerateClientConfig(ip, port, uuid, sni, pubKey, shortId);
+        }
+        else
+        {
+            clientJson = $$"""
+            {
+              "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                  "fingerprint": "chrome",
+                  "serverName": "{{sni}}",
+                  "publicKey": "{{pubKey}}",
+                  "shortId": "{{shortId}}",
+                  "spiderX": "/"
+                }
+              }
+            }
+            """;
+        }
+
+        var window = _serviceProvider.GetRequiredService<Views.ClientConfigWindow>();
         if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
 
-        if (window.DataContext is ClientAnalyticsViewModel vm)
+        if (window.DataContext is ClientConfigViewModel vm)
         {
-            vm.Initialize(SelectedServer.IpAddress, client.Email);
+            string httpLink = _subscriptionService.GetSubscriptionUrl(ip, uuid) ?? "";
+            vm.Initialize(email, client.VlessLink ?? "", clientJson, httpLink);
         }
+
         window.ShowDialog();
     }
 
     [RelayCommand]
     private async Task EditClientAsync(VpnClient? client)
     {
-        if (client == null || _currentMonitoringSsh == null || !_currentMonitoringSsh.IsConnected || SelectedServer == null) return;
+        var ssh = _currentMonitoringSsh;
+        var server = SelectedServer;
+        if (client == null || ssh == null || !ssh.IsConnected || server == null) return;
+
         var window = _serviceProvider.GetRequiredService<Views.AddClientWindow>();
         if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
-        if (window.DataContext is AddClientViewModel vm) vm.LoadForEdit(client.Email, client.TrafficLimit, client.ExpiryDate, client.Note);
+
+        string email = client.Email ?? "Unknown";
+        string ip = server.IpAddress ?? "";
+
+        if (window.DataContext is AddClientViewModel vm) vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "");
         window.ShowDialog();
 
         if (window.DataContext is AddClientViewModel resultVm && resultVm.IsSuccess)
         {
-            ServerStatus = $"Обновление лимитов {client.Email}...";
             long newLimit = (long)resultVm.TrafficLimitGb * 1024 * 1024 * 1024;
-            if (await _userManager.UpdateUserLimitsAsync(SelectedServer.IpAddress, client.Email, newLimit, resultVm.ExpiryDate))
-            {
-                client.TrafficLimit = newLimit; client.ExpiryDate = resultVm.ExpiryDate; client.Note = resultVm.Note;
-                ServerStatus = $"Онлайн (Лимиты обновлены)";
-            }
-            else ServerStatus = "ОШИБКА: Не удалось обновить лимиты";
-        }
-    }
 
-    [RelayCommand]
-    private async Task DeleteClientAsync(VpnClient? client)
-    {
-        if (client == null || _currentMonitoringSsh == null || !_currentMonitoringSsh.IsConnected || SelectedServer == null) return;
-        ServerStatus = $"Удаление {client.Email}...";
-        var (success, msg) = await _userManager.RemoveUserAsync(_currentMonitoringSsh, SelectedServer.IpAddress, client.Email);
-        System.Windows.Application.Current.Dispatcher.Invoke(() => Clients.Remove(client));
-        if (success)
-        {
-            await _subscriptionService.DeleteUserSubscriptionAsync(_currentMonitoringSsh, client.Uuid);
-            ServerStatus = $"Онлайн (Клиент удален)";
-        }
-        else ServerStatus = $"Ошибка: {msg}";
-    }
+            bool success = IsSingBoxActive()
+                ? await _singBoxUserManager.UpdateUserLimitsAsync(ip, email, newLimit, resultVm.ExpiryDate)
+                : await _userManager.UpdateUserLimitsAsync(ip, email, newLimit, resultVm.ExpiryDate);
 
-    [RelayCommand]
-    private void CopyClientLink(VpnClient? client)
-    {
-        if (client != null && SelectedServer != null)
-        {
-            System.Windows.Clipboard.SetText(_subscriptionService.GetSubscriptionUrl(SelectedServer.IpAddress, client.Uuid));
-            ServerStatus = "HTTP-Подписка скопирована в буфер!";
+            if (success) { client.TrafficLimit = newLimit; client.ExpiryDate = resultVm.ExpiryDate; client.Note = resultVm.Note; }
         }
     }
 
     [RelayCommand]
     private async Task ResetClientTrafficAsync(VpnClient? client)
     {
-        if (client == null || _currentMonitoringSsh == null || !_currentMonitoringSsh.IsConnected || SelectedServer == null) return;
-        ServerStatus = $"Сброс трафика {client.Email}...";
-        if (await _userManager.ResetTrafficAsync(_currentMonitoringSsh, client.Email))
-        {
-            client.TrafficUsed = 0; _previousTrafficStats[client.Email] = 0;
-            await _userManager.SaveTrafficToDbAsync(SelectedServer.IpAddress, new[] { client });
-            ServerStatus = "Онлайн (Трафик обнулен)";
-        }
-        else ServerStatus = "ОШИБКА: Сбой сброса";
+        var ssh = _currentMonitoringSsh;
+        var server = SelectedServer;
+        if (client == null || ssh == null || !ssh.IsConnected || server == null) return;
+
+        string email = client.Email ?? "";
+        string ip = server.IpAddress ?? "";
+
+        if (IsSingBoxActive()) await _singBoxUserManager.ResetTrafficAsync(ssh, email);
+        else await _userManager.ResetTrafficAsync(ssh, email);
+
+        client.TrafficUsed = 0; _previousTrafficStats[email] = 0;
+        await _userManager.SaveTrafficToDbAsync(ip, new[] { client });
     }
 
     [RelayCommand]
-    private async Task ToggleClientAccessAsync(VpnClient? client)
+    private void OpenAnalytics(VpnClient? client)
     {
-        if (client == null || _currentMonitoringSsh == null || !_currentMonitoringSsh.IsConnected || SelectedServer == null) return;
-        bool newState = !client.IsActive; ServerStatus = $"{(newState ? "Разблокировка" : "Блокировка")} {client.Email}...";
-        var (success, msg) = await _userManager.ToggleUserStatusAsync(_currentMonitoringSsh, SelectedServer.IpAddress, client.Email, newState);
-        if (success)
-        {
-            client.IsActive = newState;
-            if (newState && (client.Note?.StartsWith("ФРОД:") == true || client.Note == "Превышен лимит" || client.Note == "Истек срок")) client.Note = "";
-            if (newState && _dailyIps.ContainsKey(client.Email)) _dailyIps[client.Email].Clear();
-            ServerStatus = $"Онлайн ({client.Email} {(newState ? "разблокирован" : "заблокирован")})";
-        }
-        else ServerStatus = $"ОШИБКА: {msg}";
+        var server = SelectedServer;
+        if (client == null || server == null) return;
+
+        var window = _serviceProvider.GetRequiredService<Views.ClientAnalyticsWindow>();
+        if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
+        if (window.DataContext is ClientAnalyticsViewModel vm) vm.Initialize(server.IpAddress ?? "", client.Email ?? "");
+        window.ShowDialog();
     }
 
-    [RelayCommand] private void CopyXrayLogs() { if (!string.IsNullOrEmpty(XrayLogs)) { System.Windows.Clipboard.SetText(XrayLogs); ServerStatus = "Логи скопированы!"; } }
-    [RelayCommand] private async Task RestartXrayAsync() { if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected) await _xrayService.RestartCoreAsync(_currentMonitoringSsh); }
-    [RelayCommand] private async Task RebootServerAsync() { if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected) await _xrayService.RebootServerAsync(_currentMonitoringSsh); }
+    [RelayCommand] private void CopyXrayLogs() { if (!string.IsNullOrEmpty(XrayLogs)) System.Windows.Clipboard.SetText(XrayLogs); }
+    [RelayCommand] private async Task RestartXrayAsync() { var ssh = _currentMonitoringSsh; if (ssh != null && ssh.IsConnected) await _xrayService.RestartCoreAsync(ssh); }
+    [RelayCommand] private async Task RebootServerAsync() { var ssh = _currentMonitoringSsh; if (ssh != null && ssh.IsConnected) await _xrayService.RebootServerAsync(ssh); }
 }

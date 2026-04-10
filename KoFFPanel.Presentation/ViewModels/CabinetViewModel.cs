@@ -13,10 +13,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 using System.Windows.Media;
+using CommunityToolkit.Mvvm.Messaging;
+using KoFFPanel.Presentation.Messages;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
-public partial class CabinetViewModel : ObservableObject
+public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeployedMessage>
 {
     private readonly IServerMonitorService _monitorService;
     private readonly IProfileRepository _profileRepository;
@@ -27,6 +29,10 @@ public partial class CabinetViewModel : ObservableObject
     private readonly IDatabaseBackupService _backupService;
     private readonly ISubscriptionService _subscriptionService;
     private readonly IClientAnalyticsService _analyticsService;
+    private readonly ISingBoxUserManagerService _singBoxUserManager;
+
+    // ДОБАВЛЕНО 1: Объявляем переменную для логгера
+    private readonly IAppLogger _logger;
 
     private readonly Dictionary<string, long> _previousTrafficStats = new();
     private readonly Dictionary<string, HashSet<string>> _dailyIps = new();
@@ -76,14 +82,20 @@ public partial class CabinetViewModel : ObservableObject
 
     [ObservableProperty] private ObservableCollection<VpnClient> _clients = new();
 
+    // ДОБАВЛЕНО 2: Добавляем IAppLogger logger в параметры конструктора
     public CabinetViewModel(
         IServerMonitorService monitorService, IProfileRepository profileRepository, IServiceProvider serviceProvider,
         IXrayCoreService xrayService, IXrayConfiguratorService xrayConfigurator, IXrayUserManagerService userManager,
-        IDatabaseBackupService backupService, ISubscriptionService subscriptionService, IClientAnalyticsService analyticsService)
+        IDatabaseBackupService backupService, ISubscriptionService subscriptionService, IClientAnalyticsService analyticsService,
+        ISingBoxUserManagerService singBoxUserManager, IAppLogger logger)
     {
         _monitorService = monitorService; _profileRepository = profileRepository; _serviceProvider = serviceProvider;
-        _xrayService = xrayService; _xrayConfigurator = xrayConfigurator; _userManager = userManager;
+        _xrayService = xrayService; _xrayConfigurator = xrayConfigurator; _userManager = userManager; _singBoxUserManager = singBoxUserManager;
         _backupService = backupService; _subscriptionService = subscriptionService;
+
+        // ДОБАВЛЕНО 3: Сохраняем переданный логгер в нашу переменную
+        _logger = logger;
+
         _sshServiceFactory = () => _serviceProvider.GetRequiredService<ISshService>();
 
         _ = _backupService.CreateBackupAsync();
@@ -91,8 +103,68 @@ public partial class CabinetViewModel : ObservableObject
 
         LoadAvatarRegistry();
         Clients.CollectionChanged += Clients_CollectionChanged;
+        WeakReferenceMessenger.Default.Register(this);
 
         LoadData();
+        _singBoxUserManager = singBoxUserManager;
+    }
+
+    // ========================================================================
+    // РЕАЛИЗАЦИЯ ИНТЕРФЕЙСА IRecipient<CoreDeployedMessage>
+    // ========================================================================
+    public async void Receive(CoreDeployedMessage message)
+    {
+        if (SelectedServer == null || message.Server == null || message.Server.Id != SelectedServer.Id)
+            return;
+
+        var ssh = _currentMonitoringSsh;
+        if (ssh == null || !ssh.IsConnected) return;
+
+        SelectedServer.PublicKey = message.Server.PublicKey ?? "";
+        SelectedServer.PrivateKey = message.Server.PrivateKey ?? "";
+        SelectedServer.ShortId = message.Server.ShortId ?? "";
+        SelectedServer.Sni = message.Server.Sni ?? "www.microsoft.com";
+        SelectedServer.VpnPort = message.Server.VpnPort;
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = "Синхронизация БД с ядром...");
+
+        // Определяем, какое ядро сейчас работает
+        string activeCoreCmd = "systemctl is-active --quiet sing-box && echo 'Sing-box' || echo 'Xray-core'";
+        string activeCoreName = (await ssh.ExecuteCommandAsync(activeCoreCmd)).Trim();
+        bool isSingBox = activeCoreName.Equals("Sing-box", StringComparison.OrdinalIgnoreCase);
+
+        string ip = SelectedServer.IpAddress ?? "";
+        string pubKey = SelectedServer.PublicKey ?? "";
+        string sni = SelectedServer.Sni ?? "www.microsoft.com";
+        string shortId = SelectedServer.ShortId ?? "";
+
+        // 1. Физическая синхронизация юзеров с JSON конфигом ядра
+        bool syncSuccess = isSingBox
+            ? await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients)
+            : await _userManager.SyncUsersToCoreAsync(ssh, Clients);
+
+        // 2. Обновление ссылок в UI и локальной БД
+        foreach (var client in Clients)
+        {
+            string uuid = client.Uuid ?? "";
+            // Ссылка формируется по универсальному VLESS Reality стандарту Hiddify 4.1.1+
+            string newVless = $"vless://{uuid}@{ip}:{SelectedServer.VpnPort}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel-{client.Email}";
+
+            client.VlessLink = newVless;
+
+            if (syncSuccess)
+            {
+                // Записываем новую ссылку в базу данных, чтобы она не пропала после рестарта панели
+                await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, newVless);
+            }
+        }
+
+        // Обновляем статус в главном потоке
+        System.Windows.Application.Current.Dispatcher.Invoke(() => {
+            ServerStatus = syncSuccess
+                ? $"Онлайн (Все {Clients.Count} клиентов синхронизированы с {activeCoreName})"
+                : "Ошибка синхронизации БД с ядром.";
+        });
     }
 
     private void LoadAvatarRegistry()

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,7 +18,10 @@ public interface ISshService
     Task<IEnumerable<(string Name, bool IsDir)>> ListDirectoryAsync(string path);
     Task DownloadFileAsync(string remotePath, Stream localStream);
     void UploadFile(Stream localStream, string remotePath);
-    Task<string> ExecuteCommandAsync(string commandText);
+
+    // ИСПРАВЛЕНИЕ: Добавлены гибкие таймауты и токен отмены
+    Task<string> ExecuteCommandAsync(string commandText, TimeSpan? timeout = null, CancellationToken cancellationToken = default);
+
     string GetWorkingDirectory();
     Renci.SshNet.ShellStream CreateShellStream(string terminalName, uint columns, uint rows, uint width, uint height, int bufferSize);
 }

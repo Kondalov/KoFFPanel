@@ -247,7 +247,7 @@
                                Foreground="#ffaa00"
                                FontSize="22"
                                Margin="0,0,10,0" />
-                <TextBlock Text="Ядро (Xray-core)"
+                <TextBlock Text="{Binding CoreTitleLabel, FallbackValue='Ядро (Ожидание)'}"
                            FontSize="18"
                            FontWeight="Bold">
                     <TextBlock.Foreground>
@@ -299,7 +299,7 @@
                                        FontSize="16" />
                     </ui:Button>
                     <ui:Button Command="{Binding RestartXrayCommand}"
-                               ToolTip="Перезапустить Xray"
+                               ToolTip="Перезапустить активное ядро"
                                Style="{StaticResource RestartBtnStyle}">
                         <ui:SymbolIcon Symbol="ArrowClockwise24"
                                        FontSize="16" />

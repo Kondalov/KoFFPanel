@@ -31,6 +31,10 @@ public static class DependencyInjection
         services.AddTransient<Views.TerminalWindow>();
         services.AddTransient<IDatabaseBackupService, DatabaseBackupService>();
         services.AddTransient<ISubscriptionService, SubscriptionService>();
+        services.AddTransient<ClientConfigViewModel>();
+        services.AddTransient<ClientConfigWindow>();
+        services.AddTransient<ISingBoxConfiguratorService, SingBoxConfiguratorService>();
+        services.AddTransient<ISingBoxUserManagerService, SingBoxUserManagerService>();
 
         // РЕГИСТРАЦИЯ АНАЛИТИКИ
         services.AddSingleton<IClientAnalyticsService, ClientAnalyticsService>();

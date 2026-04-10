@@ -17,7 +17,6 @@ public class SshService : ISshService, IDisposable
     private ShellStream? _shellStream;
     private readonly IAppLogger _logger;
 
-    // Внедрение зависимости (Dependency Injection)
     public SshService(IAppLogger logger)
     {
         _logger = logger;
@@ -67,11 +66,9 @@ public class SshService : ISshService, IDisposable
 
     public void Disconnect()
     {
-        // 1. Закрываем и обнуляем потоки
         _shellStream?.Dispose();
         _shellStream = null;
 
-        // 2. Закрываем и обнуляем SFTP
         if (_sftpClient != null)
         {
             try { if (_sftpClient.IsConnected) _sftpClient.Disconnect(); } catch { }
@@ -79,23 +76,20 @@ public class SshService : ISshService, IDisposable
             _sftpClient = null;
         }
 
-        // 3. Закрываем и обнуляем SSH-клиент (ГЛАВНЫЙ ФИКС)
         if (_sshClient != null)
         {
             try
             {
-                // Проверяем статус в блоке try-catch на случай, если объект уже начал удаляться сборщиком мусора
                 if (_sshClient.IsConnected)
                 {
                     _sshClient.Disconnect();
                 }
             }
-            catch (ObjectDisposedException) { /* Игнорируем: объект уже мертв */ }
+            catch (ObjectDisposedException) { /* Игнорируем */ }
 
             _sshClient.Dispose();
-            _sshClient = null; // УБИВАЕМ ССЫЛКУ! Теперь второй вызов Disconnect() сюда даже не зайдет.
+            _sshClient = null;
         }
-
     }
 
     public async Task WriteToShellAsync(string command)
@@ -168,18 +162,27 @@ public class SshService : ISshService, IDisposable
         _sftpClient.UploadFile(localStream, remotePath);
     }
 
-    public async Task<string> ExecuteCommandAsync(string commandText)
+    // ИСПРАВЛЕНИЕ: Точное совпадение сигнатуры с ISshService
+    public async Task<string> ExecuteCommandAsync(string commandText, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         if (_sshClient == null || !_sshClient.IsConnected) return string.Empty;
 
-        _logger.Log("SSH-CMD-TRACE", $"[СТАРТ] Запрос команды: {commandText}");
+        TimeSpan actualTimeout = timeout ?? TimeSpan.FromSeconds(15);
+
+        _logger.Log("SSH-CMD-TRACE", $"[СТАРТ] Запрос команды: {commandText.Substring(0, Math.Min(commandText.Length, 50))}... (Таймаут: {actualTimeout.TotalSeconds}с)");
         long startTick = Environment.TickCount64;
 
         try
         {
             var tcs = new TaskCompletionSource<string>();
             var cmd = _sshClient.CreateCommand(commandText);
-            cmd.CommandTimeout = TimeSpan.FromSeconds(15);
+            cmd.CommandTimeout = actualTimeout;
+
+            using var ctr = cancellationToken.Register(() =>
+            {
+                try { cmd.CancelAsync(); } catch { }
+                tcs.TrySetCanceled();
+            });
 
             cmd.BeginExecute(ar =>
             {
@@ -193,15 +196,18 @@ public class SshService : ISshService, IDisposable
             }, null);
 
             var executeTask = tcs.Task;
-            if (await Task.WhenAny(executeTask, Task.Delay(15000)) == executeTask)
+            var delayTask = Task.Delay(actualTimeout, cancellationToken);
+
+            if (await Task.WhenAny(executeTask, delayTask) == executeTask)
             {
                 long duration = Environment.TickCount64 - startTick;
-                _logger.Log("SSH-CMD-TRACE", $"[УСПЕХ] Команда ({commandText}) выполнена за {duration} мс");
+                _logger.Log("SSH-CMD-TRACE", $"[УСПЕХ] Команда выполнена за {duration} мс");
                 return await executeTask;
             }
             else
             {
-                _logger.Log("SSH-TIMEOUT", $"[ТАЙМАУТ] Команда ({commandText}) зависла дольше 15 секунд!");
+                _logger.Log("SSH-TIMEOUT", $"[ТАЙМАУТ] Команда зависла дольше {actualTimeout.TotalSeconds} секунд!");
+                try { cmd.CancelAsync(); } catch { }
                 return string.Empty;
             }
         }

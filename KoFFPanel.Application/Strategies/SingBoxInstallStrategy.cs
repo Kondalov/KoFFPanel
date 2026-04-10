@@ -1,7 +1,25 @@
 ﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Templates;
+using System;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace KoFFPanel.Application.Strategies;
+
+public class SingBoxInstallResult
+{
+    public string Uuid { get; set; } = "";
+    public string PrivateKey { get; set; } = "";
+    public string PublicKey { get; set; } = "";
+    public string ShortId { get; set; } = "";
+    public string IpAddress { get; set; } = "";
+    public int Port { get; set; }
+    public string Sni { get; set; } = "";
+
+    public string HttpLink => $"http://{IpAddress}:8080/{Uuid}";
+    public string VlessLink => $"vless://{Uuid}@{IpAddress}:{Port}?type=tcp&security=reality&pbk={PublicKey}&fp=chrome&sni={Sni}&sid={ShortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{IpAddress}";
+    public string ClientJson => SingBoxRealityConfigTemplate.GenerateClientConfig(IpAddress, Port, Uuid, Sni, PublicKey, ShortId);
+}
 
 public class SingBoxInstallStrategy : ICoreInstallStrategy
 {
@@ -15,6 +33,143 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
         string existingPubKey = "",
         string existingShortId = "")
     {
-        return (false, "Стратегия установки Sing-box находится в разработке.", null);
+        try
+        {
+            string prepareScript = $$"""
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -q && apt-get install -y curl jq lsof openssl tar gzip >> /var/log/singbox_install.log 2>&1
+            
+            echo "1. Остановка конфликтующих служб..."
+            systemctl stop sing-box xray v2ray 2>/dev/null || true
+            systemctl disable sing-box xray 2>/dev/null || true
+            
+            echo "2. Освобождение порта {{vpnPort}}..."
+            PIDS=$(lsof -t -i:{{vpnPort}} || true)
+            if [ -n "$PIDS" ]; then kill -9 $PIDS 2>/dev/null || true; fi
+            
+            echo "3. Полная зачистка старых бинарников..."
+            rm -rf /usr/local/bin/sing-box /etc/sing-box /etc/systemd/system/sing-box.service
+            mkdir -p /etc/sing-box /var/log/sing-box
+            
+            echo "4. Определение архитектуры..."
+            ARCH=$(uname -m)
+            case "$ARCH" in
+              x86_64) DL_ARCH="amd64" ;;
+              aarch64) DL_ARCH="arm64" ;;
+              *) echo "ERROR_ARCH"; exit 0 ;;
+            esac
+            
+            TAG=$(curl -sL --connect-timeout 5 https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name 2>/dev/null)
+            if [ -z "$TAG" ] || [ "$TAG" == "null" ]; then TAG="v1.13.6"; fi
+            
+            URL="https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${TAG#v}-linux-${DL_ARCH}.tar.gz"
+            
+            echo "5. Скачивание ядра Sing-box ($TAG)..."
+            curl -sL --connect-timeout 10 --max-time 120 -o /tmp/sb.tar.gz "$URL"
+            
+            if [ ! -s /tmp/sb.tar.gz ] || ! gzip -t /tmp/sb.tar.gz 2>/dev/null; then
+                echo "ERROR_DOWNLOAD: $URL"
+                exit 0
+            fi
+            
+            echo "6. Распаковка архива..."
+            tar -xzf /tmp/sb.tar.gz -C /tmp/
+            mv /tmp/sing-box-*/sing-box /usr/local/bin/
+            chmod +x /usr/local/bin/sing-box
+            rm -rf /tmp/sb.tar.gz /tmp/sing-box-*
+            
+            echo "SUCCESS_PREPARE"
+            """;
+
+            string safeScriptBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(prepareScript.Replace("\r", "")));
+            var prepResult = await ssh.ExecuteCommandAsync($"echo '{safeScriptBase64}' | base64 -d | bash", TimeSpan.FromMinutes(3));
+
+            if (prepResult.Contains("ERROR_ARCH")) return (false, "Ошибка: Архитектура сервера не поддерживается Sing-box.", null);
+            if (prepResult.Contains("ERROR_DOWNLOAD")) return (false, $"Ошибка скачивания архива ядра.\nЛог: {prepResult.Trim()}", null);
+            if (!prepResult.Contains("SUCCESS_PREPARE")) return (false, $"Сбой инсталлятора (сервер оборвал скрипт).\nВывод: {prepResult.Trim()}", null);
+
+            string finalUuid = existingUuid, finalPriv = existingPrivKey, finalPub = existingPubKey, finalSid = existingShortId;
+
+            if (string.IsNullOrWhiteSpace(finalPriv) || string.IsNullOrWhiteSpace(finalPub))
+            {
+                string keyGenScript = """
+                KEYS=$(/usr/local/bin/sing-box generate reality-keypair)
+                PRIV=$(echo "$KEYS" | grep PrivateKey | awk '{print $2}' | tr -d '\r\n')
+                PUB=$(echo "$KEYS" | grep PublicKey | awk '{print $2}' | tr -d '\r\n')
+                SID=$(openssl rand -hex 4)
+                UUID=$(/usr/local/bin/sing-box generate uuid)
+                echo "$UUID|$PRIV|$PUB|$SID"
+                """;
+
+                string keyGenBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(keyGenScript.Replace("\r", "")));
+                string keysOutput = await ssh.ExecuteCommandAsync($"echo '{keyGenBase64}' | base64 -d | bash", TimeSpan.FromSeconds(30));
+                string[] parts = keysOutput.Trim().Split('|');
+
+                if (parts.Length != 4 || string.IsNullOrWhiteSpace(parts[2]))
+                    return (false, $"Сбой при генерации ключей Sing-box.\nВывод: {keysOutput}", null);
+
+                finalUuid = parts[0]; finalPriv = parts[1]; finalPub = parts[2]; finalSid = parts[3];
+            }
+
+            var result = new SingBoxInstallResult
+            {
+                Uuid = finalUuid,
+                PrivateKey = finalPriv,
+                PublicKey = finalPub,
+                ShortId = finalSid,
+                IpAddress = ipAddress,
+                Port = vpnPort,
+                Sni = sni
+            };
+
+            string configJson = SingBoxRealityConfigTemplate.GenerateServerConfig(vpnPort, result.Uuid, sni, result.PrivateKey, result.ShortId);
+            string base64Json = Convert.ToBase64String(Encoding.UTF8.GetBytes(configJson.Replace("\r", "")));
+            await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /etc/sing-box/config.json");
+
+            // ИСПРАВЛЕНИЕ: Добавлено 2>&1, чтобы ловить фатальные ошибки, уходящие в STDERR
+            var checkConfig = await ssh.ExecuteCommandAsync("/usr/local/bin/sing-box check -c /etc/sing-box/config.json 2>&1");
+            if (checkConfig.Contains("FATAL", StringComparison.OrdinalIgnoreCase) || checkConfig.Contains("error", StringComparison.OrdinalIgnoreCase))
+            {
+                return (false, $"ОШИБКА: Ядро Sing-box отклонило конфиг!\nЛог: {checkConfig.Trim()}", null);
+            }
+
+            string serviceScript = """
+            cat << 'EOF' > /etc/systemd/system/sing-box.service
+            [Unit]
+            Description=sing-box service
+            Documentation=https://sing-box.sagernet.org
+            After=network.target nss-lookup.target network-online.target
+            
+            [Service]
+            CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+            AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+            ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
+            ExecReload=/bin/kill -HUP $MAINPID
+            Restart=on-failure
+            RestartSec=10
+            LimitNOFILE=infinity
+            
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+            systemctl daemon-reload && systemctl enable sing-box && systemctl restart sing-box
+            """;
+
+            string serviceBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceScript.Replace("\r", "")));
+            await ssh.ExecuteCommandAsync($"echo '{serviceBase64}' | base64 -d | bash", TimeSpan.FromSeconds(30));
+
+            string status = await ssh.ExecuteCommandAsync("systemctl is-active sing-box");
+            if (status.Trim() != "active")
+            {
+                string logs = await ssh.ExecuteCommandAsync("journalctl -u sing-box -n 20 --no-pager");
+                return (false, $"Служба Sing-box не запустилась.\nЛоги: {logs.Trim()}", null);
+            }
+
+            return (true, "🚀 Современное ядро Sing-box успешно настроено!", result);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Системный сбой инсталлятора Sing-box: {ex.Message}", null);
+        }
     }
 }

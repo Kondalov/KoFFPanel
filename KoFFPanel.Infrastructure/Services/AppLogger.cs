@@ -11,7 +11,6 @@ public class AppLogger : IAppLogger
 
     public AppLogger()
     {
-        // Умная логика: создаем папку Logs рядом с exe-файлом
         _logDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs");
         if (!Directory.Exists(_logDir))
         {
@@ -19,6 +18,9 @@ public class AppLogger : IAppLogger
         }
 
         _logFile = Path.Combine(_logDir, "app_analytics.log");
+
+        // Отбивка начала сессии
+        Log("SESSION", "\n====================== СТАРТ СЕССИИ ======================");
     }
 
     public void Log(string module, string message)
@@ -28,6 +30,6 @@ public class AppLogger : IAppLogger
             string logEntry = $"[{DateTime.Now:HH:mm:ss.fff}] [{module}] {message}\n";
             File.AppendAllText(_logFile, logEntry);
         }
-        catch { /* Игнорируем ошибки логирования, чтобы не уронить приложение */ }
+        catch { /* Игнорируем ошибки ввода-вывода, чтобы не крашнуть панель */ }
     }
 }

@@ -15,4 +15,5 @@ public interface IXrayUserManagerService
     Task<(bool IsSuccess, string Message)> ToggleUserStatusAsync(ISshService ssh, string serverIp, string email, bool enableAccess);
     Task<bool> UpdateUserLimitsAsync(string serverIp, string email, long newLimitBytes, DateTime? newExpiryDate);
     Task SaveTrafficToDbAsync(string serverIp, IEnumerable<VpnClient> clients);
+    Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> dbUsers);
 }
