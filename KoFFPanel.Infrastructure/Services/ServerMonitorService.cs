@@ -85,8 +85,6 @@ public class ServerMonitorService : IServerMonitorService
         bool isSingBox = coreCheck.Trim() == "sing-box";
 
         string rawLogs = "";
-
-        // ОПТИМИЗАЦИЯ: Мы режем мусор прямо на сервере командой grep! Это исключает таймауты в 15 секунд.
         if (isSingBox)
         {
             rawLogs = await sshService.ExecuteCommandAsync("journalctl -u sing-box -n 2000 --no-pager | grep -E 'inbound connection from|inbound connection to'");
@@ -100,8 +98,8 @@ public class ServerMonitorService : IServerMonitorService
 
         var lines = rawLogs.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
         var userIps = new Dictionary<string, HashSet<string>>();
+        var userLastIp = new Dictionary<string, string>(); // БРОНЕБОЙНО: Сохраняем самый свежий IP
 
-        // БРОНЕБОЙНЫЙ ПАРСЕР НА ЧИСТОМ C#
         if (isSingBox)
         {
             var idToIp = new Dictionary<string, string>();
@@ -142,12 +140,13 @@ public class ServerMonitorService : IServerMonitorService
                                 {
                                     if (!userIps.ContainsKey(user)) userIps[user] = new HashSet<string>();
                                     userIps[user].Add(ip);
+                                    userLastIp[user] = ip; // Перезаписываем последним актуальным IP!
                                 }
                             }
                         }
                     }
                 }
-                catch { /* Игнорируем битые строки лога */ }
+                catch { }
             }
         }
         else
@@ -172,21 +171,22 @@ public class ServerMonitorService : IServerMonitorService
                         {
                             if (!userIps.ContainsKey(email)) userIps[email] = new HashSet<string>();
                             userIps[email].Add(ip);
+                            userLastIp[email] = ip; // Перезаписываем последним актуальным IP!
                         }
                     }
                 }
-                catch { /* Игнорируем битые строки лога */ }
+                catch { }
             }
         }
 
-        // ГЕОЛОКАЦИЯ
         string dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-Country.mmdb");
         MaxMind.GeoIP2.DatabaseReader? reader = null;
         if (System.IO.File.Exists(dbPath)) reader = new MaxMind.GeoIP2.DatabaseReader(dbPath);
 
         foreach (var kvp in userIps)
         {
-            string ip = kvp.Value.First();
+            string email = kvp.Key;
+            string ip = userLastIp[email]; // БЕРЕМ ПОСЛЕДНИЙ (НОВЫЙ) IP, А НЕ ПЕРВЫЙ!
             string country = "??";
             string flag = "🌍";
 
@@ -207,7 +207,7 @@ public class ServerMonitorService : IServerMonitorService
                 catch { }
             }
 
-            stats.Add(new UserOnlineInfo { Email = kvp.Key, LastIp = ip, ActiveSessions = kvp.Value.Count, Country = $"{flag} {country}" });
+            stats.Add(new UserOnlineInfo { Email = email, LastIp = ip, ActiveSessions = kvp.Value.Count, Country = $"{flag} {country}" });
         }
         reader?.Dispose();
 
