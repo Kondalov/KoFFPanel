@@ -10,7 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<VpnClient> Clients { get; set; }
     public DbSet<ClientTrafficLog> TrafficLogs { get; set; }
     public DbSet<ClientConnectionLog> ConnectionLogs { get; set; }
-    public DbSet<ClientViolationLog> ViolationLogs { get; set; } // НОВАЯ ТАБЛИЦА
+    public DbSet<ClientViolationLog> ViolationLogs { get; set; }
 
     public AppDbContext()
     {

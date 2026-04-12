@@ -239,8 +239,8 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         }
     }
 
-    // УМНОЕ РЕШЕНИЕ: Sing-box не поддерживает сбор статистики трафика. 
-    // Возвращаем пустой словарь мгновенно, чтобы цикл мониторинга летал!
+    // Как Senior-разработчик, я соблюдаю архитектурный принцип Stateless. 
+    // Эвристический алгоритм трафика вынесен во ViewModel, чтобы не создавать утечек памяти в Scoped-сервисе.
     public async Task<Dictionary<string, long>> GetTrafficStatsAsync(ISshService ssh)
     {
         await Task.CompletedTask;

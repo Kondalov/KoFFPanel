@@ -61,6 +61,20 @@ public static class SingBoxRealityConfigTemplate
               {
                 "protocol": "bittorrent",
                 "outbound": "block"
+              },
+              {
+                "domain_keyword": [
+                  "torrent",
+                  "tracker",
+                  "rutracker",
+                  "nnmclub",
+                  "kinozal",
+                  "rutor",
+                  "piratebay",
+                  "tapochek",
+                  "lostfilm"
+                ],
+                "outbound": "block"
               }
             ],
             "final": "direct",
