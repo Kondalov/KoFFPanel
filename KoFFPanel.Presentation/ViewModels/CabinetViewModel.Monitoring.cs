@@ -47,7 +47,25 @@ public partial class CabinetViewModel
                 var pingResult = await _monitorService.PingServerAsync(ip); PingMs = pingResult.Success ? pingResult.RoundtripTime : 0;
                 var res = await _monitorService.GetResourcesAsync(localSsh);
                 CpuUsage = res.Cpu; RamUsage = res.Ram; SsdUsage = res.Ssd; Uptime = res.Uptime; LoadAverage = res.LoadAvg;
-                NetworkSpeed = res.NetworkSpeed; XrayProcesses = res.XrayProcesses; TcpConnections = res.TcpConnections; SynRecv = res.SynRecv; ErrorRate = res.ErrorRate;
+                NetworkSpeed = res.NetworkSpeed; XrayProcesses = res.XrayProcesses; SynRecv = res.SynRecv; ErrorRate = res.ErrorRate;
+
+                // БРОНЕБОЙНЫЙ ФИКС СЕТЕВЫХ СЕССИЙ: Легковесный прямой запрос к ядру Linux в обход сервиса ресурсов
+                try
+                {
+                    string tcpCmd = await localSsh.ExecuteCommandAsync("ss -s | awk '/^TCP:/ {print $2}'");
+                    if (int.TryParse(tcpCmd.Trim(), out int tcpCount))
+                    {
+                        TcpConnections = tcpCount;
+                    }
+                    else
+                    {
+                        TcpConnections = res.TcpConnections; // Фолбэк на сервис, если команда не прошла
+                    }
+                }
+                catch
+                {
+                    TcpConnections = res.TcpConnections;
+                }
 
                 string activeCoreCmd = "systemctl is-active --quiet sing-box && echo 'Sing-box' || echo 'Xray-core'";
                 string activeCoreName = (await localSsh.ExecuteCommandAsync(activeCoreCmd)).Trim();
