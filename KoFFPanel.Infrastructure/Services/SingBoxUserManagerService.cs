@@ -34,7 +34,32 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                 .Select(c => c.Email.Trim())
                 .ToListAsync();
 
-            _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 1] Пользователи с тумблером P2P=ON: {blockedNames.Count} ({string.Join(", ", blockedNames)})");
+            // 1. БРОНЕБОЙНЫЙ ФИКС АНАЛИТИКИ (ВКЛЮЧЕНИЕ DEBUG)
+            // Без уровня "debug" ядро не пишет расшифрованные домены в журнал (только голые IP),
+            // из-за чего умный C#-парсер не может зафиксировать нарушение.
+            if (root["log"] is JsonObject logObj)
+            {
+                logObj["level"] = "debug";
+            }
+            else if (root.AsObject() != null)
+            {
+                root["log"] = new JsonObject { ["level"] = "debug" };
+            }
+
+            // 2. ЖЕСТКАЯ ОЧИСТКА INBOUNDS ОТ СТАРОГО СИНТАКСИСА
+            var inbounds = root?["inbounds"]?.AsArray();
+            if (inbounds != null)
+            {
+                foreach (var inbound in inbounds)
+                {
+                    if (inbound is JsonObject inboundObj)
+                    {
+                        inboundObj.Remove("sniff");
+                        inboundObj.Remove("sniffing");
+                        inboundObj.Remove("sniff_override_destination");
+                    }
+                }
+            }
 
             string rulesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rules");
             if (!Directory.Exists(rulesDir)) Directory.CreateDirectory(rulesDir);
@@ -55,51 +80,23 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                             .ToList();
             }
 
-            _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 2] Загружено доменов для блокировки: {domains.Count}");
-
             var rulesArray = root?["route"]?["rules"]?.AsArray();
             if (rulesArray != null)
             {
-                _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 3] Исходное количество правил в route: {rulesArray.Count}");
-
-                // ЗАЩИТА ОТ ДУРАКА 1: Жесткая очистка старых правил блокировки (избегаем дубликатов)
-                var rulesToRemove = rulesArray.Where(r => r?["outbound"]?.ToString() == "block").ToList();
+                var rulesToRemove = rulesArray.Where(r => r?["outbound"]?.ToString() == "block" || r?["action"]?.ToString() == "sniff").ToList();
                 foreach (var r in rulesToRemove)
                 {
                     rulesArray.Remove(r);
                 }
-                _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 4] Удалено старых block-правил: {rulesToRemove.Count}. Текущее количество: {rulesArray.Count}");
 
                 if (blockedNames.Any())
                 {
-                    // Ищем правило "action": "sniff"
-                    int sniffIndex = -1;
-                    for (int i = 0; i < rulesArray.Count; i++)
+                    var sniffRule = new JsonObject
                     {
-                        if (rulesArray[i]?["action"]?.ToString() == "sniff")
-                        {
-                            sniffIndex = i;
-                            break;
-                        }
-                    }
+                        ["action"] = "sniff"
+                    };
+                    rulesArray.Insert(0, sniffRule);
 
-                    _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 5] Индекс правила sniff: {sniffIndex}");
-
-                    // ЗАЩИТА ОТ ДУРАКА 2: Если правила sniff нет в конфиге, ДОБАВЛЯЕМ ЕГО принудительно!
-                    if (sniffIndex == -1)
-                    {
-                        var sniffRule = new JsonObject
-                        {
-                            ["action"] = "sniff"
-                        };
-                        rulesArray.Insert(0, sniffRule);
-                        sniffIndex = 0; // Теперь sniff гарантированно первый
-                        _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 6] Правило sniff не найдено. Добавлено принудительно на индекс 0.");
-                    }
-
-                    int insertIndex = sniffIndex + 1;
-
-                    // БРОНЕБОЙНЫЙ ФИКС: Используем "auth_user" вместо "user" для Sing-box
                     if (domains.Any())
                     {
                         var domainRule = new JsonObject
@@ -108,7 +105,7 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                             ["domain_keyword"] = JsonSerializer.SerializeToNode(domains),
                             ["outbound"] = "block"
                         };
-                        rulesArray.Insert(insertIndex, domainRule);
+                        rulesArray.Insert(1, domainRule);
                     }
 
                     var bittorrentRule = new JsonObject
@@ -117,18 +114,8 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                         ["protocol"] = "bittorrent",
                         ["outbound"] = "block"
                     };
-                    rulesArray.Insert(insertIndex, bittorrentRule);
-
-                    _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 7] Новые правила вставлены. Итоговый блок rules: {rulesArray.ToJsonString()}");
+                    rulesArray.Insert(2, bittorrentRule);
                 }
-                else
-                {
-                    _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 5] Нет пользователей для блокировки. Правила не добавлены.");
-                }
-            }
-            else
-            {
-                _logger.Log("P2P-DIAGNOSTIC", $"[ОШИБКА] Блок route->rules не найден в JSON конфигурации!");
             }
         }
         catch (Exception ex)
@@ -347,7 +334,21 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /tmp/sb_test.json");
 
         var testResult = await ssh.ExecuteCommandAsync("/usr/local/bin/sing-box check -c /tmp/sb_test.json 2>&1");
-        if (testResult.Contains("FATAL") || testResult.Contains("error")) return (false, "ОШИБКА: Конфиг не прошел тест Sing-box!");
+
+        _logger.Log("SB-DIAGNOSTIC", $"Ответ от проверки sing-box check:\n{testResult.Trim()}");
+
+        // === РАСШИРЕНИЕ ЛОГОВ (СБОР ИНФОРМАЦИИ) ===
+        try
+        {
+            var root = JsonNode.Parse(newJson);
+            _logger.Log("SB-DIAGNOSTIC", $"[JSON DUMP] Текущие сгенерированные правила route.rules:\n{root?["route"]?["rules"]?.ToJsonString()}");
+        }
+        catch { }
+
+        if (testResult.Contains("FATAL") || testResult.Contains("error"))
+        {
+            return (false, "ОШИБКА: Конфиг не прошел тест Sing-box!");
+        }
 
         await ssh.ExecuteCommandAsync("cp /etc/sing-box/config.json /etc/sing-box/config.backup.json");
         await ssh.ExecuteCommandAsync("mv /tmp/sb_test.json /etc/sing-box/config.json");

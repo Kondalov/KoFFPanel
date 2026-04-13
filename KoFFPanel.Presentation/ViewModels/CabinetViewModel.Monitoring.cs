@@ -45,27 +45,64 @@ public partial class CabinetViewModel
             while (!token.IsCancellationRequested)
             {
                 var pingResult = await _monitorService.PingServerAsync(ip); PingMs = pingResult.Success ? pingResult.RoundtripTime : 0;
+
                 var res = await _monitorService.GetResourcesAsync(localSsh);
-                CpuUsage = res.Cpu; RamUsage = res.Ram; SsdUsage = res.Ssd; Uptime = res.Uptime; LoadAverage = res.LoadAvg;
                 NetworkSpeed = res.NetworkSpeed; XrayProcesses = res.XrayProcesses; SynRecv = res.SynRecv; ErrorRate = res.ErrorRate;
 
-                // БРОНЕБОЙНЫЙ ФИКС СЕТЕВЫХ СЕССИЙ: Легковесный прямой запрос к ядру Linux в обход сервиса ресурсов
                 try
                 {
-                    string tcpCmd = await localSsh.ExecuteCommandAsync("ss -s | awk '/^TCP:/ {print $2}'");
-                    if (int.TryParse(tcpCmd.Trim(), out int tcpCount))
+                    string bashCmd = "cpu=$(top -bn1 2>/dev/null | grep -Ei 'Cpu\\(s\\)' | awk '{print $2+$4}' | cut -d. -f1 | tr -d '\\n'); " +
+                                     "if [ -z \"$cpu\" ]; then cpu=$(vmstat 1 2 2>/dev/null | tail -1 | awk '{print 100 - $15}'); fi; " +
+                                     "ram=$(free | awk '/Mem:/ {printf(\"%d\", $3/$2 * 100)}' 2>/dev/null | tr -d '\\n'); " +
+                                     "ssd=$(df / | awk 'NR==2 {print $5}' | sed 's/%//' 2>/dev/null | tr -d '\\n'); " +
+                                     "load=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}' | tr -d '\\n'); " +
+                                     "up=$(uptime -p 2>/dev/null | sed 's/up //'); " +
+                                     "echo \"${cpu:-0}|${ram:-0}|${ssd:-0}|${load:-0.0}|${up:-N/A}\"";
+
+                    string sysCmd = await localSsh.ExecuteCommandAsync(bashCmd);
+                    var parts = sysCmd.Trim().Split('|');
+
+                    if (parts.Length >= 5)
                     {
-                        TcpConnections = tcpCount;
+                        if (double.TryParse(parts[0].Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double c)) CpuUsage = (int)c;
+                        if (int.TryParse(parts[1], out int r)) RamUsage = r;
+                        if (int.TryParse(parts[2], out int s)) SsdUsage = s;
+                        if (double.TryParse(parts[3].Replace(',', '.'), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double l)) LoadAverage = l.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture);
+
+                        string rawUp = parts[4];
+                        rawUp = rawUp.Replace(" weeks", "w").Replace(" week", "w")
+                                     .Replace(" days", "d").Replace(" day", "d")
+                                     .Replace(" hours", "h").Replace(" hour", "h")
+                                     .Replace(" minutes", "m").Replace(" minute", "m")
+                                     .Replace(",", "");
+
+                        var upParts = rawUp.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (upParts.Length > 2)
+                        {
+                            Uptime = $"{upParts[0]} {upParts[1]}\n{string.Join(" ", upParts.Skip(2))}";
+                        }
+                        else
+                        {
+                            Uptime = rawUp;
+                        }
                     }
                     else
                     {
-                        TcpConnections = res.TcpConnections; // Фолбэк на сервис, если команда не прошла
+                        CpuUsage = res.Cpu; RamUsage = res.Ram; SsdUsage = res.Ssd; Uptime = res.Uptime; LoadAverage = res.LoadAvg;
                     }
                 }
                 catch
                 {
-                    TcpConnections = res.TcpConnections;
+                    CpuUsage = res.Cpu; RamUsage = res.Ram; SsdUsage = res.Ssd; Uptime = res.Uptime; LoadAverage = res.LoadAvg;
                 }
+
+                try
+                {
+                    string tcpCmd = await localSsh.ExecuteCommandAsync("ss -s | awk '/^TCP:/ {print $2}'");
+                    if (int.TryParse(tcpCmd.Trim(), out int tcpCount)) TcpConnections = tcpCount;
+                    else TcpConnections = res.TcpConnections;
+                }
+                catch { TcpConnections = res.TcpConnections; }
 
                 string activeCoreCmd = "systemctl is-active --quiet sing-box && echo 'Sing-box' || echo 'Xray-core'";
                 string activeCoreName = (await localSsh.ExecuteCommandAsync(activeCoreCmd)).Trim();
@@ -79,12 +116,11 @@ public partial class CabinetViewModel
                 string journalLogs = await localSsh.ExecuteCommandAsync(journalLogsCmd);
 
                 string accessLogs = await localSsh.ExecuteCommandAsync("if [ \"$(systemctl is-active sing-box)\" = \"active\" ]; then journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'; else tail -n 5 /var/log/xray/access.log 2>/dev/null || echo 'Нет логов'; fi");
-                string grepTest = await localSsh.ExecuteCommandAsync("if [ \"$(systemctl is-active sing-box)\" = \"active\" ]; then journalctl -u sing-box -n 50 --no-pager | grep -E 'inbound connection' | tail -n 3; else tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3; fi");
+                string grepTest = await localSsh.ExecuteCommandAsync("if [ \"$(systemctl is-active sing-box)\" = \"active\" ]; then journalctl -u sing-box -n 50 --no-pager | grep -iE 'inbound connection|sniff' | tail -n 3; else tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3; fi");
 
                 var coreStats = await _monitorService.GetCoreStatusInfoAsync(localSsh);
                 var allOnlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh);
 
-                // === 1. УЛЬТРА-БЫСТРЫЙ ОНЛАЙН (1 МИНУТА) ===
                 string recentLogsCmd = isSingBox
                     ? "journalctl -u sing-box --since \"1 min ago\" --no-pager | grep 'inbound connection'"
                     : "tail -n 200 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
@@ -117,8 +153,8 @@ public partial class CabinetViewModel
                         }
                         else
                         {
-                            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                            foreach (var part in parts)
+                            var logParts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                            foreach (var part in logParts)
                             {
                                 if (part.StartsWith("email:")) activeUsernames.Add(part.Replace("email:", "").Trim());
                                 else if (part.StartsWith("[") && part.EndsWith("]"))
@@ -131,87 +167,121 @@ public partial class CabinetViewModel
                     }
                 }
 
-                // === 2. ВСЕВИДЯЩИЙ ПАРСЕР НАРУШЕНИЙ (СВЕЖИЕ ЛОГИ) ===
                 string rulesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rules");
                 string rulesFile = Path.Combine(rulesDir, "torrent_domains.txt");
                 List<string> torrentDomains = new List<string> { "torrent", "tracker", "rutracker", "nnmclub", "kinozal", "rutor", "piratebay" };
 
                 if (File.Exists(rulesFile))
                 {
-                    var lines = await File.ReadAllLinesAsync(rulesFile);
-                    var validLines = lines.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim().ToLower()).ToList();
+                    var ruleLines = await File.ReadAllLinesAsync(rulesFile);
+                    var validLines = ruleLines.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim().ToLower()).ToList();
                     if (validLines.Any()) torrentDomains = validLines;
                 }
 
                 string rawViolationLogs = isSingBox
-                    ? await localSsh.ExecuteCommandAsync("journalctl -u sing-box --since \"1 min ago\" --no-pager | grep 'inbound connection to'")
+                    ? await localSsh.ExecuteCommandAsync("journalctl -u sing-box --since \"1 min ago\" --no-pager | grep -iE 'inbound connection|sniffed'")
                     : await localSsh.ExecuteCommandAsync("tail -n 200 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected|torrent-logger'");
 
                 var violationsBatch = new List<(string Email, string ViolationType)>();
                 if (!string.IsNullOrWhiteSpace(rawViolationLogs))
                 {
                     var vlines = rawViolationLogs.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                    var connDict = new Dictionary<string, (string User, string Domain)>();
+
                     foreach (var line in vlines)
                     {
                         try
                         {
-                            string domain = "Unknown";
-                            string violatorEmail = "";
-
                             if (isSingBox)
                             {
-                                int destStart = line.IndexOf("connection to ");
-                                if (destStart != -1) domain = line.Substring(destStart + 14).Replace("tcp:", "").Replace("udp:", "").Split(':')[0].Trim();
-
-                                int inboundIdx = line.IndexOf("inbound connection");
-                                if (inboundIdx != -1)
+                                string id = null;
+                                int idStart = line.IndexOf(" [");
+                                if (idStart != -1)
                                 {
-                                    string prefix = line.Substring(0, inboundIdx);
-                                    int lastBracketClose = prefix.LastIndexOf(']');
-                                    if (lastBracketClose != -1)
+                                    int idEnd = line.IndexOf(' ', idStart + 2);
+                                    if (idEnd != -1) id = line.Substring(idStart + 2, idEnd - idStart - 2);
+                                }
+                                if (string.IsNullOrEmpty(id)) continue;
+
+                                if (!connDict.ContainsKey(id)) connDict[id] = ("Unknown", "Unknown");
+                                var info = connDict[id];
+
+                                if (line.Contains("inbound connection"))
+                                {
+                                    int uStart = line.IndexOf("]: [");
+                                    if (uStart != -1)
                                     {
-                                        int lastBracketOpen = prefix.LastIndexOf('[', lastBracketClose);
-                                        if (lastBracketOpen != -1)
-                                        {
-                                            string potentialUser = prefix.Substring(lastBracketOpen + 1, lastBracketClose - lastBracketOpen - 1).Trim();
-                                            if (!potentialUser.Contains(":") && !int.TryParse(potentialUser, out _)) violatorEmail = potentialUser;
-                                        }
+                                        int uEnd = line.IndexOf("] inbound", uStart);
+                                        if (uEnd != -1) info.User = line.Substring(uStart + 4, uEnd - uStart - 4);
+                                    }
+                                    int toIdx = line.IndexOf("to ");
+                                    if (toIdx != -1)
+                                    {
+                                        string destIp = line.Substring(toIdx + 3).Replace("tcp:", "").Replace("udp:", "").Split(':')[0];
+                                        if (info.Domain == "Unknown") info.Domain = destIp;
                                     }
                                 }
+                                else if (line.Contains("sniffed") && line.Contains("domain: "))
+                                {
+                                    int dStart = line.IndexOf("domain: ");
+                                    if (dStart != -1)
+                                    {
+                                        string dom = line.Substring(dStart + 8).Split(',')[0].Trim();
+                                        if (!string.IsNullOrEmpty(dom)) info.Domain = dom;
+                                    }
+                                }
+                                connDict[id] = info;
                             }
                             else
                             {
-                                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                                for (int i = 0; i < parts.Length; i++)
+                                // Xray legacy parser
+                                string domain = "Unknown";
+                                string violatorEmail = "";
+                                var logParts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                                for (int i = 0; i < logParts.Length; i++)
                                 {
-                                    if (parts[i] == "accepted" || parts[i] == "rejected" || parts[i] == "[torrent-logger]")
+                                    if (logParts[i] == "accepted" || logParts[i] == "rejected" || logParts[i] == "[torrent-logger]")
                                     {
-                                        if (i + 1 < parts.Length) domain = parts[i + 1].Replace("tcp:", "").Replace("udp:", "").Split(':')[0];
+                                        if (i + 1 < logParts.Length) domain = logParts[i + 1].Replace("tcp:", "").Replace("udp:", "").Split(':')[0];
                                     }
-                                    if (parts[i].StartsWith("email:")) violatorEmail = parts[i].Replace("email:", "").Trim();
-                                    else if (parts[i].StartsWith("[") && parts[i].EndsWith("]"))
+                                    if (logParts[i].StartsWith("email:")) violatorEmail = logParts[i].Replace("email:", "").Trim();
+                                    else if (logParts[i].StartsWith("[") && logParts[i].EndsWith("]"))
                                     {
-                                        string potentialUser = parts[i].Trim('[', ']');
+                                        string potentialUser = logParts[i].Trim('[', ']');
                                         if (Clients.Any(c => c.Email == potentialUser)) violatorEmail = potentialUser;
                                     }
                                 }
-                            }
 
-                            if (!string.IsNullOrEmpty(violatorEmail) && !string.IsNullOrEmpty(domain))
-                            {
-                                string domainLower = domain.ToLower();
-                                if (torrentDomains.Any(td => domainLower.Contains(td)))
+                                if (!string.IsNullOrEmpty(violatorEmail) && domain != "Unknown")
                                 {
-                                    violationsBatch.Add((violatorEmail, $"Трекер / P2P: {domain}"));
+                                    string domainLower = domain.ToLower();
+                                    if (torrentDomains.Any(td => domainLower.Contains(td)))
+                                    {
+                                        violationsBatch.Add((violatorEmail, $"Трекер / P2P: {domain}"));
+                                    }
                                 }
                             }
                         }
                         catch { }
                     }
+
+                    if (isSingBox)
+                    {
+                        foreach (var kvp in connDict)
+                        {
+                            if (kvp.Value.User != "Unknown" && kvp.Value.Domain != "Unknown")
+                            {
+                                string dLower = kvp.Value.Domain.ToLower();
+                                if (torrentDomains.Any(td => dLower.Contains(td)))
+                                {
+                                    violationsBatch.Add((kvp.Value.User, $"Трекер / P2P: {kvp.Value.Domain}"));
+                                }
+                            }
+                        }
+                    }
                 }
                 violationsBatch = violationsBatch.Distinct().ToList();
 
-                // === 3. ЭВРИСТИКА ТРАФИКА ДЛЯ SING-BOX ===
                 var trafficStats = new Dictionary<string, long>();
                 if (!isSingBox)
                 {
@@ -244,13 +314,12 @@ public partial class CabinetViewModel
                 var trafficBatch = new Dictionary<string, long>();
                 var connectionBatch = new List<(string Email, string Ip, string Country)>();
 
-                // === 4. ОБНОВЛЕНИЕ UI ===
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
                     CoreTitleLabel = $"Ядро ({activeCoreName})";
 
                     XrayStatus = coreStatusStr; XrayVersion = coreStats.Version; XrayConfigStatus = coreStats.ConfigStatus;
-                    XrayUptime = coreStats.Uptime; XrayMemory = coreStats.MemoryUsage; XrayLastError = coreStats.LastError;
+                    XrayLastError = coreStats.LastError;
                     XrayLogs = $"=== СИСТЕМНЫЙ ЖУРНАЛ ===\n{journalLogs.Trim()}\n\n=== ACCESS.LOG ===\n{accessLogs.Trim()}\n\n=== ТЕСТ ПАРСЕРА ===\n{grepTest.Trim()}";
 
                     long currentTotalBytes = 0; bool dbNeedsUpdate = false;
@@ -268,7 +337,6 @@ public partial class CabinetViewModel
                             _previousTrafficStats[email] = currentXrayBytes;
                         }
 
-                        // УСТАНОВКА ОНЛАЙНА (ЖЕСТКИЙ ЛИМИТ 1 МИНУТА)
                         if (activeUsernames.Contains(email))
                         {
                             var userLog = allOnlineStats.FirstOrDefault(s => s.Email == email);
