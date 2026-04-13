@@ -4,8 +4,10 @@ using KoFFPanel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
@@ -21,6 +23,157 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         _logger = logger;
         _dbContext = dbContext;
     }
+
+    private async Task ApplyP2PRulesAsync(JsonNode root, string serverIp)
+    {
+        try
+        {
+            var blockedNames = await _dbContext.Clients
+                .AsNoTracking()
+                .Where(c => c.ServerIp == serverIp && c.IsP2PBlocked)
+                .Select(c => c.Email.Trim())
+                .ToListAsync();
+
+            _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 1] Пользователи с тумблером P2P=ON: {blockedNames.Count} ({string.Join(", ", blockedNames)})");
+
+            string rulesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rules");
+            if (!Directory.Exists(rulesDir)) Directory.CreateDirectory(rulesDir);
+
+            string rulesFile = Path.Combine(rulesDir, "torrent_domains.txt");
+            List<string> domains;
+
+            if (!File.Exists(rulesFile))
+            {
+                domains = new List<string> { "torrent", "tracker", "rutracker", "nnmclub", "kinozal", "rutor", "piratebay", "tapochek", "lostfilm" };
+                await File.WriteAllLinesAsync(rulesFile, domains);
+            }
+            else
+            {
+                domains = (await File.ReadAllLinesAsync(rulesFile))
+                            .Where(l => !string.IsNullOrWhiteSpace(l))
+                            .Select(l => l.Trim())
+                            .ToList();
+            }
+
+            _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 2] Загружено доменов для блокировки: {domains.Count}");
+
+            var rulesArray = root?["route"]?["rules"]?.AsArray();
+            if (rulesArray != null)
+            {
+                _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 3] Исходное количество правил в route: {rulesArray.Count}");
+
+                // ЗАЩИТА ОТ ДУРАКА 1: Жесткая очистка старых правил блокировки (избегаем дубликатов)
+                var rulesToRemove = rulesArray.Where(r => r?["outbound"]?.ToString() == "block").ToList();
+                foreach (var r in rulesToRemove)
+                {
+                    rulesArray.Remove(r);
+                }
+                _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 4] Удалено старых block-правил: {rulesToRemove.Count}. Текущее количество: {rulesArray.Count}");
+
+                if (blockedNames.Any())
+                {
+                    // Ищем правило "action": "sniff"
+                    int sniffIndex = -1;
+                    for (int i = 0; i < rulesArray.Count; i++)
+                    {
+                        if (rulesArray[i]?["action"]?.ToString() == "sniff")
+                        {
+                            sniffIndex = i;
+                            break;
+                        }
+                    }
+
+                    _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 5] Индекс правила sniff: {sniffIndex}");
+
+                    // ЗАЩИТА ОТ ДУРАКА 2: Если правила sniff нет в конфиге, ДОБАВЛЯЕМ ЕГО принудительно!
+                    if (sniffIndex == -1)
+                    {
+                        var sniffRule = new JsonObject
+                        {
+                            ["action"] = "sniff"
+                        };
+                        rulesArray.Insert(0, sniffRule);
+                        sniffIndex = 0; // Теперь sniff гарантированно первый
+                        _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 6] Правило sniff не найдено. Добавлено принудительно на индекс 0.");
+                    }
+
+                    int insertIndex = sniffIndex + 1;
+
+                    // БРОНЕБОЙНЫЙ ФИКС: Используем "auth_user" вместо "user" для Sing-box
+                    if (domains.Any())
+                    {
+                        var domainRule = new JsonObject
+                        {
+                            ["auth_user"] = JsonSerializer.SerializeToNode(blockedNames),
+                            ["domain_keyword"] = JsonSerializer.SerializeToNode(domains),
+                            ["outbound"] = "block"
+                        };
+                        rulesArray.Insert(insertIndex, domainRule);
+                    }
+
+                    var bittorrentRule = new JsonObject
+                    {
+                        ["auth_user"] = JsonSerializer.SerializeToNode(blockedNames),
+                        ["protocol"] = "bittorrent",
+                        ["outbound"] = "block"
+                    };
+                    rulesArray.Insert(insertIndex, bittorrentRule);
+
+                    _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 7] Новые правила вставлены. Итоговый блок rules: {rulesArray.ToJsonString()}");
+                }
+                else
+                {
+                    _logger.Log("P2P-DIAGNOSTIC", $"[Шаг 5] Нет пользователей для блокировки. Правила не добавлены.");
+                }
+            }
+            else
+            {
+                _logger.Log("P2P-DIAGNOSTIC", $"[ОШИБКА] Блок route->rules не найден в JSON конфигурации!");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("SB-P2P-RULES", $"Ошибка сборки правил P2P: {ex.Message}");
+        }
+    }
+
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, bool isP2PBlocked = true)
+    {
+        _logger.Log("P2P-DIAGNOSTIC", $"[START UPDATE] Пришел запрос на обновление юзера: {name}, Значение тумблера IsP2PBlocked = {isP2PBlocked}");
+
+        var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
+        if (dbUser == null)
+        {
+            _logger.Log("P2P-DIAGNOSTIC", $"[ERROR] Юзер {name} не найден в БД!");
+            return false;
+        }
+
+        dbUser.TrafficLimit = newLimitBytes;
+        dbUser.ExpiryDate = newExpiryDate;
+        dbUser.IsP2PBlocked = isP2PBlocked;
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+            _logger.Log("P2P-DIAGNOSTIC", $"[DB SAVED] Сохранено в БД. Текущий статус юзера {name} IsP2PBlocked: {dbUser.IsP2PBlocked}");
+
+            string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+            var root = JsonNode.Parse(rawJson);
+
+            await ApplyP2PRulesAsync(root, serverIp);
+
+            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+            _logger.Log("P2P-DIAGNOSTIC", $"[END UPDATE] Результат перезапуска Sing-box: {result.IsSuccess} ({result.Message})");
+            return result.IsSuccess;
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("SB-USER-MGR", $"Ошибка обновления P2P/Лимитов: {ex.Message}");
+            return false;
+        }
+    }
+
 
     public async Task<List<VpnClient>> GetUsersAsync(ISshService ssh, string serverIp)
     {
@@ -67,6 +220,7 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                         Protocol = "VLESS",
                         IsActive = true,
                         TrafficUsed = 0,
+                        IsP2PBlocked = true,
                         VlessLink = $"vless://{uuid}@{safeIp}:443?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{name}"
                     };
                     _dbContext.Clients.Add(newUser); users.Add(newUser); dbChanged = true;
@@ -79,7 +233,7 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         return users;
     }
 
-    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long trafficLimitBytes, DateTime? expiryDate)
+    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long trafficLimitBytes, DateTime? expiryDate, bool isP2PBlocked = true)
     {
         try
         {
@@ -93,6 +247,12 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
             string newUuid = Guid.NewGuid().ToString();
             clientsArray.Add(new JsonObject { ["name"] = name, ["uuid"] = newUuid, ["flow"] = "xtls-rprx-vision" });
 
+            var newUser = new VpnClient { Email = name, Uuid = newUuid, ServerIp = serverIp, TrafficLimit = trafficLimitBytes, ExpiryDate = expiryDate, IsP2PBlocked = isP2PBlocked };
+            _dbContext.Clients.Add(newUser);
+            await _dbContext.SaveChangesAsync();
+
+            await ApplyP2PRulesAsync(root, serverIp);
+
             var tlsNode = root?["inbounds"]?[0]?["tls"];
             string pubKey = tlsNode?["reality"]?["public_key"]?.ToString().Trim() ?? "";
             string sni = tlsNode?["server_name"]?.ToString().Trim() ?? "www.microsoft.com";
@@ -100,13 +260,10 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
 
             string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
             string vlessLink = $"vless://{newUuid}@{safeIp}:443?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{name}";
+            newUser.VlessLink = vlessLink;
+            await _dbContext.SaveChangesAsync();
 
-            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-            if (result.IsSuccess)
-            {
-                _dbContext.Clients.Add(new VpnClient { Email = name, Uuid = newUuid, ServerIp = serverIp, TrafficLimit = trafficLimitBytes, ExpiryDate = expiryDate, VlessLink = vlessLink });
-                await _dbContext.SaveChangesAsync();
-            }
+            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
             return (result.IsSuccess, result.Message, vlessLink);
         }
         catch (Exception ex) { return (false, $"Ошибка: {ex.Message}", ""); }
@@ -129,15 +286,18 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                     {
                         if (clientsArray.Count <= 1) return (false, "Защита: Нельзя удалить последнего пользователя!");
                         clientsArray.Remove(userNode);
-                        var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+
+                        var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
+                        if (dbUser != null) { _dbContext.Clients.Remove(dbUser); await _dbContext.SaveChangesAsync(); }
+
+                        await ApplyP2PRulesAsync(root, serverIp);
+
+                        var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
                         if (!result.IsSuccess) return result;
                         removedFromCore = true;
                     }
                 }
             }
-
-            var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-            if (dbUser != null) { _dbContext.Clients.Remove(dbUser); await _dbContext.SaveChangesAsync(); }
 
             return (true, removedFromCore ? $"Пользователь {name} удален." : $"Пользователь {name} вычищен из БД.");
         }
@@ -170,8 +330,12 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                 clientsArray.Remove(userNode);
             }
 
-            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
-            if (result.IsSuccess) { dbUser.IsActive = enableAccess; await _dbContext.SaveChangesAsync(); }
+            dbUser.IsActive = enableAccess;
+            await _dbContext.SaveChangesAsync();
+
+            await ApplyP2PRulesAsync(root, serverIp);
+            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
             return result;
         }
         catch (Exception ex) { return (false, $"Ошибка статуса: {ex.Message}"); }
@@ -192,14 +356,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         return (true, "Пользователи обновлены!");
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate)
-    {
-        var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-        if (dbUser == null) return false;
-        dbUser.TrafficLimit = newLimitBytes; dbUser.ExpiryDate = newExpiryDate;
-        await _dbContext.SaveChangesAsync(); return true;
-    }
-
     public async Task SaveTrafficToDbAsync(string serverIp, IEnumerable<VpnClient> clients)
     {
         var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
@@ -217,13 +373,19 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
 
             if (clientsArray == null) return false;
 
-            clientsArray.Clear(); // Очищаем дефолтных
+            clientsArray.Clear();
             foreach (var user in dbUsers.Where(u => u.IsActive))
             {
                 clientsArray.Add(new JsonObject { ["name"] = user.Email, ["uuid"] = user.Uuid, ["flow"] = "xtls-rprx-vision" });
             }
 
-            string updatedJson = root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            string serverIp = dbUsers.FirstOrDefault()?.ServerIp ?? "";
+            if (!string.IsNullOrEmpty(serverIp))
+            {
+                await ApplyP2PRulesAsync(root, serverIp);
+            }
+
+            string updatedJson = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
             string base64Json = Convert.ToBase64String(Encoding.UTF8.GetBytes(updatedJson.Replace("\r", "")));
 
             await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /etc/sing-box/config.json");
@@ -239,8 +401,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         }
     }
 
-    // Как Senior-разработчик, я соблюдаю архитектурный принцип Stateless. 
-    // Эвристический алгоритм трафика вынесен во ViewModel, чтобы не создавать утечек памяти в Scoped-сервисе.
     public async Task<Dictionary<string, long>> GetTrafficStatsAsync(ISshService ssh)
     {
         await Task.CompletedTask;

@@ -28,6 +28,13 @@ public class VpnClient : INotifyPropertyChanged
         set { _isAntiFraudEnabled = value; OnPropertyChanged(); }
     }
 
+    private bool _isP2PBlocked = true;
+    public bool IsP2PBlocked
+    {
+        get => _isP2PBlocked;
+        set { _isP2PBlocked = value; OnPropertyChanged(); }
+    }
+
     private string _uuid = "";
     public string Uuid
     {

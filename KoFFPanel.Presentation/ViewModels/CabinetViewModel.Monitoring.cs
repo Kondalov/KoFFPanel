@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Application.Interfaces;
 using CommunityToolkit.Mvvm.ComponentModel;
+using System.IO;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
@@ -14,7 +15,6 @@ public partial class CabinetViewModel
     [ObservableProperty]
     private string _coreTitleLabel = "Ядро (Ожидание)";
 
-    // Переменная для хранения общего физического трафика сервера (Для эвристики Sing-box)
     private long _previousTotalServerBytes = 0;
 
     private async Task StartMonitoringLoopAsync(VpnProfile profile, CancellationToken token)
@@ -64,91 +64,136 @@ public partial class CabinetViewModel
                 string grepTest = await localSsh.ExecuteCommandAsync("if [ \"$(systemctl is-active sing-box)\" = \"active\" ]; then journalctl -u sing-box -n 50 --no-pager | grep -E 'inbound connection' | tail -n 3; else tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3; fi");
 
                 var coreStats = await _monitorService.GetCoreStatusInfoAsync(localSsh);
-                var onlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh);
+                var allOnlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh);
 
-                _logger.Log("DIAGNOSTIC-RAW", $"Парсер логов нашел {onlineStats.Count} сессий.");
+                // === 1. УЛЬТРА-БЫСТРЫЙ ОНЛАЙН (1 МИНУТА) ===
+                string recentLogsCmd = isSingBox
+                    ? "journalctl -u sing-box --since \"1 min ago\" --no-pager | grep 'inbound connection'"
+                    : "tail -n 200 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
 
-                // === 1. БРОНЕБОЙНЫЙ C#-ПАРСЕР НАРУШЕНИЙ (DMCA) ===
-                string rawViolationLogs = "";
-                if (isSingBox)
+                string recentLogs = await localSsh.ExecuteCommandAsync(recentLogsCmd);
+                var activeUsernames = new HashSet<string>();
+
+                if (!string.IsNullOrWhiteSpace(recentLogs))
                 {
-                    rawViolationLogs = await localSsh.ExecuteCommandAsync("journalctl -u sing-box -n 2000 --no-pager | grep -E 'inbound connection to|outbound/block'");
+                    var lines = recentLogs.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        if (isSingBox)
+                        {
+                            int inboundIdx = line.IndexOf("inbound connection");
+                            if (inboundIdx != -1)
+                            {
+                                string prefix = line.Substring(0, inboundIdx);
+                                int lastBracketClose = prefix.LastIndexOf(']');
+                                if (lastBracketClose != -1)
+                                {
+                                    int lastBracketOpen = prefix.LastIndexOf('[', lastBracketClose);
+                                    if (lastBracketOpen != -1)
+                                    {
+                                        string potentialUser = prefix.Substring(lastBracketOpen + 1, lastBracketClose - lastBracketOpen - 1).Trim();
+                                        if (Clients.Any(c => c.Email == potentialUser)) activeUsernames.Add(potentialUser);
+                                    }
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                            foreach (var part in parts)
+                            {
+                                if (part.StartsWith("email:")) activeUsernames.Add(part.Replace("email:", "").Trim());
+                                else if (part.StartsWith("[") && part.EndsWith("]"))
+                                {
+                                    string potentialUser = part.Trim('[', ']');
+                                    if (Clients.Any(c => c.Email == potentialUser)) activeUsernames.Add(potentialUser);
+                                }
+                            }
+                        }
+                    }
                 }
-                else
+
+                // === 2. ВСЕВИДЯЩИЙ ПАРСЕР НАРУШЕНИЙ (СВЕЖИЕ ЛОГИ) ===
+                string rulesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rules");
+                string rulesFile = Path.Combine(rulesDir, "torrent_domains.txt");
+                List<string> torrentDomains = new List<string> { "torrent", "tracker", "rutracker", "nnmclub", "kinozal", "rutor", "piratebay" };
+
+                if (File.Exists(rulesFile))
                 {
-                    rawViolationLogs = await localSsh.ExecuteCommandAsync("tail -n 1000 /var/log/xray/access.log 2>/dev/null | grep -E 'torrent-logger|rejected'");
+                    var lines = await File.ReadAllLinesAsync(rulesFile);
+                    var validLines = lines.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim().ToLower()).ToList();
+                    if (validLines.Any()) torrentDomains = validLines;
                 }
+
+                string rawViolationLogs = isSingBox
+                    ? await localSsh.ExecuteCommandAsync("journalctl -u sing-box --since \"1 min ago\" --no-pager | grep 'inbound connection to'")
+                    : await localSsh.ExecuteCommandAsync("tail -n 200 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected|torrent-logger'");
 
                 var violationsBatch = new List<(string Email, string ViolationType)>();
                 if (!string.IsNullOrWhiteSpace(rawViolationLogs))
                 {
                     var vlines = rawViolationLogs.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
-                    if (isSingBox)
+                    foreach (var line in vlines)
                     {
-                        var idToUser = new Dictionary<string, string>();
-                        foreach (var line in vlines)
+                        try
                         {
-                            try
+                            string domain = "Unknown";
+                            string violatorEmail = "";
+
+                            if (isSingBox)
                             {
-                                if (!line.Contains("INFO [")) continue;
-                                int idStart = line.IndexOf("INFO [") + 6;
-                                int idEnd = line.IndexOf(' ', idStart);
-                                if (idStart < 6 || idEnd <= idStart) continue;
-                                string id = line.Substring(idStart, idEnd - idStart);
+                                int destStart = line.IndexOf("connection to ");
+                                if (destStart != -1) domain = line.Substring(destStart + 14).Replace("tcp:", "").Replace("udp:", "").Split(':')[0].Trim();
 
-                                if (line.Contains("inbound connection to"))
+                                int inboundIdx = line.IndexOf("inbound connection");
+                                if (inboundIdx != -1)
                                 {
-                                    int userStart = line.IndexOf("]: [");
-                                    if (userStart != -1)
+                                    string prefix = line.Substring(0, inboundIdx);
+                                    int lastBracketClose = prefix.LastIndexOf(']');
+                                    if (lastBracketClose != -1)
                                     {
-                                        userStart += 4;
-                                        int userEnd = line.IndexOf(']', userStart);
-                                        if (userEnd > userStart) idToUser[id] = line.Substring(userStart, userEnd - userStart).Trim();
-                                    }
-                                }
-                                else if (line.Contains("outbound/block"))
-                                {
-                                    if (idToUser.TryGetValue(id, out string violatorEmail))
-                                    {
-                                        string domain = "Unknown";
-                                        int destStart = line.IndexOf("connection to ");
-                                        if (destStart != -1) domain = line.Substring(destStart + 14).Replace("tcp:", "").Replace("udp:", "").Split(':')[0].Trim();
-
-                                        violationsBatch.Add((violatorEmail, $"Трекер / P2P: {domain}"));
+                                        int lastBracketOpen = prefix.LastIndexOf('[', lastBracketClose);
+                                        if (lastBracketOpen != -1)
+                                        {
+                                            string potentialUser = prefix.Substring(lastBracketOpen + 1, lastBracketClose - lastBracketOpen - 1).Trim();
+                                            if (!potentialUser.Contains(":") && !int.TryParse(potentialUser, out _)) violatorEmail = potentialUser;
+                                        }
                                     }
                                 }
                             }
-                            catch { }
-                        }
-                    }
-                    else
-                    {
-                        foreach (var line in vlines)
-                        {
-                            try
+                            else
                             {
                                 var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                                string dest = "Unknown"; string violatorEmail = "";
                                 for (int i = 0; i < parts.Length; i++)
                                 {
-                                    if (parts[i] == "[torrent-logger]" || parts[i] == "rejected")
+                                    if (parts[i] == "accepted" || parts[i] == "rejected" || parts[i] == "[torrent-logger]")
                                     {
-                                        if (i + 1 < parts.Length) dest = parts[i + 1].Replace("tcp:", "").Replace("udp:", "").Split(':')[0];
+                                        if (i + 1 < parts.Length) domain = parts[i + 1].Replace("tcp:", "").Replace("udp:", "").Split(':')[0];
                                     }
-                                    if (parts[i] == "email:" && i + 1 < parts.Length) violatorEmail = parts[i + 1].Replace("]", "").Trim();
-                                }
-                                if (!string.IsNullOrEmpty(violatorEmail))
-                                {
-                                    violationsBatch.Add((violatorEmail, $"Трекер / P2P: {dest}"));
+                                    if (parts[i].StartsWith("email:")) violatorEmail = parts[i].Replace("email:", "").Trim();
+                                    else if (parts[i].StartsWith("[") && parts[i].EndsWith("]"))
+                                    {
+                                        string potentialUser = parts[i].Trim('[', ']');
+                                        if (Clients.Any(c => c.Email == potentialUser)) violatorEmail = potentialUser;
+                                    }
                                 }
                             }
-                            catch { }
+
+                            if (!string.IsNullOrEmpty(violatorEmail) && !string.IsNullOrEmpty(domain))
+                            {
+                                string domainLower = domain.ToLower();
+                                if (torrentDomains.Any(td => domainLower.Contains(td)))
+                                {
+                                    violationsBatch.Add((violatorEmail, $"Трекер / P2P: {domain}"));
+                                }
+                            }
                         }
+                        catch { }
                     }
                 }
                 violationsBatch = violationsBatch.Distinct().ToList();
 
-                // === 2. ЭВРИСТИКА ТРАФИКА ===
+                // === 3. ЭВРИСТИКА ТРАФИКА ДЛЯ SING-BOX ===
                 var trafficStats = new Dictionary<string, long>();
                 if (!isSingBox)
                 {
@@ -166,25 +211,22 @@ public partial class CabinetViewModel
                             serverTrafficDelta = currentTotalServerBytes - _previousTotalServerBytes;
                         _previousTotalServerBytes = currentTotalServerBytes;
 
-                        // Делим трафик ТОЛЬКО между активными юзерами в интерфейсе
-                        int activeUiUsersCount = Clients.Count(c => c.ActiveConnections > 0);
-                        if (activeUiUsersCount == 0) activeUiUsersCount = 1; // Защита от деления на ноль
-
+                        int activeUiUsersCount = activeUsernames.Count > 0 ? activeUsernames.Count : 1;
                         long bytesPerUser = serverTrafficDelta / activeUiUsersCount;
 
-                        foreach (var c in Clients.Where(c => c.ActiveConnections > 0))
+                        foreach (var uname in activeUsernames)
                         {
-                            long prevUserBytes = _previousTrafficStats.TryGetValue(c.Email ?? "", out long p) ? p : 0;
-                            trafficStats[c.Email ?? ""] = prevUserBytes + bytesPerUser;
+                            long prevUserBytes = _previousTrafficStats.TryGetValue(uname, out long p) ? p : 0;
+                            trafficStats[uname] = prevUserBytes + bytesPerUser;
                         }
                     }
-                    await _singBoxUserManager.GetTrafficStatsAsync(localSsh); // Заглушка
+                    await _singBoxUserManager.GetTrafficStatsAsync(localSsh);
                 }
 
                 var trafficBatch = new Dictionary<string, long>();
                 var connectionBatch = new List<(string Email, string Ip, string Country)>();
 
-                // === 3. ОБНОВЛЕНИЕ UI И АЛГОРИТМ "ИММУНИТЕТА" ===
+                // === 4. ОБНОВЛЕНИЕ UI ===
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
                     CoreTitleLabel = $"Ядро ({activeCoreName})";
@@ -208,32 +250,28 @@ public partial class CabinetViewModel
                             _previousTrafficStats[email] = currentXrayBytes;
                         }
 
-                        // АЛГОРИТМ "SOFT LEASH" (3 МИНУТЫ ИММУНИТЕТА)
-                        var userLog = onlineStats.FirstOrDefault(s => s.Email == email);
-                        if (userLog != null)
+                        // УСТАНОВКА ОНЛАЙНА (ЖЕСТКИЙ ЛИМИТ 1 МИНУТА)
+                        if (activeUsernames.Contains(email))
                         {
-                            // Юзер есть в свежих логах -> Обновляем время
-                            client.ActiveConnections = userLog.ActiveSessions > 0 ? userLog.ActiveSessions : 1;
+                            var userLog = allOnlineStats.FirstOrDefault(s => s.Email == email);
+                            client.ActiveConnections = userLog != null && userLog.ActiveSessions > 0 ? userLog.ActiveSessions : 1;
                             client.LastOnline = DateTime.Now;
-                            client.LastIp = userLog.LastIp;
-                            if (!string.IsNullOrEmpty(userLog.Country)) client.Country = userLog.Country;
-                            connectionBatch.Add((email, userLog.LastIp ?? "", client.Country ?? ""));
+
+                            if (userLog != null)
+                            {
+                                client.LastIp = userLog.LastIp;
+                                if (!string.IsNullOrEmpty(userLog.Country)) client.Country = userLog.Country;
+                                connectionBatch.Add((email, userLog.LastIp ?? "", client.Country ?? ""));
+                            }
                         }
                         else
                         {
-                            // Юзера нет в логах. Проверяем иммунитет (3 минуты)
-                            // ИСПРАВЛЕНИЕ: Безопасная работа с Nullable DateTime
-                            if (client.LastOnline.HasValue && (DateTime.Now - client.LastOnline.Value).TotalMinutes < 3)
-                            {
-                                client.ActiveConnections = 1; // Иммунитет действует, оставляем онлайн
-                            }
+                            if (client.LastOnline.HasValue && (DateTime.Now - client.LastOnline.Value).TotalMinutes <= 1)
+                                client.ActiveConnections = 1;
                             else
-                            {
-                                client.ActiveConnections = 0; // Время вышло, жесткий оффлайн
-                            }
+                                client.ActiveConnections = 0;
                         }
 
-                        // Логика антифрода
                         if (client.IsAntiFraudEnabled && client.ActiveConnections > 0)
                         {
                             string antiFraudReason = "";

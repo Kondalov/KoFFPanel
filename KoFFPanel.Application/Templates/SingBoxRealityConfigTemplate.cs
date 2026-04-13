@@ -1,11 +1,36 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
 
 namespace KoFFPanel.Application.Templates;
 
 public static class SingBoxRealityConfigTemplate
 {
-    public static string GenerateServerConfig(int port, string uuid, string sni, string privateKey, string shortId)
+    // ИСПРАВЛЕНИЕ: Делаем новые параметры опциональными (null по умолчанию). 
+    // Это сохраняет обратную совместимость для кода установки сервера!
+    public static string GenerateServerConfig(
+        int port,
+        string uuid,
+        string sni,
+        string privateKey,
+        string shortId,
+        List<string>? p2pBlockedUsers = null,
+        List<string>? torrentDomains = null)
     {
+        // Защита от NullReference
+        p2pBlockedUsers ??= new List<string>();
+
+        // Если список доменов пуст, кладем дефолтные
+        if (torrentDomains == null || !torrentDomains.Any())
+        {
+            torrentDomains = new List<string> { "torrent", "tracker", "rutracker", "nnmclub", "kinozal", "rutor", "piratebay", "tapochek", "lostfilm" };
+        }
+
+        // Безопасная сериализация массивов в JSON
+        string blockedUsersJson = JsonSerializer.Serialize(p2pBlockedUsers);
+        string torrentDomainsJson = JsonSerializer.Serialize(torrentDomains);
+
         return $$"""
         {
           "log": {
@@ -59,21 +84,13 @@ public static class SingBoxRealityConfigTemplate
                 "action": "sniff"
               },
               {
+                "user": {{blockedUsersJson}},
                 "protocol": "bittorrent",
                 "outbound": "block"
               },
               {
-                "domain_keyword": [
-                  "torrent",
-                  "tracker",
-                  "rutracker",
-                  "nnmclub",
-                  "kinozal",
-                  "rutor",
-                  "piratebay",
-                  "tapochek",
-                  "lostfilm"
-                ],
+                "user": {{blockedUsersJson}},
+                "domain_keyword": {{torrentDomainsJson}},
                 "outbound": "block"
               }
             ],

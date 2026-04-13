@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
 
         try
         {
+            // Создание таблиц логов
             Database.ExecuteSqlRaw(@"
                 CREATE TABLE IF NOT EXISTS ""TrafficLogs"" (
                     ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_TrafficLogs"" PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +40,6 @@ public class AppDbContext : DbContext
                 );
                 CREATE INDEX IF NOT EXISTS ""IX_ConnectionLogs_ServerIp_Email_IpAddress"" ON ""ConnectionLogs"" (""ServerIp"", ""Email"", ""IpAddress"");
 
-                -- НОВАЯ ТАБЛИЦА НАРУШЕНИЙ
                 CREATE TABLE IF NOT EXISTS ""ViolationLogs"" (
                     ""Id"" INTEGER NOT NULL CONSTRAINT ""PK_ViolationLogs"" PRIMARY KEY AUTOINCREMENT,
                     ""ServerIp"" TEXT NOT NULL,
@@ -51,6 +51,13 @@ public class AppDbContext : DbContext
             ");
         }
         catch { }
+
+        // БЕЗОПАСНАЯ МИГРАЦИЯ: Добавляем колонку IsP2PBlocked для старых баз данных
+        try
+        {
+            Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsP2PBlocked\" INTEGER NOT NULL DEFAULT 1;");
+        }
+        catch { /* Игнорируем ошибку, если колонка уже существует */ }
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
@@ -66,6 +73,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<VpnClient>().Ignore(c => c.StatusString);
         modelBuilder.Entity<VpnClient>().Ignore(c => c.LastOnlineString);
         modelBuilder.Entity<VpnClient>().Ignore(c => c.Country);
+        modelBuilder.Entity<VpnClient>().Ignore(c => c.AvatarPath); // Защита от краша EF Core
 
         modelBuilder.Entity<ClientTrafficLog>().HasIndex(t => new { t.ServerIp, t.Email, t.Date });
         modelBuilder.Entity<ClientConnectionLog>().HasIndex(c => new { c.ServerIp, c.Email, c.IpAddress });

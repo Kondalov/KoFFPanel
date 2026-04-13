@@ -32,8 +32,9 @@ public partial class CabinetViewModel
             long limit = (long)vm.TrafficLimitGb * 1024 * 1024 * 1024;
             string ip = server.IpAddress ?? "";
 
+            // ИСПРАВЛЕНИЕ: Передаем тумблер IsP2PBlocked в ядро Sing-box
             var (success, msg, vlessLink) = IsSingBoxActive()
-                ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate)
+                ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked)
                 : await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate);
 
             if (success)
@@ -161,18 +162,26 @@ public partial class CabinetViewModel
         string email = client.Email ?? "Unknown";
         string ip = server.IpAddress ?? "";
 
-        if (window.DataContext is AddClientViewModel vm) vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "");
+        // ИСПРАВЛЕНИЕ 1: Передаем текущее значение P2P в окно!
+        if (window.DataContext is AddClientViewModel vm) vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked);
         window.ShowDialog();
 
         if (window.DataContext is AddClientViewModel resultVm && resultVm.IsSuccess)
         {
             long newLimit = (long)resultVm.TrafficLimitGb * 1024 * 1024 * 1024;
 
+            // ИСПРАВЛЕНИЕ 2: Передаем SSH сервис и новый статус тумблера
             bool success = IsSingBoxActive()
-                ? await _singBoxUserManager.UpdateUserLimitsAsync(ip, email, newLimit, resultVm.ExpiryDate)
+                ? await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, resultVm.ExpiryDate, resultVm.IsP2PBlocked)
                 : await _userManager.UpdateUserLimitsAsync(ip, email, newLimit, resultVm.ExpiryDate);
 
-            if (success) { client.TrafficLimit = newLimit; client.ExpiryDate = resultVm.ExpiryDate; client.Note = resultVm.Note; }
+            if (success)
+            {
+                client.TrafficLimit = newLimit;
+                client.ExpiryDate = resultVm.ExpiryDate;
+                client.Note = resultVm.Note;
+                client.IsP2PBlocked = resultVm.IsP2PBlocked; // ИСПРАВЛЕНИЕ 3: Сохраняем в UI
+            }
         }
     }
 

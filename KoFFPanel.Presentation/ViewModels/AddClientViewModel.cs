@@ -9,20 +9,20 @@ public partial class AddClientViewModel : ObservableObject
     [ObservableProperty] private string _clientName = "";
     [ObservableProperty] private int _trafficLimitGb = 0;
     [ObservableProperty] private DateTime? _expiryDate = null;
-    [ObservableProperty] private string _note = ""; // Новое свойство
+    [ObservableProperty] private string _note = "";
 
-    // Динамический заголовок окна и текст кнопки
+    // НОВОЕ СВОЙСТВО: Флаг блокировки торрентов (По умолчанию включено для безопасности сервера)
+    [ObservableProperty] private bool _isP2PBlocked = true;
+
     [ObservableProperty] private string _windowTitle = "Добавить пользователя";
     [ObservableProperty] private string _actionButtonText = "Создать";
 
-    // Флаг: мы создаем или редактируем?
     public bool IsEditMode { get; private set; } = false;
-
     public bool IsSuccess { get; private set; } = false;
     public Action? CloseAction { get; set; }
 
-    // Метод для загрузки существующих данных при Редактировании
-    public void LoadForEdit(string currentName, long currentLimitBytes, DateTime? currentExpiry, string currentNote = "")
+    // Обновленный метод загрузки с учетом P2P флага
+    public void LoadForEdit(string currentName, long currentLimitBytes, DateTime? currentExpiry, string currentNote, bool isP2pBlocked = true)
     {
         IsEditMode = true;
         WindowTitle = "Редактировать пользователя";
@@ -32,6 +32,7 @@ public partial class AddClientViewModel : ObservableObject
         TrafficLimitGb = (int)(currentLimitBytes / 1024 / 1024 / 1024);
         ExpiryDate = currentExpiry;
         Note = currentNote ?? "";
+        IsP2PBlocked = isP2pBlocked;
     }
 
     [RelayCommand]
