@@ -17,4 +17,17 @@ public class VpnProfile
     public string PublicKey { get; set; } = "";
     public string ShortId { get; set; } = "";
     public string Sni { get; set; } = "www.microsoft.com";
+
+    // Новая сущность
+    public class ServerInbound
+    {
+        public int Id { get; set; }
+        public string ServerId { get; set; } = "";
+
+        public string Tag { get; set; } = "";
+        public string Protocol { get; set; } = "vless";
+        public int Port { get; set; } = 443;
+
+        public string SettingsJson { get; set; } = "{}";
+    }
 }

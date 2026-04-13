@@ -32,7 +32,6 @@ public partial class CabinetViewModel
             long limit = (long)vm.TrafficLimitGb * 1024 * 1024 * 1024;
             string ip = server.IpAddress ?? "";
 
-            // ИСПРАВЛЕНИЕ: Передаем тумблер IsP2PBlocked в ядро Sing-box
             var (success, msg, vlessLink) = IsSingBoxActive()
                 ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked)
                 : await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate);
@@ -162,7 +161,6 @@ public partial class CabinetViewModel
         string email = client.Email ?? "Unknown";
         string ip = server.IpAddress ?? "";
 
-        // ИСПРАВЛЕНИЕ 1: Передаем текущее значение P2P в окно!
         if (window.DataContext is AddClientViewModel vm) vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked);
         window.ShowDialog();
 
@@ -170,7 +168,6 @@ public partial class CabinetViewModel
         {
             long newLimit = (long)resultVm.TrafficLimitGb * 1024 * 1024 * 1024;
 
-            // ИСПРАВЛЕНИЕ 2: Передаем SSH сервис и новый статус тумблера
             bool success = IsSingBoxActive()
                 ? await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, resultVm.ExpiryDate, resultVm.IsP2PBlocked)
                 : await _userManager.UpdateUserLimitsAsync(ip, email, newLimit, resultVm.ExpiryDate);
@@ -180,7 +177,7 @@ public partial class CabinetViewModel
                 client.TrafficLimit = newLimit;
                 client.ExpiryDate = resultVm.ExpiryDate;
                 client.Note = resultVm.Note;
-                client.IsP2PBlocked = resultVm.IsP2PBlocked; // ИСПРАВЛЕНИЕ 3: Сохраняем в UI
+                client.IsP2PBlocked = resultVm.IsP2PBlocked;
             }
         }
     }
@@ -211,6 +208,43 @@ public partial class CabinetViewModel
         var window = _serviceProvider.GetRequiredService<Views.ClientAnalyticsWindow>();
         if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
         if (window.DataContext is ClientAnalyticsViewModel vm) vm.Initialize(server.IpAddress ?? "", client.Email ?? "");
+        window.ShowDialog();
+    }
+
+    [RelayCommand]
+    private void OpenProtocols(VpnClient? client)
+    {
+        var server = SelectedServer;
+        if (client == null || server == null) return;
+
+        var window = _serviceProvider.GetRequiredService<Views.ClientProtocolsWindow>();
+        if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
+
+        if (window.DataContext is ClientProtocolsViewModel vm)
+        {
+            vm.Initialize(client);
+
+            // ИСПРАВЛЕНИЕ: Делаем Callback асинхронным, чтобы дождаться ответа ядра
+            vm.SaveCallback = async (updatedClient) =>
+            {
+                string ip = server.IpAddress ?? "";
+
+                // 1. Сохраняем текущее состояние трафика
+                await _userManager.SaveTrafficToDbAsync(ip, Clients);
+
+                // 2. Отправляем новые тумблеры в ядро (Ядро проверит и сбросит их в БД при ошибке)
+                if (IsSingBoxActive())
+                {
+                    await _singBoxUserManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients);
+                }
+
+                // 3. БРОНЕБОЙНЫЙ ФИКС UI: Мгновенно перезагружаем клиентов из БД!
+                // Если ядро отменило Hysteria 2, UI вытянет из БД "false" и обновит таблицу в памяти.
+                await LoadUsersAsync();
+
+                ServerStatus = $"Онлайн (Протоколы для {updatedClient.Email} сохранены)";
+            };
+        }
         window.ShowDialog();
     }
 

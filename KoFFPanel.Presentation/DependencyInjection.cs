@@ -35,6 +35,8 @@ public static class DependencyInjection
         services.AddTransient<ClientConfigWindow>();
         services.AddTransient<ISingBoxConfiguratorService, SingBoxConfiguratorService>();
         services.AddTransient<ISingBoxUserManagerService, SingBoxUserManagerService>();
+        services.AddTransient<KoFFPanel.Presentation.ViewModels.ClientProtocolsViewModel>();
+        services.AddTransient<KoFFPanel.Presentation.Views.ClientProtocolsWindow>();
 
         // РЕГИСТРАЦИЯ АНАЛИТИКИ
         services.AddSingleton<IClientAnalyticsService, ClientAnalyticsService>();

@@ -84,6 +84,24 @@
                 </Style.Triggers>
             </Style>
 
+            <Style x:Key="BtnProtocols"
+                   TargetType="ui:Button"
+                   BasedOn="{StaticResource GridActionBtn}">
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver"
+                             Value="True">
+                        <Setter Property="Effect">
+                            <Setter.Value>
+                                <DropShadowEffect Color="#bd93f9"
+                                                  BlurRadius="10"
+                                                  ShadowDepth="0"
+                                                  Opacity="0.8" />
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
             <Style x:Key="BtnEdit"
                    TargetType="ui:Button"
                    BasedOn="{StaticResource GridActionBtn}">
@@ -707,6 +725,15 @@
                                                    Style="{StaticResource BtnAnalytics}">
                                             <ui:SymbolIcon Symbol="DataArea24"
                                                            Foreground="#f1fa8c"
+                                                           FontSize="18" />
+                                        </ui:Button>
+
+                                        <ui:Button Command="{Binding DataContext.OpenProtocolsCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                   CommandParameter="{Binding}"
+                                                   ToolTip="Настройка протоколов (VLESS, Hysteria 2...)"
+                                                   Style="{StaticResource BtnProtocols}">
+                                            <ui:SymbolIcon Symbol="Apps24"
+                                                           Foreground="#bd93f9"
                                                            FontSize="18" />
                                         </ui:Button>
 

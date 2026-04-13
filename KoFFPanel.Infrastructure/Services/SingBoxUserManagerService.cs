@@ -24,6 +24,92 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         _dbContext = dbContext;
     }
 
+    private async Task RebuildInboundsAsync(JsonNode root, string serverIp)
+    {
+        var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+        var inbounds = root?["inbounds"]?.AsArray();
+        if (inbounds == null) return;
+
+        JsonObject vlessInbound = null;
+        JsonObject hy2Inbound = null;
+
+        // Ищем глобальные точки входа на сервере
+        foreach (var inboundNode in inbounds)
+        {
+            var inbound = inboundNode as JsonObject;
+            if (inbound == null) continue;
+
+            var type = inbound["type"]?.ToString();
+            if (type == "vless") vlessInbound = inbound;
+            if (type == "hysteria2") hy2Inbound = inbound;
+        }
+
+        // --- 1. ОБРАБОТКА VLESS ---
+        if (vlessInbound != null)
+        {
+            var usersArray = new JsonArray();
+            string pubKey = vlessInbound["tls"]?["reality"]?["public_key"]?.ToString().Trim() ?? "";
+            string sni = vlessInbound["tls"]?["server_name"]?.ToString().Trim() ?? "www.microsoft.com";
+            string shortId = vlessInbound["tls"]?["reality"]?["short_id"]?[0]?.ToString().Trim() ?? "";
+            string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+            int port = (int?)vlessInbound["listen_port"] ?? 443;
+
+            foreach (var u in dbUsers)
+            {
+                if (u.IsActive && u.IsVlessEnabled)
+                {
+                    usersArray.Add(new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid, ["flow"] = "xtls-rprx-vision" });
+                }
+
+                u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{u.Email}";
+            }
+            vlessInbound["users"] = usersArray;
+        }
+        else
+        {
+            // Бронебойный фикс для VLESS
+            foreach (var u in dbUsers)
+            {
+                u.IsVlessEnabled = false; // Принудительно отключаем тумблер в БД
+                u.VlessLink = "VLESS не установлен на сервере!";
+            }
+        }
+
+        // --- 2. ОБРАБОТКА HYSTERIA 2 ---
+        if (hy2Inbound != null)
+        {
+            var usersArray = new JsonArray();
+            string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+            int port = (int?)hy2Inbound["listen_port"] ?? 8443;
+            string sni = hy2Inbound["tls"]?["server_name"]?.ToString().Trim() ?? "www.microsoft.com";
+            string obfsPassword = hy2Inbound["obfs"]?["salamander"]?["password"]?.ToString().Trim() ?? "";
+
+            foreach (var u in dbUsers)
+            {
+                if (u.IsActive && u.IsHysteria2Enabled)
+                {
+                    usersArray.Add(new JsonObject { ["name"] = u.Email, ["password"] = u.Uuid });
+                }
+
+                string obfsParam = string.IsNullOrEmpty(obfsPassword) ? "" : $"&obfs=salamander&obfs-password={obfsPassword}";
+                u.Hysteria2Link = $"hy2://{u.Uuid}@{safeIp}:{port}?sni={sni}&insecure=1{obfsParam}#SingBox_HY2_{u.Email}";
+            }
+            hy2Inbound["users"] = usersArray;
+        }
+        else
+        {
+            // БРОНЕБОЙНЫЙ ФИКС ДЛЯ HYSTERIA 2: Защита от дурака
+            _logger.Log("SB-PROTOCOL-MGR", $"[INFO] Глобальный Inbound Hysteria 2 не найден на сервере {serverIp}.");
+            foreach (var u in dbUsers)
+            {
+                u.IsHysteria2Enabled = false; // <-- ПРИНУДИТЕЛЬНО ОТКЛЮЧАЕМ ТУМБЛЕР В БД
+                u.Hysteria2Link = "Hysteria 2 не установлен на сервере!";
+            }
+        }
+
+        await _dbContext.SaveChangesAsync();
+    }
+
     private async Task ApplyP2PRulesAsync(JsonNode root, string serverIp)
     {
         try
@@ -34,9 +120,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                 .Select(c => c.Email.Trim())
                 .ToListAsync();
 
-            // 1. БРОНЕБОЙНЫЙ ФИКС АНАЛИТИКИ (ВКЛЮЧЕНИЕ DEBUG)
-            // Без уровня "debug" ядро не пишет расшифрованные домены в журнал (только голые IP),
-            // из-за чего умный C#-парсер не может зафиксировать нарушение.
             if (root["log"] is JsonObject logObj)
             {
                 logObj["level"] = "debug";
@@ -46,7 +129,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                 root["log"] = new JsonObject { ["level"] = "debug" };
             }
 
-            // 2. ЖЕСТКАЯ ОЧИСТКА INBOUNDS ОТ СТАРОГО СИНТАКСИСА
             var inbounds = root?["inbounds"]?.AsArray();
             if (inbounds != null)
             {
@@ -124,44 +206,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         }
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, bool isP2PBlocked = true)
-    {
-        _logger.Log("P2P-DIAGNOSTIC", $"[START UPDATE] Пришел запрос на обновление юзера: {name}, Значение тумблера IsP2PBlocked = {isP2PBlocked}");
-
-        var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-        if (dbUser == null)
-        {
-            _logger.Log("P2P-DIAGNOSTIC", $"[ERROR] Юзер {name} не найден в БД!");
-            return false;
-        }
-
-        dbUser.TrafficLimit = newLimitBytes;
-        dbUser.ExpiryDate = newExpiryDate;
-        dbUser.IsP2PBlocked = isP2PBlocked;
-
-        try
-        {
-            await _dbContext.SaveChangesAsync();
-            _logger.Log("P2P-DIAGNOSTIC", $"[DB SAVED] Сохранено в БД. Текущий статус юзера {name} IsP2PBlocked: {dbUser.IsP2PBlocked}");
-
-            string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
-            var root = JsonNode.Parse(rawJson);
-
-            await ApplyP2PRulesAsync(root, serverIp);
-
-            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-
-            _logger.Log("P2P-DIAGNOSTIC", $"[END UPDATE] Результат перезапуска Sing-box: {result.IsSuccess} ({result.Message})");
-            return result.IsSuccess;
-        }
-        catch (Exception ex)
-        {
-            _logger.Log("SB-USER-MGR", $"Ошибка обновления P2P/Лимитов: {ex.Message}");
-            return false;
-        }
-    }
-
-
     public async Task<List<VpnClient>> GetUsersAsync(ISshService ssh, string serverIp)
     {
         var users = new List<VpnClient>();
@@ -175,45 +219,41 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
             var root = JsonNode.Parse(rawJson);
             var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
 
-            var tlsNode = root?["inbounds"]?[0]?["tls"];
-            string pubKey = tlsNode?["reality"]?["public_key"]?.ToString().Trim() ?? "";
-            string sni = tlsNode?["server_name"]?.ToString().Trim() ?? "www.microsoft.com";
-            string shortId = tlsNode?["reality"]?["short_id"]?[0]?.ToString().Trim() ?? "";
-
-            string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
-            var clientsArray = root?["inbounds"]?[0]?["users"]?.AsArray() ?? new JsonArray();
-
-            foreach (var dbUser in dbUsers)
+            // Проверяем, есть ли в конфиге VLESS юзеры, которых еще нет в нашей БД
+            var vlessInbound = root?["inbounds"]?.AsArray()?.FirstOrDefault(i => i?["type"]?.ToString() == "vless");
+            if (vlessInbound != null)
             {
-                var sbUser = clientsArray.FirstOrDefault(c => c?["name"]?.ToString().Trim() == dbUser.Email);
-                dbUser.IsActive = (sbUser != null);
-                dbUser.VlessLink = $"vless://{dbUser.Uuid}@{safeIp}:443?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{dbUser.Email}";
-                users.Add(dbUser);
-            }
-
-            bool dbChanged = false;
-            foreach (var c in clientsArray)
-            {
-                string name = c?["name"]?.ToString().Trim() ?? "Unknown";
-                string uuid = c?["uuid"]?.ToString().Trim() ?? "";
-
-                if (!dbUsers.Any(u => u.Email == name))
+                var clientsArray = vlessInbound["users"]?.AsArray() ?? new JsonArray();
+                bool dbChanged = false;
+                foreach (var c in clientsArray)
                 {
-                    var newUser = new VpnClient
+                    string name = c?["name"]?.ToString().Trim() ?? "Unknown";
+                    string uuid = c?["uuid"]?.ToString().Trim() ?? "";
+
+                    if (!dbUsers.Any(u => u.Email == name))
                     {
-                        Email = name,
-                        Uuid = uuid,
-                        ServerIp = serverIp,
-                        Protocol = "VLESS",
-                        IsActive = true,
-                        TrafficUsed = 0,
-                        IsP2PBlocked = true,
-                        VlessLink = $"vless://{uuid}@{safeIp}:443?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{name}"
-                    };
-                    _dbContext.Clients.Add(newUser); users.Add(newUser); dbChanged = true;
+                        var newUser = new VpnClient
+                        {
+                            Email = name,
+                            Uuid = uuid,
+                            ServerIp = serverIp,
+                            Protocol = "VLESS",
+                            IsActive = true,
+                            TrafficUsed = 0,
+                            IsP2PBlocked = true,
+                            IsVlessEnabled = true,
+                            IsHysteria2Enabled = false
+                        };
+                        _dbContext.Clients.Add(newUser); dbUsers.Add(newUser); dbChanged = true;
+                    }
                 }
+                if (dbChanged) await _dbContext.SaveChangesAsync();
             }
-            if (dbChanged) await _dbContext.SaveChangesAsync();
+
+            // Обновляем ссылки и память (без пуша на сервер)
+            await RebuildInboundsAsync(root, serverIp);
+
+            users = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
         }
         catch (Exception ex) { _logger.Log("SB-USER-MGR", $"Ошибка парсинга: {ex.Message}"); }
 
@@ -224,34 +264,37 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
     {
         try
         {
-            string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
-            var root = JsonNode.Parse(rawJson);
-            var clientsArray = root?["inbounds"]?[0]?["users"]?.AsArray();
-            if (clientsArray == null) return (false, "Структура JSON повреждена.", "");
-
-            if (clientsArray.Any(c => c?["name"]?.ToString().Trim() == name)) return (false, $"Пользователь {name} уже существует!", "");
+            var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Email == name && c.ServerIp == serverIp);
+            if (dbUser != null) return (false, $"Пользователь {name} уже существует!", "");
 
             string newUuid = Guid.NewGuid().ToString();
-            clientsArray.Add(new JsonObject { ["name"] = name, ["uuid"] = newUuid, ["flow"] = "xtls-rprx-vision" });
+            var newUser = new VpnClient
+            {
+                Email = name,
+                Uuid = newUuid,
+                ServerIp = serverIp,
+                TrafficLimit = trafficLimitBytes,
+                ExpiryDate = expiryDate,
+                IsP2PBlocked = isP2PBlocked,
+                IsVlessEnabled = true,
+                IsHysteria2Enabled = false
+            };
 
-            var newUser = new VpnClient { Email = name, Uuid = newUuid, ServerIp = serverIp, TrafficLimit = trafficLimitBytes, ExpiryDate = expiryDate, IsP2PBlocked = isP2PBlocked };
             _dbContext.Clients.Add(newUser);
             await _dbContext.SaveChangesAsync();
 
+            string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+            var root = JsonNode.Parse(rawJson);
+
+            // Магия синхронизации состояния
+            await RebuildInboundsAsync(root, serverIp);
             await ApplyP2PRulesAsync(root, serverIp);
 
-            var tlsNode = root?["inbounds"]?[0]?["tls"];
-            string pubKey = tlsNode?["reality"]?["public_key"]?.ToString().Trim() ?? "";
-            string sni = tlsNode?["server_name"]?.ToString().Trim() ?? "www.microsoft.com";
-            string shortId = tlsNode?["reality"]?["short_id"]?[0]?.ToString().Trim() ?? "";
-
-            string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
-            string vlessLink = $"vless://{newUuid}@{safeIp}:443?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{name}";
-            newUser.VlessLink = vlessLink;
-            await _dbContext.SaveChangesAsync();
-
             var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            return (result.IsSuccess, result.Message, vlessLink);
+
+            // Возвращаем сгенерированный линк из БД
+            var savedUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.Email == name && c.ServerIp == serverIp);
+            return (result.IsSuccess, result.Message, savedUser?.VlessLink ?? "");
         }
         catch (Exception ex) { return (false, $"Ошибка: {ex.Message}", ""); }
     }
@@ -260,33 +303,23 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
     {
         try
         {
-            bool removedFromCore = false;
+            var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
+
+            // Защита от удаления последнего
+            int count = await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp);
+            if (count <= 1 && dbUser != null) return (false, "Защита: Нельзя удалить последнего пользователя!");
+
+            if (dbUser != null) { _dbContext.Clients.Remove(dbUser); await _dbContext.SaveChangesAsync(); }
+
             string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null");
-            if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.Contains("{"))
-            {
-                var root = JsonNode.Parse(rawJson);
-                var clientsArray = root?["inbounds"]?[0]?["users"]?.AsArray();
-                if (clientsArray != null)
-                {
-                    var userNode = clientsArray.FirstOrDefault(c => c?["name"]?.ToString().Trim() == name);
-                    if (userNode != null)
-                    {
-                        if (clientsArray.Count <= 1) return (false, "Защита: Нельзя удалить последнего пользователя!");
-                        clientsArray.Remove(userNode);
+            if (string.IsNullOrWhiteSpace(rawJson) || !rawJson.Contains("{")) return (true, $"Пользователь {name} вычищен из БД.");
 
-                        var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-                        if (dbUser != null) { _dbContext.Clients.Remove(dbUser); await _dbContext.SaveChangesAsync(); }
+            var root = JsonNode.Parse(rawJson);
 
-                        await ApplyP2PRulesAsync(root, serverIp);
+            await RebuildInboundsAsync(root, serverIp);
+            await ApplyP2PRulesAsync(root, serverIp);
 
-                        var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                        if (!result.IsSuccess) return result;
-                        removedFromCore = true;
-                    }
-                }
-            }
-
-            return (true, removedFromCore ? $"Пользователь {name} удален." : $"Пользователь {name} вычищен из БД.");
+            return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception ex) { return (false, $"Ошибка удаления: {ex.Message}"); }
     }
@@ -298,34 +331,49 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
             var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
             if (dbUser == null) return (false, "Не найден в БД.");
 
-            string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
-            var root = JsonNode.Parse(rawJson);
-            var clientsArray = root?["inbounds"]?[0]?["users"]?.AsArray();
-            if (clientsArray == null) return (false, "Ошибка JSON.");
-
-            var userNode = clientsArray.FirstOrDefault(c => c?["name"]?.ToString().Trim() == name);
-
-            if (enableAccess)
-            {
-                if (userNode != null) return (true, "Уже активен.");
-                clientsArray.Add(new JsonObject { ["name"] = name, ["uuid"] = dbUser.Uuid, ["flow"] = "xtls-rprx-vision" });
-            }
-            else
-            {
-                if (userNode == null) return (true, "Уже заблокирован.");
-                if (clientsArray.Count <= 1) return (false, "Нельзя заблокировать последнего пользователя.");
-                clientsArray.Remove(userNode);
-            }
-
             dbUser.IsActive = enableAccess;
             await _dbContext.SaveChangesAsync();
 
-            await ApplyP2PRulesAsync(root, serverIp);
-            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+            var root = JsonNode.Parse(rawJson);
 
-            return result;
+            await RebuildInboundsAsync(root, serverIp);
+            await ApplyP2PRulesAsync(root, serverIp);
+
+            return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
         }
         catch (Exception ex) { return (false, $"Ошибка статуса: {ex.Message}"); }
+    }
+
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, bool isP2PBlocked = true)
+    {
+        _logger.Log("P2P-DIAGNOSTIC", $"[START UPDATE] Обновление юзера: {name}");
+
+        var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
+        if (dbUser == null) return false;
+
+        dbUser.TrafficLimit = newLimitBytes;
+        dbUser.ExpiryDate = newExpiryDate;
+        dbUser.IsP2PBlocked = isP2PBlocked;
+
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+
+            string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+            var root = JsonNode.Parse(rawJson);
+
+            await RebuildInboundsAsync(root, serverIp);
+            await ApplyP2PRulesAsync(root, serverIp);
+
+            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            return result.IsSuccess;
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("SB-USER-MGR", $"Ошибка обновления P2P/Лимитов: {ex.Message}");
+            return false;
+        }
     }
 
     private async Task<(bool IsSuccess, string Message)> ApplyAndTestConfigAsync(ISshService ssh, string newJson)
@@ -334,16 +382,7 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /tmp/sb_test.json");
 
         var testResult = await ssh.ExecuteCommandAsync("/usr/local/bin/sing-box check -c /tmp/sb_test.json 2>&1");
-
         _logger.Log("SB-DIAGNOSTIC", $"Ответ от проверки sing-box check:\n{testResult.Trim()}");
-
-        // === РАСШИРЕНИЕ ЛОГОВ (СБОР ИНФОРМАЦИИ) ===
-        try
-        {
-            var root = JsonNode.Parse(newJson);
-            _logger.Log("SB-DIAGNOSTIC", $"[JSON DUMP] Текущие сгенерированные правила route.rules:\n{root?["route"]?["rules"]?.ToJsonString()}");
-        }
-        catch { }
 
         if (testResult.Contains("FATAL") || testResult.Contains("error"))
         {
@@ -370,30 +409,17 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         {
             string rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
             var root = JsonNode.Parse(rawJson);
-            var clientsArray = root?["inbounds"]?[0]?["users"]?.AsArray();
-
-            if (clientsArray == null) return false;
-
-            clientsArray.Clear();
-            foreach (var user in dbUsers.Where(u => u.IsActive))
-            {
-                clientsArray.Add(new JsonObject { ["name"] = user.Email, ["uuid"] = user.Uuid, ["flow"] = "xtls-rprx-vision" });
-            }
 
             string serverIp = dbUsers.FirstOrDefault()?.ServerIp ?? "";
             if (!string.IsNullOrEmpty(serverIp))
             {
+                await RebuildInboundsAsync(root, serverIp);
                 await ApplyP2PRulesAsync(root, serverIp);
             }
 
-            string updatedJson = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-            string base64Json = Convert.ToBase64String(Encoding.UTF8.GetBytes(updatedJson.Replace("\r", "")));
-
-            await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /etc/sing-box/config.json");
-            await ssh.ExecuteCommandAsync("systemctl restart sing-box");
-
-            _logger.Log("USER-SYNC", $"Успешно синхронизировано {dbUsers.Count(u => u.IsActive)} юзеров с ядром Sing-box.");
-            return true;
+            var result = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            _logger.Log("USER-SYNC", $"Синхронизация Sing-box завершена: {result.Message}");
+            return result.IsSuccess;
         }
         catch (Exception ex)
         {

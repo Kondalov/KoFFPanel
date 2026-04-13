@@ -1,7 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using System.ComponentModel.DataAnnotations.Schema; // <-- ДОБАВЛЕНО ДЛЯ NOTMAPPED
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace KoFFPanel.Domain.Entities;
 
@@ -11,7 +11,7 @@ public class VpnClient : INotifyPropertyChanged
     public int Id { get; set; }
     public string ServerIp { get; set; } = "";
 
-    // ИСПРАВЛЕНИЕ: Говорим базе данных (EF Core/SQLite) ИГНОРИРОВАТЬ это поле, 
+    // Говорим базе данных (EF Core/SQLite) ИГНОРИРОВАТЬ это поле, 
     // чтобы она не искала колонку AvatarPath и не падала с ошибкой.
     private string _avatarPath = "";
     [NotMapped]
@@ -87,6 +87,29 @@ public class VpnClient : INotifyPropertyChanged
         get => _vlessLink;
         set { _vlessLink = value; OnPropertyChanged(); }
     }
+
+    // === НОВЫЕ ПОЛЯ ДЛЯ МУЛЬТИ-ПРОТОКОЛОВ (ШАГ 2) ===
+    private bool _isVlessEnabled = true; // У старых пользователей VLESS должен остаться включенным
+    public bool IsVlessEnabled
+    {
+        get => _isVlessEnabled;
+        set { _isVlessEnabled = value; OnPropertyChanged(); }
+    }
+
+    private bool _isHysteria2Enabled = false; // По умолчанию выключен
+    public bool IsHysteria2Enabled
+    {
+        get => _isHysteria2Enabled;
+        set { _isHysteria2Enabled = value; OnPropertyChanged(); }
+    }
+
+    private string _hysteria2Link = "";
+    public string Hysteria2Link
+    {
+        get => _hysteria2Link;
+        set { _hysteria2Link = value; OnPropertyChanged(); }
+    }
+    // =================================================
 
     private long _trafficUsed = 0;
     public long TrafficUsed

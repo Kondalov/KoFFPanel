@@ -83,6 +83,7 @@
                     <ui:TextBox Text="{Binding ClientName, UpdateSourceTrigger=PropertyChanged}"
                                 PlaceholderText="Например: Kostya_Phone"
                                 Foreground="White"
+                                FontWeight="Bold"
                                 Background="#0DFFFFFF"
                                 BorderBrush="#1AFFFFFF"
                                 FontSize="15"
@@ -117,6 +118,7 @@
                         </StackPanel>
                         <ui:TextBox Text="{Binding TrafficLimitGb, UpdateSourceTrigger=PropertyChanged}"
                                     Foreground="White"
+                                    FontWeight="Bold"
                                     Background="#0DFFFFFF"
                                     BorderBrush="#1AFFFFFF"
                                     FontSize="15"
@@ -138,9 +140,10 @@
                         </StackPanel>
                         <DatePicker SelectedDate="{Binding ExpiryDate}"
                                     FontSize="15"
+                                    FontWeight="Bold"
                                     Height="44"
                                     Background="#0DFFFFFF"
-                                    Foreground="Black" />
+                                    Foreground="White" />
                     </StackPanel>
                 </Grid>
 
@@ -193,6 +196,7 @@
                     <ui:TextBox Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}"
                                 PlaceholderText="Контакт, Telegram, устройство..."
                                 Foreground="White"
+                                FontWeight="Bold"
                                 Background="#0DFFFFFF"
                                 BorderBrush="#1AFFFFFF"
                                 FontSize="15"
