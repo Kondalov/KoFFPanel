@@ -4,9 +4,9 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="Мастер установки"
                  Width="600"
-                 Height="660"
+                 Height="780"
                  MinWidth="550"
-                 MinHeight="640"
+                 MinHeight="700"
                  WindowStartupLocation="CenterOwner"
                  WindowBackdropType="None"
                  Background="#0a0a0a"
@@ -72,12 +72,6 @@
                                 <Setter TargetName="CardBorder"
                                         Property="BorderBrush"
                                         Value="#4DFFFFFF" />
-                                <Setter TargetName="CardBorder"
-                                        Property="RenderTransform">
-                                    <Setter.Value>
-                                        <TranslateTransform Y="-2" />
-                                    </Setter.Value>
-                                </Setter>
                             </Trigger>
                             <Trigger Property="IsChecked"
                                      Value="True">
@@ -90,15 +84,6 @@
                                 <Setter TargetName="CheckBadge"
                                         Property="Visibility"
                                         Value="Visible" />
-                                <Setter TargetName="CardBorder"
-                                        Property="Effect">
-                                    <Setter.Value>
-                                        <DropShadowEffect Color="#00f2ff"
-                                                          BlurRadius="15"
-                                                          ShadowDepth="0"
-                                                          Opacity="0.4" />
-                                    </Setter.Value>
-                                </Setter>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -179,18 +164,6 @@
     </ui:FluentWindow.Resources>
 
     <Grid>
-        <Grid.Background>
-            <RadialGradientBrush GradientOrigin="0.8,0.2"
-                                 Center="0.8,0.2"
-                                 RadiusX="0.5"
-                                 RadiusY="0.5">
-                <GradientStop Color="#1A00f2ff"
-                              Offset="0.0" />
-                <GradientStop Color="#000a0a0a"
-                              Offset="1.0" />
-            </RadialGradientBrush>
-        </Grid.Background>
-
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -218,7 +191,6 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -233,97 +205,25 @@
                             <ui:SymbolIcon Symbol="Rocket24"
                                            Foreground="#00f2ff"
                                            FontSize="24"
-                                           Margin="0,0,10,0">
-                                <ui:SymbolIcon.Effect>
-                                    <DropShadowEffect Color="#00f2ff"
-                                                      BlurRadius="10"
-                                                      ShadowDepth="0" />
-                                </ui:SymbolIcon.Effect>
-                            </ui:SymbolIcon>
+                                           Margin="0,0,10,0" />
                             <TextBlock Text="МАСТЕР УСТАНОВКИ"
                                        FontSize="20"
-                                       FontWeight="ExtraBold">
-                                <TextBlock.Foreground>
-                                    <LinearGradientBrush StartPoint="0,0"
-                                                         EndPoint="1,1">
-                                        <GradientStop Color="#FFFFFF"
-                                                      Offset="0" />
-                                        <GradientStop Color="#00f2ff"
-                                                      Offset="1" />
-                                    </LinearGradientBrush>
-                                </TextBlock.Foreground>
-                            </TextBlock>
+                                       FontWeight="ExtraBold"
+                                       Foreground="White" />
                         </StackPanel>
-                        <TextBlock Text="Выберите ядро для развертывания на сервере"
+                        <TextBlock Text="Выберите ядро и отметьте протоколы для развертывания"
                                    Foreground="#B3FFFFFF"
                                    FontSize="12"
                                    HorizontalAlignment="Center" />
                     </StackPanel>
 
-                    <Border Grid.Row="1"
-                            Background="#1Affaa00"
-                            BorderBrush="#4Dffaa00"
-                            BorderThickness="1"
-                            CornerRadius="12"
-                            Padding="16,12"
-                            Margin="0,0,0,16">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-
-                            <ui:TitleBar Grid.Row="0"
-                                         Title="Мастер установки"
-                                         Background="Transparent"
-                                         Foreground="White"
-                                         Padding="15,5" />
-
-                            <Grid Grid.Row="1"
-                                  Margin="16,10,16,16">
-                            </Grid>
-                        </Grid>
-                    </Border>
-
-                    <Grid Grid.Row="2"
-                          Margin="0,0,0,12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="ВЫБЕРИТЕ ЯДРО"
-                                   Foreground="#999999"
-                                   FontWeight="SemiBold"
-                                   FontSize="11"
-                                   Margin="0,0,12,0"
-                                   VerticalAlignment="Center" />
-                        <Border Grid.Column="1"
-                                Height="1"
-                                VerticalAlignment="Center">
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0"
-                                                     EndPoint="1,0">
-                                    <GradientStop Color="#33FFFFFF"
-                                                  Offset="0" />
-                                    <GradientStop Color="#00FFFFFF"
-                                                  Offset="1" />
-                                </LinearGradientBrush>
-                            </Border.Background>
-                        </Border>
-                    </Grid>
-
-                    <Grid Grid.Row="3"
-                          Margin="0,0,0,16">
+                    <Grid Grid.Row="1"
+                          Margin="0,0,0,24">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="12" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
 
                         <RadioButton Grid.Column="0"
                                      GroupName="CoreSelection"
@@ -340,7 +240,7 @@
                                            FontWeight="ExtraBold"
                                            FontSize="14"
                                            HorizontalAlignment="Center" />
-                                <TextBlock Text="Стабильное ядро"
+                                <TextBlock Text="TCP протоколы"
                                            Foreground="#a0aabf"
                                            FontSize="10"
                                            TextAlignment="Center" />
@@ -362,35 +262,112 @@
                                            FontWeight="ExtraBold"
                                            FontSize="14"
                                            HorizontalAlignment="Center" />
-                                <TextBlock Text="Легкое ядро"
+                                <TextBlock Text="UDP/TCP протоколы"
                                            Foreground="#a0aabf"
                                            FontSize="10"
                                            TextAlignment="Center" />
                             </StackPanel>
                         </RadioButton>
-
-                        <RadioButton Grid.Row="2"
-                                     Grid.ColumnSpan="3"
-                                     GroupName="CoreSelection"
-                                     Style="{StaticResource KernelCardRadioStyle}"
-                                     IsChecked="{Binding IsCustomSelected}"
-                                     IsEnabled="{Binding IsNotInstalling}">
-                            <StackPanel Orientation="Horizontal"
-                                        HorizontalAlignment="Center">
-                                <ui:SymbolIcon Symbol="DocumentEdit24"
-                                               Foreground="#ff00aa"
-                                               FontSize="24"
-                                               Margin="0,0,12,0" />
-                                <TextBlock Text="СВОЯ КОНФИГУРАЦИЯ"
-                                           Foreground="White"
-                                           FontWeight="ExtraBold"
-                                           FontSize="14"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
                     </Grid>
 
-                    <TextBlock Grid.Row="4"
+                    <ScrollViewer Grid.Row="2"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Margin="0,0,0,16">
+                        <ItemsControl ItemsSource="{Binding AvailableProtocols}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#0AFFFFFF"
+                                            BorderBrush="#1AFFFFFF"
+                                            BorderThickness="1"
+                                            CornerRadius="12"
+                                            Padding="16"
+                                            Margin="0,0,0,12">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="120" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <ui:ToggleSwitch Grid.Column="0"
+                                                             IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             VerticalAlignment="Center"
+                                                             Margin="0,0,16,0" />
+
+                                            <StackPanel Grid.Column="1"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Builder.DisplayName}"
+                                                           Foreground="White"
+                                                           FontWeight="Bold"
+                                                           FontSize="15"
+                                                           Margin="0,0,0,4" />
+                                                <TextBlock Text="{Binding ValidationMessage}"
+                                                           FontSize="12"
+                                                           TextWrapping="Wrap">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground"
+                                                                    Value="#00ff88" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsValid}"
+                                                                             Value="False">
+                                                                    <Setter Property="Foreground"
+                                                                            Value="#ff4444" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsSelected}"
+                                                                             Value="False">
+                                                                    <Setter Property="Foreground"
+                                                                            Value="#666666" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </StackPanel>
+
+                                            <StackPanel Grid.Column="2"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock Text="Порт:"
+                                                           Foreground="#B3FFFFFF"
+                                                           FontSize="11"
+                                                           Margin="0,0,0,4" />
+                                                <ui:TextBox Text="{Binding PortText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                            IsEnabled="{Binding IsSelected}"
+                                                            TextAlignment="Center"
+                                                            FontWeight="Bold"
+                                                            FontSize="16"
+                                                            Height="36">
+                                                    <ui:TextBox.Style>
+                                                        <Style TargetType="ui:TextBox"
+                                                               BasedOn="{StaticResource {x:Type ui:TextBox}}">
+                                                            <Setter Property="BorderBrush"
+                                                                    Value="#33FFFFFF" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsValid}"
+                                                                             Value="False">
+                                                                    <Setter Property="BorderBrush"
+                                                                            Value="#ff4444" />
+                                                                    <Setter Property="BorderThickness"
+                                                                            Value="2" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsSelected}"
+                                                                             Value="False">
+                                                                    <Setter Property="Opacity"
+                                                                            Value="0.3" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ui:TextBox.Style>
+                                                </ui:TextBox>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <TextBlock Grid.Row="3"
                                Text="{Binding StatusMessage}"
                                Foreground="#00ff88"
                                HorizontalAlignment="Center"
@@ -400,7 +377,7 @@
                                TextWrapping="Wrap"
                                TextAlignment="Center" />
 
-                    <Grid Grid.Row="5">
+                    <Grid Grid.Row="4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="12" />

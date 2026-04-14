@@ -2,171 +2,215 @@
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using KoFFPanel.Application.Interfaces;
-using KoFFPanel.Application.Strategies;
+using KoFFPanel.Application.Interfaces.ProtocolBuilders;
+using KoFFPanel.Application.Services;
 using KoFFPanel.Domain.Entities;
-using Microsoft.Extensions.DependencyInjection;
+using KoFFPanel.Infrastructure.Services;
+using KoFFPanel.Infrastructure.Services.ProtocolBuilders;
+using KoFFPanel.Presentation.Messages;
 using System;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
+public partial class ProtocolSetupItem : ObservableObject
+{
+    public IProtocolBuilder Builder { get; }
+
+    [ObservableProperty] private bool _isSelected;
+    [ObservableProperty] private string _portText = "";
+    [ObservableProperty] private bool _isValid = true;
+    [ObservableProperty] private string _validationMessage = "Ожидание...";
+
+    public ProtocolSetupItem(IProtocolBuilder builder)
+    {
+        Builder = builder;
+    }
+}
+
 public partial class DeployWizardViewModel : ObservableObject
 {
-    private readonly ISshService _sshService;
-    private readonly IGitHubReleaseService _gitHubService;
-    private readonly ICoreDeploymentService _deploymentService;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IProfileRepository _profileRepository;
+    private readonly ISshService _ssh;
+    private readonly ProtocolFactory _protocolFactory;
+    private readonly ISmartPortValidator _portValidator;
+    private readonly IAppLogger _logger;
+    private readonly ICoreDeploymentService _deploymentService; // ДОБАВЛЕНО
+    private VpnProfile _server = null!;
 
-    public Action<string>? OnInstallRequested { get; set; }
     public Action? CloseAction { get; set; }
-
-    [ObservableProperty] private VpnProfile? _targetServer;
+    public Action<string>? OnInstallRequested { get; set; }
 
     [ObservableProperty] private bool _isXraySelected = true;
-    [ObservableProperty] private bool _isSingBoxSelected = false;
-    [ObservableProperty] private bool _isCustomSelected = false;
+    [ObservableProperty] private bool _isSingBoxSelected;
+    [ObservableProperty] private bool _isCustomSelected;
 
-    [ObservableProperty] private string _xrayCurrentVersion = "Загрузка...";
-    [ObservableProperty] private string _xrayLatestVersion = "Загрузка...";
-    [ObservableProperty] private string _singBoxCurrentVersion = "Загрузка...";
-    [ObservableProperty] private string _singBoxLatestVersion = "Загрузка...";
+    [ObservableProperty] private bool _isNotInstalling = true;
+    [ObservableProperty] private string _statusMessage = "Выберите ядро и нужные протоколы для установки.";
 
-    [ObservableProperty] private string _statusMessage = "Анализ сервера...";
-    [ObservableProperty] private bool _isInstalling = false;
-    [ObservableProperty] private bool _isNotInstalling = false;
+    public ObservableCollection<ProtocolSetupItem> AvailableProtocols { get; } = new();
 
+    // ОБНОВЛЕННЫЙ КОНСТРУКТОР
     public DeployWizardViewModel(
-        ISshService sshService,
-        IGitHubReleaseService gitHubService,
-        ICoreDeploymentService deploymentService,
-        IServiceProvider serviceProvider,
-        IProfileRepository profileRepository)
+        ISshService ssh,
+        ProtocolFactory protocolFactory,
+        ISmartPortValidator portValidator,
+        IAppLogger logger,
+        ICoreDeploymentService deploymentService)
     {
-        _sshService = sshService;
-        _gitHubService = gitHubService;
+        _ssh = ssh;
+        _protocolFactory = protocolFactory;
+        _portValidator = portValidator;
+        _logger = logger;
         _deploymentService = deploymentService;
-        _serviceProvider = serviceProvider;
-        _profileRepository = profileRepository;
     }
 
     public async Task InitializeAsync(VpnProfile server)
     {
-        TargetServer = server;
-        IsNotInstalling = false;
+        _logger.Log("WIZARD-TRACE", $"[START] Инициализация мастера для сервера {server.IpAddress}");
+        _server = server;
 
-        var connResult = await _sshService.ConnectAsync(server.IpAddress, server.Port, server.Username, server.Password, server.KeyPath ?? "");
-        if (connResult != "SUCCESS")
+        try
         {
-            StatusMessage = $"❌ Ошибка: {connResult}";
-            return;
+            if (!_ssh.IsConnected)
+            {
+                _logger.Log("WIZARD-TRACE", "[INFO] SSH не подключен. Начинаем подключение...");
+                StatusMessage = "Подключение к серверу для умного сканирования портов...";
+
+                var connectResult = await _ssh.ConnectAsync(server.IpAddress!, server.Port, server.Username!, server.Password!, server.KeyPath!);
+                _logger.Log("WIZARD-TRACE", $"[SSH] Результат подключения: {connectResult}");
+            }
+
+            LoadProtocolsForCurrentCore();
+            StatusMessage = "Успешно! Выберите ядро и отметьте протоколы.";
+            _logger.Log("WIZARD-TRACE", "[SUCCESS] Мастер загружен.");
         }
-
-        StatusMessage = "Получение актуальных версий...";
-
-        var xrayTask = _deploymentService.GetInstalledXrayVersionAsync(_sshService);
-        var singBoxTask = _deploymentService.GetInstalledSingBoxVersionAsync(_sshService);
-        var gitXrayTask = _gitHubService.GetLatestReleaseVersionAsync("XTLS/Xray-core");
-        var gitSingBoxTask = _gitHubService.GetLatestReleaseVersionAsync("SagerNet/sing-box");
-
-        await Task.WhenAll(xrayTask, singBoxTask, gitXrayTask, gitSingBoxTask);
-
-        XrayCurrentVersion = xrayTask.Result;
-        XrayLatestVersion = gitXrayTask.Result;
-        SingBoxCurrentVersion = singBoxTask.Result;
-        SingBoxLatestVersion = gitSingBoxTask.Result;
-
-        StatusMessage = "Готов к умной установке.";
-        IsNotInstalling = true;
+        catch (Exception ex)
+        {
+            _logger.Log("WIZARD-ERROR", $"[ОШИБКА] {ex.Message}");
+            StatusMessage = $"Ошибка подключения: {ex.Message}";
+        }
     }
 
+    partial void OnIsXraySelectedChanged(bool value)
+    {
+        if (value) LoadProtocolsForCurrentCore();
+    }
+
+    partial void OnIsSingBoxSelectedChanged(bool value)
+    {
+        if (value) LoadProtocolsForCurrentCore();
+    }
+
+    private void LoadProtocolsForCurrentCore()
+    {
+        foreach (var p in AvailableProtocols) p.PropertyChanged -= OnProtocolPropertyChanged;
+        AvailableProtocols.Clear();
+
+        if (IsCustomSelected) return;
+
+        var builders = _protocolFactory.GetAvailableProtocols(IsSingBoxSelected);
+        foreach (var builder in builders)
+        {
+            var item = new ProtocolSetupItem(builder);
+            item.PropertyChanged += OnProtocolPropertyChanged;
+            AvailableProtocols.Add(item);
+        }
+    }
+
+    private async void OnProtocolPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is ProtocolSetupItem item)
+        {
+            if (e.PropertyName == nameof(ProtocolSetupItem.IsSelected))
+            {
+                if (item.IsSelected)
+                {
+                    item.ValidationMessage = "Сканирование...";
+                    item.IsValid = true;
+                    int bestPort = await _portValidator.SuggestBestPortAsync(_ssh, _server.Id, item.Builder.ProtocolType);
+                    item.PortText = bestPort.ToString();
+                }
+                else
+                {
+                    item.PortText = "";
+                    item.ValidationMessage = "ОТКЛЮЧЕН";
+                }
+            }
+            else if (e.PropertyName == nameof(ProtocolSetupItem.PortText) && item.IsSelected)
+            {
+                if (int.TryParse(item.PortText, out int port))
+                {
+                    item.ValidationMessage = "Проверка...";
+                    var (isValid, msg) = await _portValidator.ValidatePortAsync(_ssh, _server.Id, port, item.Builder.ProtocolType);
+
+                    var duplicateInUI = AvailableProtocols.FirstOrDefault(p => p != item && p.IsSelected && p.PortText == item.PortText && p.Builder.TransportType == item.Builder.TransportType);
+                    if (duplicateInUI != null)
+                    {
+                        isValid = false;
+                        msg = $"Конфликт UI: Порт уже выбран для {duplicateInUI.Builder.DisplayName}!";
+                    }
+
+                    item.IsValid = isValid;
+                    item.ValidationMessage = msg;
+                }
+                else
+                {
+                    item.IsValid = false;
+                    item.ValidationMessage = "Введите число от 1 до 65535";
+                }
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void Cancel() => CloseAction?.Invoke();
+
+    // ИСПРАВЛЕНИЕ: Асинхронный метод для связи с сервисом и синхронизации клиентов
     [RelayCommand]
     private async Task StartInstallAsync()
     {
-        if (TargetServer == null || !_sshService.IsConnected) return;
+        _logger.Log("WIZARD-TRACE", "[ACTION] Старт установки");
 
-        if (IsCustomSelected)
+        if (IsCustomSelected) return;
+
+        var selectedItems = AvailableProtocols.Where(p => p.IsSelected).ToList();
+        if (!selectedItems.Any())
         {
-            _sshService.Disconnect();
-            CloseAction?.Invoke();
-            var customConfigWindow = _serviceProvider.GetRequiredService<Views.CustomConfigWindow>();
-            customConfigWindow.ShowDialog();
+            StatusMessage = "ОШИБКА: Выберите протоколы!";
+            return;
+        }
+        if (selectedItems.Any(p => !p.IsValid))
+        {
+            StatusMessage = "ОШИБКА: Исправьте конфликты портов!";
             return;
         }
 
+        StatusMessage = "🚀 Развертывание ядра и портов... (Подождите)";
         IsNotInstalling = false;
-        IsInstalling = true;
-        StatusMessage = "🔍 Проверка конфигурации...";
 
-        ICoreInstallStrategy? strategy = null;
-        if (IsXraySelected) strategy = new XrayInstallStrategy();
-        else if (IsSingBoxSelected) strategy = new SingBoxInstallStrategy();
+        var protocolsToInstall = selectedItems.Select(p => (p.Builder, int.Parse(p.PortText))).ToList();
 
-        if (strategy != null)
+        var (success, log) = await _deploymentService.DeployFullStackAsync(_ssh, _server, IsSingBoxSelected, protocolsToInstall);
+
+        if (success)
         {
-            var (success, msg, resultObj) = await strategy.ExecuteFullInstall(
-                _sshService, TargetServer.IpAddress, 443, "www.microsoft.com",
-                TargetServer.Uuid ?? "", TargetServer.PrivateKey ?? "",
-                TargetServer.PublicKey ?? "", TargetServer.ShortId ?? ""
-            );
+            StatusMessage = "✅ УСТАНОВКА УСПЕШНА! Синхронизация клиентов...";
+            _logger.Log("WIZARD-TRACE", "[SUCCESS] Отправка сигнала CabinetViewModel для вшивки клиентов.");
 
-            StatusMessage = msg;
+            // ВАЖНО: Этот сигнал заставит панель прописать старых клиентов в новый конфиг!
+            WeakReferenceMessenger.Default.Send(new CoreDeployedMessage(_server));
 
-            // ВАЖНО: Универсальная проверка для обоих ядер
-            if (success && resultObj != null)
-            {
-                string newUuid = "", newPriv = "", newPub = "", newSid = "", newSni = "";
-                int newPort = 443;
-
-                if (resultObj is XrayInstallResult xrayRes)
-                {
-                    newUuid = xrayRes.Uuid; newPriv = xrayRes.PrivateKey; newPub = xrayRes.PublicKey;
-                    newSid = xrayRes.ShortId; newPort = xrayRes.Port; newSni = xrayRes.Sni;
-                }
-                else if (resultObj is SingBoxInstallResult sbRes)
-                {
-                    newUuid = sbRes.Uuid; newPriv = sbRes.PrivateKey; newPub = sbRes.PublicKey;
-                    newSid = sbRes.ShortId; newPort = sbRes.Port; newSni = sbRes.Sni;
-                }
-
-                TargetServer.PrivateKey = newPriv; TargetServer.PublicKey = newPub;
-                TargetServer.Uuid = newUuid; TargetServer.ShortId = newSid;
-                TargetServer.VpnPort = newPort; TargetServer.Sni = newSni;
-
-                _profileRepository.UpdateProfile(TargetServer);
-
-                // Даем команду дашборду: "Эй, ядро сменилось, обнови карточки и ссылки!"
-                CommunityToolkit.Mvvm.Messaging.WeakReferenceMessenger.Default.Send(new Messages.CoreDeployedMessage(TargetServer));
-
-                StatusMessage = "✅ Готово! Сохранение конфигурации...";
-
-                // Открываем окно с ключами
-                System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                {
-                    var successWin = new Views.InstallationSuccessWindow();
-                    successWin.DataContext = resultObj; // Биндим наши ссылки из шаблона
-
-                    if (System.Windows.Application.Current.MainWindow != null)
-                        successWin.Owner = System.Windows.Application.Current.MainWindow;
-
-                    successWin.ShowDialog();
-                });
-
-                _sshService.Disconnect();
-                CloseAction?.Invoke();
-            }
-            else
-            {
-                IsNotInstalling = true;
-                IsInstalling = false;
-            }
+            await Task.Delay(2000);
+            CloseAction?.Invoke();
         }
-    }
-
-    [RelayCommand]
-    private void Cancel()
-    {
-        _sshService.Disconnect();
-        CloseAction?.Invoke();
+        else
+        {
+            StatusMessage = "❌ ОШИБКА. Смотрите логи.";
+            _logger.Log("WIZARD-ERROR", $"[DEPLOY-FAIL] {log}");
+            IsNotInstalling = true;
+        }
     }
 }

@@ -53,6 +53,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
     [ObservableProperty] private int _serversCount = 0;
     [ObservableProperty] private ObservableCollection<VpnProfile> _servers = new();
     [ObservableProperty] private VpnProfile? _selectedServer;
+    [ObservableProperty] private string _activeCoreTitle = "Ядро (Ожидание)";
 
     [ObservableProperty] private string _serverStatus = "Ожидание...";
     [ObservableProperty] private int _cpuUsage = 0;
@@ -109,9 +110,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         _singBoxUserManager = singBoxUserManager;
     }
 
-    // ========================================================================
-    // РЕАЛИЗАЦИЯ ИНТЕРФЕЙСА IRecipient<CoreDeployedMessage>
-    // ========================================================================
     public async void Receive(CoreDeployedMessage message)
     {
         if (SelectedServer == null || message.Server == null || message.Server.Id != SelectedServer.Id)
@@ -120,51 +118,71 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         var ssh = _currentMonitoringSsh;
         if (ssh == null || !ssh.IsConnected) return;
 
-        SelectedServer.PublicKey = message.Server.PublicKey ?? "";
-        SelectedServer.PrivateKey = message.Server.PrivateKey ?? "";
-        SelectedServer.ShortId = message.Server.ShortId ?? "";
-        SelectedServer.Sni = message.Server.Sni ?? "www.microsoft.com";
-        SelectedServer.VpnPort = message.Server.VpnPort;
+        _logger.Log("USER-SYNC", $"[START] Синхронизация БД с ядром для {SelectedServer.IpAddress}");
 
-        System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = "Синхронизация БД с ядром...");
+        bool isSingBox = SelectedServer.CoreType == "sing-box";
+        string activeCoreName = isSingBox ? "Sing-box" : "Xray-core";
 
-        // Определяем, какое ядро сейчас работает
-        string activeCoreCmd = "systemctl is-active --quiet sing-box && echo 'Sing-box' || echo 'Xray-core'";
-        string activeCoreName = (await ssh.ExecuteCommandAsync(activeCoreCmd)).Trim();
-        bool isSingBox = activeCoreName.Equals("Sing-box", StringComparison.OrdinalIgnoreCase);
+        System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = $"Синхронизация БД с {activeCoreName}...");
+
+        var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+        var dbUsers = dbContext.Clients.ToList();
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() => {
+            Clients.Clear();
+            foreach (var u in dbUsers) Clients.Add(u);
+        });
+
+        _logger.Log("USER-SYNC", $"[INFO] Найдено клиентов в локальной БД (SQLite): {Clients.Count}.");
 
         string ip = SelectedServer.IpAddress ?? "";
-        string pubKey = SelectedServer.PublicKey ?? "";
-        string sni = SelectedServer.Sni ?? "www.microsoft.com";
-        string shortId = SelectedServer.ShortId ?? "";
+        var vlessInbound = SelectedServer.Inbounds.FirstOrDefault(i => i.Protocol == "vless");
 
-        // 1. Физическая синхронизация юзеров с JSON конфигом ядра
-        bool syncSuccess = isSingBox
-            ? await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients)
-            : await _userManager.SyncUsersToCoreAsync(ssh, Clients);
-
-        // 2. Обновление ссылок в UI и локальной БД
-        foreach (var client in Clients)
+        try
         {
-            string uuid = client.Uuid ?? "";
-            // Ссылка формируется по универсальному VLESS Reality стандарту Hiddify 4.1.1+
-            string newVless = $"vless://{uuid}@{ip}:{SelectedServer.VpnPort}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel-{client.Email}";
-
-            client.VlessLink = newVless;
+            bool syncSuccess = isSingBox
+                ? await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients)
+                : await _userManager.SyncUsersToCoreAsync(ssh, Clients);
 
             if (syncSuccess)
             {
-                // Записываем новую ссылку в базу данных, чтобы она не пропала после рестарта панели
-                await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, newVless);
+                _logger.Log("USER-SYNC", $"[SUCCESS] Клиенты успешно вшиты в {activeCoreName}!");
+
+                foreach (var client in Clients)
+                {
+                    string uuid = client.Uuid ?? "";
+
+                    if (vlessInbound != null)
+                    {
+                        try
+                        {
+                            var settings = System.Text.Json.JsonDocument.Parse(vlessInbound.SettingsJson).RootElement;
+                            string pubKey = settings.GetProperty("publicKey").GetString() ?? "";
+                            string sni = settings.GetProperty("sni").GetString() ?? "www.microsoft.com";
+                            string shortId = settings.GetProperty("shortId").GetString() ?? "";
+
+                            // ИСПРАВЛЕНИЕ: Возвращаем &flow=xtls-rprx-vision
+                            client.VlessLink = $"vless://{uuid}@{ip}:{vlessInbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel-{client.Email}";
+                            await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, client.VlessLink);
+                        }
+                        catch { }
+                    }
+                }
+
+                System.Windows.Application.Current.Dispatcher.Invoke(() => {
+                    ServerStatus = $"Онлайн (Все {Clients.Count} клиентов синхронизированы с {activeCoreName})";
+                });
+            }
+            else
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = "Ошибка синхронизации БД с ядром.");
             }
         }
-
-        // Обновляем статус в главном потоке
-        System.Windows.Application.Current.Dispatcher.Invoke(() => {
-            ServerStatus = syncSuccess
-                ? $"Онлайн (Все {Clients.Count} клиентов синхронизированы с {activeCoreName})"
-                : "Ошибка синхронизации БД с ядром.";
-        });
+        catch (Exception ex)
+        {
+            _logger.Log("USER-SYNC", $"[CRITICAL ERROR] Исключение: {ex.Message}\n{ex.StackTrace}");
+            System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = "Критическая ошибка синхронизации.");
+        }
     }
 
     private void LoadAvatarRegistry()
@@ -271,7 +289,17 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         var profiles = _profileRepository.LoadProfiles();
         string? lastSelectedId = SelectedServer?.Id;
         Servers.Clear();
-        if (profiles != null) foreach (var profile in profiles) Servers.Add(profile);
+
+        if (profiles != null)
+        {
+            foreach (var profile in profiles)
+            {
+                // ЗАПУСК МЯГКОЙ МИГРАЦИИ (Безболезненный переход на мульти-протоколы)
+                profile.MigrateLegacyData();
+                Servers.Add(profile);
+            }
+        }
+
         ServersCount = Servers.Count;
         SelectedServer = (lastSelectedId != null && Servers.Any(s => s.Id == lastSelectedId)) ? Servers.First(s => s.Id == lastSelectedId) : Servers.FirstOrDefault();
     }
@@ -281,9 +309,28 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         StopMonitoring();
         CpuUsage = 0; RamUsage = 0; SsdUsage = 0; PingMs = 0; Uptime = "N/A"; LoadAverage = "0.0"; NetworkSpeed = "0 Mbps";
         XrayProcesses = 0; TcpConnections = 0; SynRecv = 0; XrayStatus = "Ожидание..."; XrayLogs = "Ожидание логов...";
+
         Clients.Clear();
+
         if (value != null)
         {
+            // 1. Устанавливаем динамический заголовок ядра
+            ActiveCoreTitle = value.CoreType == "sing-box" ? "Ядро (Sing-box)" : "Ядро (Xray-core)";
+
+            // 2. ЖЕСТКО ГРУЗИМ ЮЗЕРОВ ИЗ SQLITE (Без фильтра ServerId)
+            try
+            {
+                var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                var dbUsers = dbContext.Clients.ToList();
+                foreach (var u in dbUsers) Clients.Add(u);
+
+                _logger.Log("DB-LOAD", $"Успешно загружено {Clients.Count} клиентов из базы данных SQLite.");
+            }
+            catch (Exception ex)
+            {
+                _logger.Log("DB-ERROR", $"Ошибка чтения БД SQLite: {ex.Message}");
+            }
+
             NavigateToDashboard();
             _monitoringCts = new CancellationTokenSource();
             _ = StartMonitoringLoopAsync(value, _monitoringCts.Token);

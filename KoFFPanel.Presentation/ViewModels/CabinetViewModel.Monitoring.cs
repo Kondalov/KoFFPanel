@@ -28,6 +28,12 @@ public partial class CabinetViewModel
         string pass = profile.Password ?? "";
         string key = profile.KeyPath ?? "";
 
+        bool isSingBox = profile.CoreType == "sing-box";
+        string displayCoreName = isSingBox ? "Sing-box" : "Xray-core";
+        string serviceName = isSingBox ? "sing-box" : "xray";
+
+        _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ядро по БД: {displayCoreName.ToUpper()}");
+
         if (await localSsh.ConnectAsync(ip, profile.Port, user, pass, key) != "SUCCESS")
         {
             ServerStatus = "Ошибка подключения";
@@ -51,11 +57,11 @@ public partial class CabinetViewModel
 
                 try
                 {
-                    string bashCmd = "cpu=$(top -bn1 2>/dev/null | grep -Ei 'Cpu\\(s\\)' | awk '{print $2+$4}' | cut -d. -f1 | tr -d '\\n'); " +
+                    string bashCmd = "cpu=$(top -bn1 2>/dev/null | grep -Ei 'Cpu\\(s\\)' | awk '{print $2+$4}' | cut -d. -f1 | tr -d '\n'); " +
                                      "if [ -z \"$cpu\" ]; then cpu=$(vmstat 1 2 2>/dev/null | tail -1 | awk '{print 100 - $15}'); fi; " +
-                                     "ram=$(free | awk '/Mem:/ {printf(\"%d\", $3/$2 * 100)}' 2>/dev/null | tr -d '\\n'); " +
-                                     "ssd=$(df / | awk 'NR==2 {print $5}' | sed 's/%//' 2>/dev/null | tr -d '\\n'); " +
-                                     "load=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}' | tr -d '\\n'); " +
+                                     "ram=$(free | awk '/Mem:/ {printf(\"%d\", $3/$2 * 100)}' 2>/dev/null | tr -d '\n'); " +
+                                     "ssd=$(df / | awk 'NR==2 {print $5}' | sed 's/%//' 2>/dev/null | tr -d '\n'); " +
+                                     "load=$(cat /proc/loadavg 2>/dev/null | awk '{print $1}' | tr -d '\n'); " +
                                      "up=$(uptime -p 2>/dev/null | sed 's/up //'); " +
                                      "echo \"${cpu:-0}|${ram:-0}|${ssd:-0}|${load:-0.0}|${up:-N/A}\"";
 
@@ -104,19 +110,20 @@ public partial class CabinetViewModel
                 }
                 catch { TcpConnections = res.TcpConnections; }
 
-                string activeCoreCmd = "systemctl is-active --quiet sing-box && echo 'Sing-box' || echo 'Xray-core'";
-                string activeCoreName = (await localSsh.ExecuteCommandAsync(activeCoreCmd)).Trim();
-                bool isSingBox = activeCoreName == "Sing-box";
-
-                string coreStatusCmd = $"systemctl is-active {activeCoreName.ToLower()}";
+                string coreStatusCmd = $"systemctl is-active {serviceName}";
                 string coreStatusStr = (await localSsh.ExecuteCommandAsync(coreStatusCmd)).Trim();
                 coreStatusStr = coreStatusStr == "active" ? "Active" : "Stopped";
 
-                string journalLogsCmd = $"journalctl -u {activeCoreName.ToLower()} -n 5 --no-pager";
+                string journalLogsCmd = $"journalctl -u {serviceName} -n 5 --no-pager";
                 string journalLogs = await localSsh.ExecuteCommandAsync(journalLogsCmd);
 
-                string accessLogs = await localSsh.ExecuteCommandAsync("if [ \"$(systemctl is-active sing-box)\" = \"active\" ]; then journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'; else tail -n 5 /var/log/xray/access.log 2>/dev/null || echo 'Нет логов'; fi");
-                string grepTest = await localSsh.ExecuteCommandAsync("if [ \"$(systemctl is-active sing-box)\" = \"active\" ]; then journalctl -u sing-box -n 50 --no-pager | grep -iE 'inbound connection|sniff' | tail -n 3; else tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3; fi");
+                string accessLogs = await localSsh.ExecuteCommandAsync(isSingBox
+                    ? "journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'"
+                    : "tail -n 5 /var/log/xray/access.log 2>/dev/null || echo 'Нет логов'");
+
+                string grepTest = await localSsh.ExecuteCommandAsync(isSingBox
+                    ? "journalctl -u sing-box -n 50 --no-pager | grep -iE 'inbound connection|sniff' | tail -n 3"
+                    : "tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3");
 
                 var coreStats = await _monitorService.GetCoreStatusInfoAsync(localSsh);
                 var allOnlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh);
@@ -234,7 +241,6 @@ public partial class CabinetViewModel
                             }
                             else
                             {
-                                // Xray legacy parser
                                 string domain = "Unknown";
                                 string violatorEmail = "";
                                 var logParts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -311,12 +317,13 @@ public partial class CabinetViewModel
                     await _singBoxUserManager.GetTrafficStatsAsync(localSsh);
                 }
 
+                // === ИСПРАВЛЕНИЕ: ДОБАВЛЕНО ОБЪЯВЛЕНИЕ trafficBatch ===
                 var trafficBatch = new Dictionary<string, long>();
                 var connectionBatch = new List<(string Email, string Ip, string Country)>();
 
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
-                    CoreTitleLabel = $"Ядро ({activeCoreName})";
+                    CoreTitleLabel = $"Ядро ({displayCoreName})";
 
                     XrayStatus = coreStatusStr; XrayVersion = coreStats.Version; XrayConfigStatus = coreStats.ConfigStatus;
                     XrayLastError = coreStats.LastError;
@@ -395,7 +402,12 @@ public partial class CabinetViewModel
                         if ((isExceeded || isExpired) && client.IsActive) { client.IsActive = false; _ = BlockUserAsync(client, isExceeded ? "Превышен лимит" : "Истек срок"); }
                     }
 
-                    if (dbNeedsUpdate && SelectedServer != null) _ = _userManager.SaveTrafficToDbAsync(ip, Clients);
+                    if (dbNeedsUpdate && SelectedServer != null)
+                    {
+                        if (isSingBox) _ = _singBoxUserManager.SaveTrafficToDbAsync(ip, Clients);
+                        else _ = _userManager.SaveTrafficToDbAsync(ip, Clients);
+                    }
+
                     TotalUsers = Clients.Count; ActiveUsers = Clients.Count(c => c.ActiveConnections > 0); TotalTraffic = FormatBytes(currentTotalBytes);
                 });
 
@@ -416,9 +428,16 @@ public partial class CabinetViewModel
 
         string ip = server.IpAddress ?? "";
 
-        var realUsers = IsSingBoxActive()
+        // === ИСПРАВЛЕНИЕ: Жестко берем тип ядра из базы данных! ===
+        bool isSingBox = server.CoreType == "sing-box";
+
+        _logger.Log("MONITORING", $"[LoadUsers] Запрос юзеров. Ядро по БД: {(isSingBox ? "Sing-Box" : "Xray")}");
+
+        var realUsers = isSingBox
             ? await _singBoxUserManager.GetUsersAsync(ssh, ip)
             : await _userManager.GetUsersAsync(ssh, ip);
+
+        _logger.Log("MONITORING", $"[LoadUsers] Из ядра получено {realUsers.Count} юзеров. UI обновлен.");
 
         System.Windows.Application.Current.Dispatcher.Invoke(() => { Clients.Clear(); foreach (var u in realUsers) Clients.Add(u); });
     }
@@ -432,9 +451,13 @@ public partial class CabinetViewModel
         string email = client.Email ?? "Unknown";
         string ip = server.IpAddress ?? "";
 
-        ServerStatus = $"Блокировка {email} ({reason})...";
+        // === ИСПРАВЛЕНИЕ: Жестко берем тип ядра из базы данных! ===
+        bool isSingBox = server.CoreType == "sing-box";
 
-        var (success, msg) = IsSingBoxActive()
+        ServerStatus = $"Блокировка {email} ({reason})...";
+        _logger.Log("MONITORING", $"[BlockUser] Блокировка {email}. Ядро по БД: {(isSingBox ? "Sing-Box" : "Xray")}");
+
+        var (success, msg) = isSingBox
             ? await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, false)
             : await _userManager.ToggleUserStatusAsync(ssh, ip, email, false);
 

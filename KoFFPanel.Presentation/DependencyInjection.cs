@@ -3,7 +3,7 @@ using KoFFPanel.Infrastructure.Services;
 using KoFFPanel.Presentation.Services;
 using KoFFPanel.Presentation.ViewModels;
 using KoFFPanel.Presentation.Views;
-using KoFFPanel.Presentation.Views.Pages; // Подключаем папку с будущими страницами
+using KoFFPanel.Presentation.Views.Pages;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace KoFFPanel.Presentation;
@@ -38,25 +38,34 @@ public static class DependencyInjection
         services.AddTransient<KoFFPanel.Presentation.ViewModels.ClientProtocolsViewModel>();
         services.AddTransient<KoFFPanel.Presentation.Views.ClientProtocolsWindow>();
 
+        // РЕГИСТРАЦИЯ МОЗГА
+        services.AddTransient<ISmartPortValidator, SmartPortValidator>();
+        services.AddTransient<KoFFPanel.Application.Services.ProtocolFactory>();
+
         // РЕГИСТРАЦИЯ АНАЛИТИКИ
         services.AddSingleton<IClientAnalyticsService, ClientAnalyticsService>();
         services.AddTransient<ClientAnalyticsViewModel>();
         services.AddTransient<ClientAnalyticsWindow>();
 
-        // 2. Сервисы UI
+        // 2. Сервисы UI и Билдеры
         services.AddTransient<IFilePickerService, FilePickerService>();
+
+        // ИСПРАВЛЕНИЕ: Интерфейс лежит в Application.Interfaces, а классы в Infrastructure.Services!
+        services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.VlessRealityBuilder>();
+        services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.Hysteria2Builder>();
+        services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrustTunnelBuilder>();
 
         // 3. ViewModels
         services.AddTransient<CabinetViewModel>();
         services.AddTransient<TerminalViewModel>();
         services.AddTransient<AddServerViewModel>();
-        services.AddTransient<CustomConfigViewModel>(); // <-- ДОБАВЛЕНО: ViewModel Своей конфигурации
+        services.AddTransient<CustomConfigViewModel>();
 
         // 4. Views (Окна)
         services.AddTransient<CabinetWindow>();
         services.AddTransient<TerminalWindow>();
         services.AddTransient<AddServerWindow>();
-        services.AddTransient<CustomConfigWindow>(); // <-- ДОБАВЛЕНО: Окно Своей конфигурации
+        services.AddTransient<CustomConfigWindow>();
 
         // 5. Pages (НАШИ НОВЫЕ СТРАНИЦЫ НАВИГАЦИИ)
         services.AddTransient<DashboardView>();

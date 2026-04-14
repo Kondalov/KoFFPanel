@@ -247,7 +247,7 @@
                                Foreground="#ffaa00"
                                FontSize="22"
                                Margin="0,0,10,0" />
-                <TextBlock Text="{Binding CoreTitleLabel, FallbackValue='Ядро (Ожидание)'}"
+                <TextBlock Text="{Binding ActiveCoreTitle, FallbackValue='Ядро (Ожидание)'}"
                            FontSize="18"
                            FontWeight="Bold">
                     <TextBlock.Foreground>
