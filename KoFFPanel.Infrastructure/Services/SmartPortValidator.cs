@@ -29,7 +29,6 @@ public class SmartPortValidator : ISmartPortValidator
     {
         if (port < 1 || port > 65535) return (false, "Порт должен быть от 1 до 65535.");
 
-        // Уровень 1: Системные порты (Защита от суицида)
         var criticalPorts = new HashSet<int> { 22, 53, 80 };
         if (criticalPorts.Contains(port)) return (false, $"Критическая ошибка: Порт {port} зарезервирован системой (SSH/DNS/HTTP)!");
 
@@ -38,10 +37,8 @@ public class SmartPortValidator : ISmartPortValidator
 
         bool isReinstall = false;
 
-        // Уровень 2 и 3: Внутренние коллизии панели
         if (profile != null && profile.Inbounds != null)
         {
-            // ИСПРАВЛЕНИЕ: Если это переустановка ТОГО ЖЕ протокола на ТОТ ЖЕ порт — мы не блокируем!
             var existingSameProtocol = profile.Inbounds.FirstOrDefault(i => i.Port == port && i.Protocol.ToLower() == protocolType.ToLower());
             if (existingSameProtocol != null)
             {
@@ -49,30 +46,24 @@ public class SmartPortValidator : ISmartPortValidator
             }
             else
             {
-                // Нельзя ставить разные протоколы с одинаковым транспортом на один порт
-                foreach (var inbound in profile.Inbounds.Where(i => i.Port == port))
+                var conflictingInbound = profile.Inbounds.FirstOrDefault(i => i.Port == port && GetTransport(i.Protocol) == targetTransport);
+                if (conflictingInbound != null)
                 {
-                    if (GetTransport(inbound.Protocol) == targetTransport)
-                    {
-                        return (false, $"Конфликт: Порт {port} ({targetTransport.ToUpper()}) уже занят протоколом {inbound.Protocol.ToUpper()}!");
-                    }
+                    // ИСПРАВЛЕНИЕ: Умный алгоритм! Разрешаем замену протокола (true) и выдаем предупреждение!
+                    return (true, $"ВНИМАНИЕ: Заменит {conflictingInbound.Protocol.ToUpper()} ({targetTransport.ToUpper()})!");
                 }
             }
         }
 
-        // Уровень 4: Физическое сканирование ОС (Live Check)
         if (ssh != null && ssh.IsConnected)
         {
-            // ИСПРАВЛЕНИЕ: Добавлен параметр -p, чтобы Linux вернул название процесса (PID и имя)
             string sshCmd = targetTransport == "tcp" ? $"ss -tlnp | grep ':{port} '" : $"ss -ulnp | grep ':{port} '";
             string sysCheck = await ssh.ExecuteCommandAsync(sshCmd);
 
             if (!string.IsNullOrWhiteSpace(sysCheck))
             {
-                // Записываем в логи, кто именно посмел занять наш порт
                 _logger.Log("PORT-VALIDATOR", $"Проверка порта {port}. Ответ ОС: {sysCheck.Trim()}");
 
-                // ИСПРАВЛЕНИЕ: Умный обход! Если порт занят НАШИМ ядром, мы пропускаем валидацию.
                 if (sysCheck.Contains("sing-box") || sysCheck.Contains("xray"))
                 {
                     return (true, "Занят нашим ядром (Допустимо)");

@@ -204,12 +204,25 @@ EOF
                 processedTypes.Add(inboundDb.Protocol.ToLower());
             }
 
+            // 4.2 Сохраняем нетронутых "Боссов", которые были в БД, но юзер их не отметил
             foreach (var existing in existingInbounds)
             {
                 if (!processedTypes.Contains(existing.Protocol.ToLower()))
                 {
-                    _logger.Log("DEPLOY-TRACE", $"[PRESERVE] Сохранение нетронутого протокола {existing.Protocol.ToUpper()} на порту {existing.Port}...");
                     string transport = existing.Protocol.ToLower() == "vless" ? "tcp" : "udp";
+
+                    // ИСПРАВЛЕНИЕ: Проверяем, не перехватил ли НОВЫЙ протокол этот порт и транспорт (Алгоритм замены)
+                    bool isPortStolen = profile.Inbounds.Any(newInbound =>
+                        newInbound.Port == existing.Port &&
+                        (newInbound.Protocol.ToLower() == "vless" ? "tcp" : "udp") == transport);
+
+                    if (isPortStolen)
+                    {
+                        _logger.Log("DEPLOY-TRACE", $"[REPLACE] Протокол {existing.Protocol.ToUpper()} УДАЛЕН! Порт {existing.Port} ({transport.ToUpper()}) передан новому протоколу.");
+                        continue; // Пропускаем сохранение, старый протокол стирается!
+                    }
+
+                    _logger.Log("DEPLOY-TRACE", $"[PRESERVE] Сохранение нетронутого протокола {existing.Protocol.ToUpper()} на порту {existing.Port}...");
                     string fwCmd = $@"
                         if command -v ufw >/dev/null 2>&1; then ufw allow {existing.Port}/{transport} || true; fi
                         if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --add-port={existing.Port}/{transport} --permanent && firewall-cmd --reload || true; fi

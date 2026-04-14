@@ -109,7 +109,20 @@ public class VpnClient : INotifyPropertyChanged
         get => _hysteria2Link;
         set { _hysteria2Link = value; OnPropertyChanged(); }
     }
-    // =================================================
+
+    private bool _isTrustTunnelEnabled = false;
+    public bool IsTrustTunnelEnabled
+    {
+        get => _isTrustTunnelEnabled;
+        set { _isTrustTunnelEnabled = value; OnPropertyChanged(); }
+    }
+
+    private string _trustTunnelLink = "";
+    public string TrustTunnelLink
+    {
+        get => _trustTunnelLink;
+        set { _trustTunnelLink = value; OnPropertyChanged(); }
+    }
 
     private long _trafficUsed = 0;
     public long TrafficUsed

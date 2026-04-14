@@ -24,6 +24,11 @@ public partial class ClientProtocolsViewModel : ObservableObject
     [ObservableProperty] private string _hysteria2Link = "";
     [ObservableProperty] private bool _isHysteria2Copied;
 
+    // === TrustTunnel ===
+    [ObservableProperty] private bool _isTrustTunnelEnabled;
+    [ObservableProperty] private string _trustTunnelLink = "";
+    [ObservableProperty] private bool _isTrustTunnelCopied;
+
     // Делегаты для связи с главным окном (Разделение логики!)
     public Action<VpnClient>? SaveCallback { get; set; }
     public Action? CloseAction { get; set; }
@@ -39,16 +44,20 @@ public partial class ClientProtocolsViewModel : ObservableObject
 
         IsHysteria2Enabled = client.IsHysteria2Enabled;
         Hysteria2Link = client.Hysteria2Link;
+
+        // ДОБАВЛЕНО
+        IsTrustTunnelEnabled = client.IsTrustTunnelEnabled;
+        TrustTunnelLink = client.TrustTunnelLink;
     }
 
     [RelayCommand]
-    private async Task CopyVlessAsync()
+    private async Task CopyTrustTunnelAsync()
     {
-        if (string.IsNullOrWhiteSpace(VlessLink)) return;
-        Clipboard.SetText(VlessLink);
-        IsVlessCopied = true;
+        if (string.IsNullOrWhiteSpace(TrustTunnelLink)) return;
+        Clipboard.SetText(TrustTunnelLink);
+        IsTrustTunnelCopied = true;
         await Task.Delay(2000);
-        IsVlessCopied = false;
+        IsTrustTunnelCopied = false;
     }
 
     [RelayCommand]
@@ -67,8 +76,8 @@ public partial class ClientProtocolsViewModel : ObservableObject
         // Обновляем модель
         _originalClient.IsVlessEnabled = IsVlessEnabled;
         _originalClient.IsHysteria2Enabled = IsHysteria2Enabled;
+        _originalClient.IsTrustTunnelEnabled = IsTrustTunnelEnabled; // ДОБАВЛЕНО
 
-        // Возвращаем обновленного клиента в главную ViewModel
         SaveCallback?.Invoke(_originalClient);
         CloseAction?.Invoke();
     }

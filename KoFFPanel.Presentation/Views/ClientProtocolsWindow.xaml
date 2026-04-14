@@ -3,7 +3,7 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="{Binding WindowTitle}"
-                 Height="540"
+                 Height="680"
                  Width="600"
                  WindowStartupLocation="CenterOwner"
                  WindowBackdropType="None"
@@ -143,7 +143,8 @@
                         BorderBrush="#1AFFFFFF"
                         BorderThickness="1"
                         CornerRadius="12"
-                        Padding="16">
+                        Padding="16"
+                        Margin="0,0,0,16">
                     <StackPanel>
                         <Grid Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
@@ -206,6 +207,87 @@
                                                         Value="Копировать" />
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding IsHysteria2Copied}"
+                                                                 Value="True">
+                                                        <Setter Property="Text"
+                                                                Value="Скопировано" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </ui:Button>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Background="#0DFFFFFF"
+                        BorderBrush="#1AFFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="🛡️"
+                                           FontSize="16"
+                                           Margin="0,0,8,0" />
+                                <TextBlock Text="TrustTunnel (MASQUE HTTP/3)"
+                                           Foreground="White"
+                                           FontSize="16"
+                                           FontWeight="Bold" />
+                                <Border Background="#1Aff00aa"
+                                        CornerRadius="4"
+                                        Padding="6,2"
+                                        Margin="8,0,0,0">
+                                    <TextBlock Text="UDP"
+                                               Foreground="#ff00aa"
+                                               FontSize="10"
+                                               FontWeight="Bold" />
+                                </Border>
+                            </StackPanel>
+                            <ui:ToggleSwitch Grid.Column="1"
+                                             IsChecked="{Binding IsTrustTunnelEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             VerticalAlignment="Center" />
+                        </Grid>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBox Text="{Binding TrustTunnelLink}"
+                                        IsReadOnly="True"
+                                        Foreground="#B3FFFFFF"
+                                        FontWeight="Bold"
+                                        Background="#0AFFFFFF"
+                                        BorderThickness="1"
+                                        BorderBrush="#1AFFFFFF"
+                                        Height="36" />
+                            <ui:Button Grid.Column="2"
+                                       Command="{Binding CopyTrustTunnelCommand}"
+                                       Height="36"
+                                       Background="#1A50fa7b"
+                                       BorderThickness="1"
+                                       BorderBrush="#3350fa7b"
+                                       Cursor="Hand">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Copy24"
+                                                   Foreground="#50fa7b"
+                                                   Margin="0,0,6,0" />
+                                    <TextBlock Foreground="#50fa7b"
+                                               FontWeight="Bold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text"
+                                                        Value="Копировать" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsTrustTunnelCopied}"
                                                                  Value="True">
                                                         <Setter Property="Text"
                                                                 Value="Скопировано" />
