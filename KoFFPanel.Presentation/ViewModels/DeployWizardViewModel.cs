@@ -115,6 +115,20 @@ public partial class DeployWizardViewModel : ObservableObject
         foreach (var builder in builders)
         {
             var item = new ProtocolSetupItem(builder);
+
+            // ИСПРАВЛЕНИЕ: Умный алгоритм! Информируем, но НЕ включаем тумблер (защита от случайной переустановки)
+            if (_server != null && _server.Inbounds != null)
+            {
+                var existing = _server.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == builder.ProtocolType.ToLower());
+                if (existing != null)
+                {
+                    item.IsSelected = false; // Тумблер выключен, ждем решения юзера
+                    item.PortText = existing.Port.ToString();
+                    item.IsValid = true;
+                    item.ValidationMessage = "Установлен (Включите для переустановки)";
+                }
+            }
+
             item.PropertyChanged += OnProtocolPropertyChanged;
             AvailableProtocols.Add(item);
         }
@@ -131,7 +145,29 @@ public partial class DeployWizardViewModel : ObservableObject
                     item.ValidationMessage = "Сканирование...";
                     item.IsValid = true;
                     int bestPort = await _portValidator.SuggestBestPortAsync(_ssh, _server.Id, item.Builder.ProtocolType);
-                    item.PortText = bestPort.ToString();
+
+                    string newPortText = bestPort.ToString();
+
+                    // ИСПРАВЛЕНИЕ: Если порт не поменялся визуально, принудительно запускаем проверку!
+                    if (item.PortText == newPortText)
+                    {
+                        item.ValidationMessage = "Проверка...";
+                        var (isValid, msg) = await _portValidator.ValidatePortAsync(_ssh, _server.Id, bestPort, item.Builder.ProtocolType);
+
+                        var duplicateInUI = AvailableProtocols.FirstOrDefault(p => p != item && p.IsSelected && p.PortText == newPortText && p.Builder.TransportType == item.Builder.TransportType);
+                        if (duplicateInUI != null)
+                        {
+                            isValid = false;
+                            msg = $"Конфликт UI: Порт уже выбран для {duplicateInUI.Builder.DisplayName}!";
+                        }
+
+                        item.IsValid = isValid;
+                        item.ValidationMessage = msg;
+                    }
+                    else
+                    {
+                        item.PortText = newPortText; // Это само вызовет валидацию ниже
+                    }
                 }
                 else
                 {

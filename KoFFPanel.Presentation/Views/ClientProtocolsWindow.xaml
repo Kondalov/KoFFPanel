@@ -163,7 +163,7 @@
                                         CornerRadius="4"
                                         Padding="6,2"
                                         Margin="8,0,0,0">
-                                    <TextBlock Text="UDP Порт 8443"
+                                    <TextBlock Text="UDP"
                                                Foreground="#ff00aa"
                                                FontSize="10"
                                                FontWeight="Bold" />

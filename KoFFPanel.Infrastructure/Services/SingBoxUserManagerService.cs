@@ -36,7 +36,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         bool hasHy2 = false;
         bool hasTrustTunnel = false;
 
-        // 1. Сначала сканируем сервер и узнаем, какие протоколы реально установлены
         foreach (var inboundNode in inbounds)
         {
             var inbound = inboundNode as JsonObject;
@@ -51,15 +50,12 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
             else if (type == "hysteria2") hasHy2 = true;
         }
 
-        // === ИСПРАВЛЕНИЕ: Самоисцеление базы данных SQLite ===
-        // Если протокол установлен, снимаем ошибочную блокировку тумблеров!
         foreach (var u in dbUsers)
         {
             if (hasReality || hasTrustTunnel) u.IsVlessEnabled = true;
             if (hasHy2) u.IsHysteria2Enabled = true;
         }
 
-        // 2. Генерируем массив пользователей
         foreach (var inboundNode in inbounds)
         {
             var inbound = inboundNode as JsonObject;
@@ -118,7 +114,9 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                 string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
                 int port = (int?)inbound["listen_port"] ?? 8443;
                 string sni = inbound["tls"]?["server_name"]?.ToString().Trim() ?? "www.microsoft.com";
-                string obfsPassword = inbound["obfs"]?["salamander"]?["password"]?.ToString().Trim() ?? "";
+
+                // ИСПРАВЛЕНИЕ: Правильный путь до пароля обфускации в Sing-box
+                string obfsPassword = inbound["obfs"]?["password"]?.ToString().Trim() ?? "";
 
                 foreach (var u in dbUsers)
                 {
@@ -133,7 +131,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
             }
         }
 
-        // Мягко информируем пользователя, не ломая тумблеры в БД
         if (!hasReality)
         {
             foreach (var u in dbUsers) { u.VlessLink = "VLESS не установлен на сервере!"; }

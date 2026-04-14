@@ -105,7 +105,6 @@ public class CoreDeploymentService : ICoreDeploymentService
 
             _logger.Log("DEPLOY-TRACE", "[3/7] Установка/Обновление ядра на сервере...");
 
-            // ИСПРАВЛЕНИЕ 1: Всегда запускаем скрипт установки, чтобы подтянуть актуальную версию (1.13.8+)
             _logger.Log("DEPLOY-TRACE", $"[3.1/7] Запуск официального скрипта установки (Таймаут 3 минуты!)...");
             var installResult = isSingBox ? await InstallSingBoxAsync(ssh) : await InstallXrayAsync(ssh);
             if (!installResult.IsSuccess)
@@ -114,7 +113,6 @@ public class CoreDeploymentService : ICoreDeploymentService
                 return (false, $"Ошибка установки ядра: {installResult.Log}");
             }
 
-            // ИСПРАВЛЕНИЕ 2: Очистка \r, чтобы Linux не падал с ошибкой 203/EXEC
             _logger.Log("DEPLOY-TRACE", "[3.2/7] Принудительная генерация systemd службы (Защита от 203/EXEC)...");
             string fixServiceCmd = isSingBox ? @"
                 BIN_PATH=$(command -v sing-box)
@@ -157,7 +155,6 @@ EOF
             ".Replace("\r", "");
             await ssh.ExecuteCommandAsync(fixServiceCmd);
 
-            // ИСПРАВЛЕНИЕ 3: Защита от циклических симлинков, которые ломают бинарник
             _logger.Log("DEPLOY-TRACE", "[3.3/7] Создание системных симлинков для совместимости путей...");
             string symlinkCmd = @"
                 if command -v sing-box >/dev/null 2>&1; then 
@@ -172,13 +169,14 @@ EOF
             await ssh.ExecuteCommandAsync(symlinkCmd);
 
             _logger.Log("DEPLOY-TRACE", "[4/7] Настройка Firewall и генерация криптографии для Inbounds...");
+
+            var existingInbounds = profile.Inbounds.ToList();
             profile.Inbounds.Clear();
-            var inboundsArray = new JsonArray();
+            var processedTypes = new HashSet<string>();
 
             foreach (var p in protocols)
             {
-                _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Подготовка протокола {p.Builder.ProtocolType.ToUpper()} на порту {p.Port} ({p.Builder.TransportType})...");
-
+                _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Установка/Обновление {p.Builder.ProtocolType.ToUpper()} на порту {p.Port}...");
                 string fwCmd = $@"
                     if command -v ufw >/dev/null 2>&1; then ufw allow {p.Port}/{p.Builder.TransportType} || true; fi
                     if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --add-port={p.Port}/{p.Builder.TransportType} --permanent && firewall-cmd --reload || true; fi
@@ -187,21 +185,61 @@ EOF
                 ".Replace("\r", "");
                 await ssh.ExecuteCommandAsync(fwCmd);
 
-                var inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
-                profile.Inbounds.Add(inboundDb);
+                var existingDb = existingInbounds.FirstOrDefault(i => i.Protocol.ToLower() == p.Builder.ProtocolType.ToLower());
+                ServerInbound inboundDb;
 
+                if (existingDb != null)
+                {
+                    _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Найдена рабочая конфигурация {p.Builder.ProtocolType.ToUpper()}! Ключи восстановлены из БД.");
+                    inboundDb = existingDb;
+                    inboundDb.Port = p.Port;
+                }
+                else
+                {
+                    _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Генерация НОВЫХ ключей для {p.Builder.ProtocolType.ToUpper()}...");
+                    inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
+                }
+
+                profile.Inbounds.Add(inboundDb);
+                processedTypes.Add(inboundDb.Protocol.ToLower());
+            }
+
+            foreach (var existing in existingInbounds)
+            {
+                if (!processedTypes.Contains(existing.Protocol.ToLower()))
+                {
+                    _logger.Log("DEPLOY-TRACE", $"[PRESERVE] Сохранение нетронутого протокола {existing.Protocol.ToUpper()} на порту {existing.Port}...");
+                    string transport = existing.Protocol.ToLower() == "vless" ? "tcp" : "udp";
+                    string fwCmd = $@"
+                        if command -v ufw >/dev/null 2>&1; then ufw allow {existing.Port}/{transport} || true; fi
+                        if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --add-port={existing.Port}/{transport} --permanent && firewall-cmd --reload || true; fi
+                        iptables -I INPUT 1 -p {transport} --dport {existing.Port} -j ACCEPT || true
+                        iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+                    ".Replace("\r", "");
+                    await ssh.ExecuteCommandAsync(fwCmd);
+
+                    profile.Inbounds.Add(existing);
+                }
+            }
+
+            _logger.Log("DEPLOY-TRACE", "[5/7] Сборка и заливка базового JSON конфига...");
+            var inboundsArray = new JsonArray();
+
+            foreach (var inboundDb in profile.Inbounds)
+            {
                 var settings = JsonNode.Parse(inboundDb.SettingsJson);
+                string protocol = inboundDb.Protocol.ToLower();
 
                 if (isSingBox)
                 {
-                    if (p.Builder.ProtocolType == "vless")
+                    if (protocol == "vless" && settings?["transport"]?["type"]?.ToString() != "quic")
                     {
                         inboundsArray.Add(new JsonObject
                         {
                             ["type"] = "vless",
                             ["tag"] = inboundDb.Tag,
-                            ["listen"] = "::",
-                            ["listen_port"] = p.Port,
+                            ["listen"] = "0.0.0.0",
+                            ["listen_port"] = inboundDb.Port,
                             ["users"] = new JsonArray(),
                             ["tls"] = new JsonObject
                             {
@@ -217,14 +255,14 @@ EOF
                             }
                         });
                     }
-                    else if (p.Builder.ProtocolType == "hysteria2")
+                    else if (protocol == "hysteria2")
                     {
                         inboundsArray.Add(new JsonObject
                         {
                             ["type"] = "hysteria2",
                             ["tag"] = inboundDb.Tag,
-                            ["listen"] = "::",
-                            ["listen_port"] = p.Port,
+                            ["listen"] = "0.0.0.0",
+                            ["listen_port"] = inboundDb.Port,
                             ["users"] = new JsonArray(),
                             ["tls"] = new JsonObject
                             {
@@ -236,14 +274,14 @@ EOF
                             ["obfs"] = new JsonObject { ["type"] = "salamander", ["password"] = settings?["obfsPassword"]?.ToString() }
                         });
                     }
-                    else if (p.Builder.ProtocolType == "trusttunnel")
+                    else if (protocol == "trusttunnel" || (protocol == "vless" && settings?["transport"]?["type"]?.ToString() == "quic"))
                     {
                         inboundsArray.Add(new JsonObject
                         {
                             ["type"] = "vless",
                             ["tag"] = inboundDb.Tag,
-                            ["listen"] = "::",
-                            ["listen_port"] = p.Port,
+                            ["listen"] = "0.0.0.0",
+                            ["listen_port"] = inboundDb.Port,
                             ["users"] = new JsonArray(),
                             ["transport"] = new JsonObject { ["type"] = "quic" },
                             ["tls"] = new JsonObject
@@ -259,13 +297,13 @@ EOF
                 }
                 else
                 {
-                    if (p.Builder.ProtocolType == "vless")
+                    if (protocol == "vless")
                     {
                         inboundsArray.Add(new JsonObject
                         {
                             ["protocol"] = "vless",
-                            ["port"] = p.Port,
-                            ["listen"] = "::",
+                            ["port"] = inboundDb.Port,
+                            ["listen"] = "0.0.0.0",
                             ["settings"] = new JsonObject { ["clients"] = new JsonArray(), ["decryption"] = "none" },
                             ["streamSettings"] = new JsonObject
                             {
@@ -285,7 +323,6 @@ EOF
                 }
             }
 
-            _logger.Log("DEPLOY-TRACE", "[5/7] Сборка и заливка базового JSON конфига...");
             var baseConfig = new JsonObject();
             if (isSingBox)
             {
@@ -320,6 +357,13 @@ EOF
             _logger.Log("DEPLOY-TRACE", "[6/7] Сохранение БД панели и перезапуск ядра...");
             profile.CoreType = coreName;
             _profileRepository.UpdateProfile(profile);
+
+            // ИСПРАВЛЕНИЕ: Гарантированно убиваем зомби-процессы прямо перед рестартом службы!
+            string preRestartCleanup = @"
+                systemctl stop sing-box xray 2>/dev/null || true
+                killall -9 sing-box xray 2>/dev/null || true
+            ".Replace("\r", "");
+            await ssh.ExecuteCommandAsync(preRestartCleanup);
 
             string restartResult = await ssh.ExecuteCommandAsync($"systemctl enable {coreName} --now && systemctl restart {coreName}");
 
