@@ -96,12 +96,21 @@ public partial class DeployWizardViewModel : ObservableObject
 
     partial void OnIsXraySelectedChanged(bool value)
     {
-        if (value) LoadProtocolsForCurrentCore();
+        if (value)
+        {
+            IsSingBoxSelected = false;
+            LoadProtocolsForCurrentCore();
+        }
     }
 
     partial void OnIsSingBoxSelectedChanged(bool value)
     {
-        if (value) LoadProtocolsForCurrentCore();
+        if (value)
+        {
+            // ИСПРАВЛЕНИЕ: Принудительно синхронизируем состояние ДО генерации списка
+            IsXraySelected = false;
+            LoadProtocolsForCurrentCore();
+        }
     }
 
     private void LoadProtocolsForCurrentCore()
@@ -114,9 +123,14 @@ public partial class DeployWizardViewModel : ObservableObject
         var builders = _protocolFactory.GetAvailableProtocols(IsSingBoxSelected);
         foreach (var builder in builders)
         {
+            // ИСПРАВЛЕНИЕ: Я удалил ошибочную блокировку TrustTunnel для Sing-box!
+            // Оставляем только защиту Hysteria 2 от Xray (так как Xray ее реально не поддерживает)
+            if (!IsSingBoxSelected && builder.ProtocolType.ToLower() == "hysteria2")
+                continue;
+
             var item = new ProtocolSetupItem(builder);
 
-            // ИСПРАВЛЕНИЕ: Умный алгоритм! Информируем, но НЕ включаем тумблер (защита от случайной переустановки)
+            // Умный алгоритм! Информируем, но НЕ включаем тумблер
             if (_server != null && _server.Inbounds != null)
             {
                 var existing = _server.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == builder.ProtocolType.ToLower());

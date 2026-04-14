@@ -50,12 +50,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
             else if (type == "hysteria2") hasHy2 = true;
         }
 
-        foreach (var u in dbUsers)
-        {
-            if (hasReality || hasTrustTunnel) u.IsVlessEnabled = true;
-            if (hasHy2) u.IsHysteria2Enabled = true;
-        }
-
         foreach (var inboundNode in inbounds)
         {
             var inbound = inboundNode as JsonObject;
@@ -70,7 +64,7 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
 
                 foreach (var u in dbUsers)
                 {
-                    if (u.IsActive && u.IsVlessEnabled)
+                    if (u.IsActive && ((!isQuic && u.IsVlessEnabled) || (isQuic && u.IsTrustTunnelEnabled)))
                     {
                         if (isQuic)
                             usersArray.Add(new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid });
@@ -107,6 +101,18 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                         u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{u.Email}";
                     }
                 }
+                else
+                {
+                    // ИСПРАВЛЕНИЕ: Генерация ссылки TrustTunnel. ДОБАВЛЕНЫ allowInsecure=1 и insecure=1
+                    string sni = inbound["tls"]?["server_name"]?.ToString().Trim() ?? "adguard.com";
+                    int port = (int?)inbound["listen_port"] ?? 4433;
+                    string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+
+                    foreach (var u in dbUsers)
+                    {
+                        u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=quic&security=tls&sni={sni}&alpn=h3&allowInsecure=1&insecure=1#TrustTunnel_{u.Email}";
+                    }
+                }
             }
             else if (type == "hysteria2")
             {
@@ -115,7 +121,6 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                 int port = (int?)inbound["listen_port"] ?? 8443;
                 string sni = inbound["tls"]?["server_name"]?.ToString().Trim() ?? "www.microsoft.com";
 
-                // ИСПРАВЛЕНИЕ: Правильный путь до пароля обфускации в Sing-box
                 string obfsPassword = inbound["obfs"]?["password"]?.ToString().Trim() ?? "";
 
                 foreach (var u in dbUsers)
@@ -138,6 +143,10 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         if (!hasHy2)
         {
             foreach (var u in dbUsers) { u.Hysteria2Link = "Hysteria 2 не установлен на сервере!"; }
+        }
+        if (!hasTrustTunnel)
+        {
+            foreach (var u in dbUsers) { u.TrustTunnelLink = "TrustTunnel не установлен на сервере!"; }
         }
 
         await _dbContext.SaveChangesAsync();
@@ -233,7 +242,8 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                             TrafficUsed = 0,
                             IsP2PBlocked = true,
                             IsVlessEnabled = true,
-                            IsHysteria2Enabled = false
+                            IsHysteria2Enabled = false,
+                            IsTrustTunnelEnabled = false
                         };
                         _dbContext.Clients.Add(newUser); dbUsers.Add(newUser); dbChanged = true;
                     }
@@ -266,7 +276,8 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                 ExpiryDate = expiryDate,
                 IsP2PBlocked = isP2PBlocked,
                 IsVlessEnabled = true,
-                IsHysteria2Enabled = false
+                IsHysteria2Enabled = false,
+                IsTrustTunnelEnabled = false
             };
 
             _dbContext.Clients.Add(newUser);
@@ -367,7 +378,24 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
 
         await ssh.ExecuteCommandAsync("cp /etc/sing-box/config.json /etc/sing-box/config.backup.json");
         await ssh.ExecuteCommandAsync("mv /tmp/sb_test.json /etc/sing-box/config.json");
+
+        // ИСПРАВЛЕНИЕ: ЖЕСТКО убиваем зомби-процессы перед обновлением пользователей!
+        string preRestartCleanup = @"
+            systemctl stop sing-box xray 2>/dev/null || true
+            killall -9 sing-box xray 2>/dev/null || true
+        ".Replace("\r", "");
+        await ssh.ExecuteCommandAsync(preRestartCleanup);
+
         await ssh.ExecuteCommandAsync("systemctl restart sing-box");
+
+        // ИСПРАВЛЕНИЕ: Расширенный лог проверки портов (как ты и просил)
+        string diagCmd = @"
+            sleep 2
+            echo '=== DIAGNOSTIC AFTER SYNC ==='
+            ss -tulpn | grep -E 'sing-box|xray' || true
+        ".Replace("\r", "");
+        string diagLog = await ssh.ExecuteCommandAsync(diagCmd);
+        _logger.Log("SB-DIAGNOSTIC", $"\n{diagLog}");
 
         return (true, "Пользователи обновлены!");
     }

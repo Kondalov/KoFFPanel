@@ -52,21 +52,16 @@ public class AppDbContext : DbContext
         }
         catch { }
 
-        // БЕЗОПАСНАЯ МИГРАЦИЯ: Добавляем колонку IsP2PBlocked для старых баз данных
-        try
-        {
-            Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsP2PBlocked\" INTEGER NOT NULL DEFAULT 1;");
-        }
-        catch { /* Игнорируем ошибку, если колонка уже существует */ }
+        // === ИСПРАВЛЕНИЕ: БЕЗОПАСНАЯ НЕЗАВИСИМАЯ МИГРАЦИЯ ===
+        // Теперь ошибка добавления одной колонки не отменяет создание других!
+        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsP2PBlocked\" INTEGER NOT NULL DEFAULT 1;"); } catch { }
+        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsVlessEnabled\" INTEGER NOT NULL DEFAULT 1;"); } catch { }
+        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsHysteria2Enabled\" INTEGER NOT NULL DEFAULT 0;"); } catch { }
+        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"Hysteria2Link\" TEXT NOT NULL DEFAULT '';"); } catch { }
 
-        try
-        {
-            // IsVlessEnabled по умолчанию 1 (True), чтобы старые юзеры не потеряли доступ!
-            Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsVlessEnabled\" INTEGER NOT NULL DEFAULT 1;");
-            Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsHysteria2Enabled\" INTEGER NOT NULL DEFAULT 0;");
-            Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"Hysteria2Link\" TEXT NOT NULL DEFAULT '';");
-        }
-        catch { /* Игнорируем, если колонки уже были добавлены ранее */ }
+        // Новые колонки TrustTunnel
+        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsTrustTunnelEnabled\" INTEGER NOT NULL DEFAULT 0;"); } catch { }
+        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"TrustTunnelLink\" TEXT NOT NULL DEFAULT '';"); } catch { }
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

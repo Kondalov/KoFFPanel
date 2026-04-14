@@ -29,7 +29,6 @@ public partial class ClientProtocolsViewModel : ObservableObject
     [ObservableProperty] private string _trustTunnelLink = "";
     [ObservableProperty] private bool _isTrustTunnelCopied;
 
-    // Делегаты для связи с главным окном (Разделение логики!)
     public Action<VpnClient>? SaveCallback { get; set; }
     public Action? CloseAction { get; set; }
 
@@ -45,38 +44,63 @@ public partial class ClientProtocolsViewModel : ObservableObject
         IsHysteria2Enabled = client.IsHysteria2Enabled;
         Hysteria2Link = client.Hysteria2Link;
 
-        // ДОБАВЛЕНО
         IsTrustTunnelEnabled = client.IsTrustTunnelEnabled;
         TrustTunnelLink = client.TrustTunnelLink;
     }
 
-    [RelayCommand]
-    private async Task CopyTrustTunnelAsync()
+    // ИСПРАВЛЕНИЕ: Жесткая защита буфера обмена от блокировок WPF (COMException)
+    private async Task SafeCopyToClipboardAsync(string text)
     {
-        if (string.IsNullOrWhiteSpace(TrustTunnelLink)) return;
-        Clipboard.SetText(TrustTunnelLink);
-        IsTrustTunnelCopied = true;
+        for (int i = 0; i < 5; i++)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+                return; // Успешно скопировано
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                await Task.Delay(20); // Ждем 20 мс и агрессивно пробуем снова
+            }
+        }
+    }
+
+    [RelayCommand]
+    private async Task CopyVlessAsync()
+    {
+        if (string.IsNullOrWhiteSpace(VlessLink)) return;
+        await SafeCopyToClipboardAsync(VlessLink);
+        IsVlessCopied = true;
         await Task.Delay(2000);
-        IsTrustTunnelCopied = false;
+        IsVlessCopied = false;
     }
 
     [RelayCommand]
     private async Task CopyHysteria2Async()
     {
         if (string.IsNullOrWhiteSpace(Hysteria2Link)) return;
-        Clipboard.SetText(Hysteria2Link);
+        await SafeCopyToClipboardAsync(Hysteria2Link);
         IsHysteria2Copied = true;
         await Task.Delay(2000);
         IsHysteria2Copied = false;
     }
 
     [RelayCommand]
+    private async Task CopyTrustTunnelAsync()
+    {
+        if (string.IsNullOrWhiteSpace(TrustTunnelLink)) return;
+        await SafeCopyToClipboardAsync(TrustTunnelLink);
+        IsTrustTunnelCopied = true;
+        await Task.Delay(2000);
+        IsTrustTunnelCopied = false;
+    }
+
+    [RelayCommand]
     private void Save()
     {
-        // Обновляем модель
         _originalClient.IsVlessEnabled = IsVlessEnabled;
         _originalClient.IsHysteria2Enabled = IsHysteria2Enabled;
-        _originalClient.IsTrustTunnelEnabled = IsTrustTunnelEnabled; // ДОБАВЛЕНО
+        _originalClient.IsTrustTunnelEnabled = IsTrustTunnelEnabled;
 
         SaveCallback?.Invoke(_originalClient);
         CloseAction?.Invoke();

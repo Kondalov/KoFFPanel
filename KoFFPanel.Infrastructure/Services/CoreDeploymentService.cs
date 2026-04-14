@@ -91,20 +91,19 @@ public class CoreDeploymentService : ICoreDeploymentService
             string coreName = isSingBox ? "sing-box" : "xray";
             _logger.Log("DEPLOY-TRACE", $"[1/7] Начало развертывания. Выбранное ядро: {coreName.ToUpper()}");
 
-            _logger.Log("DEPLOY-TRACE", "[2/7] Остановка текущих служб и безопасная очистка конфигов...");
-            string disableOldCmd = isSingBox ? "systemctl disable xray --now 2>/dev/null || true" : "systemctl disable sing-box --now 2>/dev/null || true";
-            await ssh.ExecuteCommandAsync(disableOldCmd);
-
-            string safeCleanup = @"
+            // === ИСПРАВЛЕНИЕ: ТОТАЛЬНАЯ ЖЕСТКАЯ ЗАЧИСТКА ===
+            // Выжигаем оба ядра, снимаем их с автозагрузки, убиваем все процессы и удаляем старые конфиги
+            _logger.Log("DEPLOY-TRACE", "[2/7] Тотальная очистка старых ядер и освобождение портов...");
+            string hardWipeCmd = @"
+                systemctl disable sing-box xray --now 2>/dev/null || true
                 systemctl stop sing-box xray 2>/dev/null || true
                 killall -9 sing-box xray 2>/dev/null || true
-                rm -f /usr/local/etc/xray/config.json /etc/sing-box/config.json
+                rm -rf /usr/local/etc/xray/config.json /etc/sing-box/config.json
                 mkdir -p /etc/sing-box /usr/local/etc/xray
             ".Replace("\r", "");
-            await ssh.ExecuteCommandAsync(safeCleanup);
+            await ssh.ExecuteCommandAsync(hardWipeCmd);
 
             _logger.Log("DEPLOY-TRACE", "[3/7] Установка/Обновление ядра на сервере...");
-
             _logger.Log("DEPLOY-TRACE", $"[3.1/7] Запуск официального скрипта установки (Таймаут 3 минуты!)...");
             var installResult = isSingBox ? await InstallSingBoxAsync(ssh) : await InstallXrayAsync(ssh);
             if (!installResult.IsSuccess)
@@ -204,14 +203,11 @@ EOF
                 processedTypes.Add(inboundDb.Protocol.ToLower());
             }
 
-            // 4.2 Сохраняем нетронутых "Боссов", которые были в БД, но юзер их не отметил
             foreach (var existing in existingInbounds)
             {
                 if (!processedTypes.Contains(existing.Protocol.ToLower()))
                 {
                     string transport = existing.Protocol.ToLower() == "vless" ? "tcp" : "udp";
-
-                    // ИСПРАВЛЕНИЕ: Проверяем, не перехватил ли НОВЫЙ протокол этот порт и транспорт (Алгоритм замены)
                     bool isPortStolen = profile.Inbounds.Any(newInbound =>
                         newInbound.Port == existing.Port &&
                         (newInbound.Protocol.ToLower() == "vless" ? "tcp" : "udp") == transport);
@@ -219,7 +215,7 @@ EOF
                     if (isPortStolen)
                     {
                         _logger.Log("DEPLOY-TRACE", $"[REPLACE] Протокол {existing.Protocol.ToUpper()} УДАЛЕН! Порт {existing.Port} ({transport.ToUpper()}) передан новому протоколу.");
-                        continue; // Пропускаем сохранение, старый протокол стирается!
+                        continue;
                     }
 
                     _logger.Log("DEPLOY-TRACE", $"[PRESERVE] Сохранение нетронутого протокола {existing.Protocol.ToUpper()} на порту {existing.Port}...");
@@ -310,7 +306,7 @@ EOF
                 }
                 else
                 {
-                    if (protocol == "vless")
+                    if (protocol == "vless" && settings?["transport"]?["type"]?.ToString() != "quic")
                     {
                         inboundsArray.Add(new JsonObject
                         {
@@ -329,6 +325,41 @@ EOF
                                     ["serverNames"] = new JsonArray { settings?["sni"]?.ToString() },
                                     ["privateKey"] = settings?["privateKey"]?.ToString(),
                                     ["shortIds"] = new JsonArray { settings?["shortId"]?.ToString() }
+                                }
+                            }
+                        });
+                    }
+                    // === ИСПРАВЛЕНИЕ: Новый синтаксис XHTTP для ядра Xray (замена удаленному QUIC) ===
+                    else if (protocol == "trusttunnel" || (protocol == "vless" && settings?["transport"]?["type"]?.ToString() == "quic"))
+                    {
+                        inboundsArray.Add(new JsonObject
+                        {
+                            ["protocol"] = "vless",
+                            ["port"] = inboundDb.Port,
+                            ["listen"] = "0.0.0.0",
+                            ["settings"] = new JsonObject { ["clients"] = new JsonArray(), ["decryption"] = "none" },
+                            ["streamSettings"] = new JsonObject
+                            {
+                                ["network"] = "xhttp",
+                                ["xhttpSettings"] = new JsonObject
+                                {
+                                    ["mode"] = "auto", // Ядро Xray само поднимет H3 (QUIC)
+                                    ["host"] = settings?["sni"]?.ToString(),
+                                    ["path"] = "/"
+                                },
+                                ["security"] = "tls",
+                                ["tlsSettings"] = new JsonObject
+                                {
+                                    ["serverName"] = settings?["sni"]?.ToString(),
+                                    ["alpn"] = new JsonArray { "h3" },
+                                    ["certificates"] = new JsonArray
+                                    {
+                                        new JsonObject
+                                        {
+                                            ["certificateFile"] = settings?["certPath"]?.ToString(),
+                                            ["keyFile"] = settings?["keyPath"]?.ToString()
+                                        }
+                                    }
                                 }
                             }
                         });
@@ -371,7 +402,6 @@ EOF
             profile.CoreType = coreName;
             _profileRepository.UpdateProfile(profile);
 
-            // ИСПРАВЛЕНИЕ: Гарантированно убиваем зомби-процессы прямо перед рестартом службы!
             string preRestartCleanup = @"
                 systemctl stop sing-box xray 2>/dev/null || true
                 killall -9 sing-box xray 2>/dev/null || true
@@ -384,7 +414,7 @@ EOF
             string diagCmd = @"
                 sleep 2
                 echo '=== 1. ПРОВЕРКА ПРОСЛУШИВАНИЯ ПОРТОВ (SS) ==='
-                ss -tulpn | grep -E 'sing-box|xray|:443|:8443' || true
+                ss -tulpn | grep -E 'sing-box|xray|:443|:8443|:4443' || true
                 echo '=== 2. СТАТУС СЛУЖБЫ ==='
                 systemctl status sing-box -l --no-pager || true
             ".Replace("\r", "");

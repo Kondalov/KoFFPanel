@@ -13,17 +13,18 @@ public class ProtocolFactory
         _builders = builders;
     }
 
-    // Умный фильтр: скрывает Hysteria 2 и TrustTunnel, если на сервере установлено ядро Xray!
+    // Умный фильтр: распределяет протоколы по ядрам
     public IEnumerable<IProtocolBuilder> GetAvailableProtocols(bool isSingBox)
     {
         if (isSingBox)
         {
-            return _builders; // Sing-box умеет всё
+            // Sing-box получает весь список (TrustTunnel дополнительно скрывается во ViewModel для безопасности)
+            return _builders;
         }
         else
         {
-            // Xray умеет только TCP (VLESS)
-            return _builders.Where(b => b.TransportType == "tcp");
+            // ИСПРАВЛЕНИЕ: Xray умеет TCP (VLESS) + эксклюзивно поддерживает TrustTunnel (QUIC/UDP)
+            return _builders.Where(b => b.TransportType == "tcp" || b.ProtocolType.ToLower() == "trusttunnel");
         }
     }
 
