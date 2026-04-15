@@ -2,50 +2,197 @@
 using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
-using Renci.SshNet;
+using Microsoft.Web.WebView2.Wpf;
 using System;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
-public partial class TerminalViewModel : ObservableObject
+public partial class TerminalViewModel : ObservableObject, IDisposable
 {
-    private ISshService? _sshService;
+    private readonly ISshService _sshService;
+    private readonly IAppLogger _logger;
+    public event Action<string, string>? OnFileReadyForEdit;
+    public IAppLogger Logger => _logger;
+
+    private WebView2? _webView;
+    private Renci.SshNet.ShellStream? _shellStream;
+    private CancellationTokenSource? _readCts;
+
+    private bool _isWebViewReady = false;
+    private StringBuilder _outputBuffer = new StringBuilder();
 
     [ObservableProperty] private string _windowTitle = "SSH Терминал";
     [ObservableProperty] private string _connectionInfo = "Ожидание...";
-
-    // Свойства для шапки (Статистика)
-    [ObservableProperty] private int _cpuUsage = 0;
-    [ObservableProperty] private int _ramUsage = 0;
-    [ObservableProperty] private int _ssdUsage = 0;
+    [ObservableProperty] private bool _isConnected = false;
     [ObservableProperty] private long _pingMs = 0;
 
-    // Свойства для Проводника
     [ObservableProperty] private string _currentDirectory = "/root";
     [ObservableProperty] private ObservableCollection<RemoteFileItem> _files = new();
 
-    // Строка ввода команды снизу
     [ObservableProperty] private string _commandInput = "";
 
     public VpnProfile? CurrentProfile { get; private set; }
 
-    public TerminalViewModel() { }
+    public TerminalViewModel(ISshService sshService, IAppLogger logger)
+    {
+        _sshService = sshService;
+        _logger = logger;
+    }
 
     public void Initialize(VpnProfile profile, string command)
     {
         CurrentProfile = profile;
-        WindowTitle = $"Терминал — {profile.IpAddress}";
-        ConnectionInfo = $"ПОДКЛЮЧЕНО: {profile.Username}@{profile.IpAddress}";
+        WindowTitle = $"Терминал — {profile.Name} ({profile.IpAddress})";
+        ConnectionInfo = $"Подключение к {profile.Username}@{profile.IpAddress}...";
+        _logger.Log("TERM-INIT", $"Инициализация профиля: {profile.IpAddress}");
     }
 
-    // Этот метод мы вызовем из Code-Behind, когда передадим SSH сессию
-    public async Task SetSshSessionAsync(ISshService ssh)
+    public void InitializeWebView(WebView2 webView)
     {
-        _sshService = ssh;
-        await LoadFilesAsync(); // Загружаем файлы сразу после установки сессии
+        _logger.Log("TERM-WEBVIEW", "Старт инициализации WebView2...");
+        _webView = webView;
+        _webView.EnsureCoreWebView2Async().ContinueWith(t =>
+        {
+            if (t.IsFaulted)
+            {
+                _logger.Log("TERM-WEBVIEW-ERR", $"Ошибка загрузки WebView2: {t.Exception?.InnerException?.Message}");
+                return;
+            }
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                _webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+                _webView.NavigateToString(GetTerminalHtml());
+            });
+        });
+    }
+
+    public async Task ConnectAsync()
+    {
+        if (CurrentProfile == null)
+        {
+            ConnectionInfo = "Ошибка: профиль не задан.";
+            return;
+        }
+
+        if (!_sshService.IsConnected)
+        {
+            string result = await _sshService.ConnectAsync(CurrentProfile.IpAddress, CurrentProfile.Port, CurrentProfile.Username ?? "root", CurrentProfile.Password ?? "", CurrentProfile.KeyPath ?? "");
+            if (result != "SUCCESS")
+            {
+                ConnectionInfo = $"ОШИБКА ПОДКЛЮЧЕНИЯ: {result}";
+                return;
+            }
+        }
+
+        IsConnected = _sshService.IsConnected;
+        ConnectionInfo = $"ПОДКЛЮЧЕНО: {CurrentProfile.Username}@{CurrentProfile.IpAddress}";
+
+        await LoadFilesAsync();
+
+        try
+        {
+            _shellStream = _sshService.CreateShellStream("xterm-256color", 120, 40, 1200, 600, 1024);
+            _readCts = new CancellationTokenSource();
+            _ = ReadShellOutputAsync(_readCts.Token);
+        }
+        catch (Exception ex)
+        {
+            ConnectionInfo = $"ОШИБКА SHELL: {ex.Message}";
+        }
+    }
+
+    public void SendManualCommand()
+    {
+        if (string.IsNullOrWhiteSpace(CommandInput) || _shellStream == null) return;
+
+        try
+        {
+            _shellStream.Write(CommandInput + "\r");
+            CommandInput = "";
+        }
+        catch { }
+    }
+
+    private void CoreWebView2_WebMessageReceived(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            string json = e.WebMessageAsJson;
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("type", out var typeProp))
+            {
+                string type = typeProp.GetString() ?? "";
+
+                if (type == "ready")
+                {
+                    _isWebViewReady = true;
+                    if (_outputBuffer.Length > 0)
+                    {
+                        string safeOutput = System.Text.Json.JsonSerializer.Serialize(_outputBuffer.ToString());
+                        _webView?.ExecuteScriptAsync($"term.write({safeOutput});");
+                        _outputBuffer.Clear();
+                    }
+                }
+                else if (type == "input" && root.TryGetProperty("data", out var dataProp))
+                {
+                    _shellStream?.Write(dataProp.GetString());
+                }
+                else if (type == "resize")
+                {
+                    uint cols = root.GetProperty("cols").GetUInt32();
+                    uint rows = root.GetProperty("rows").GetUInt32();
+                    _sshService?.ResizeTerminal(cols, rows);
+                }
+            }
+        }
+        catch { }
+    }
+
+    private async Task ReadShellOutputAsync(CancellationToken token)
+    {
+        if (_shellStream == null || _webView == null) return;
+
+        byte[] buffer = new byte[4096];
+
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                int bytesRead = await _shellStream.ReadAsync(buffer, 0, buffer.Length, token);
+                if (bytesRead > 0)
+                {
+                    string output = Encoding.UTF8.GetString(buffer, 0, bytesRead);
+
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        if (_isWebViewReady)
+                        {
+                            string safeOutput = System.Text.Json.JsonSerializer.Serialize(output);
+                            _webView.ExecuteScriptAsync($"term.write({safeOutput});");
+                        }
+                        else
+                        {
+                            _outputBuffer.Append(output);
+                        }
+                    });
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
     }
 
     [RelayCommand]
@@ -55,43 +202,31 @@ public partial class TerminalViewModel : ObservableObject
 
         try
         {
-            // ls -pA выводит файлы и папки (папки заканчиваются на слэш '/')
-            string result = await _sshService.ExecuteCommandAsync($"ls -pA {CurrentDirectory}");
-            var lines = result.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            var remoteFiles = await _sshService.ListDirectoryAsync(CurrentDirectory);
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 Files.Clear();
-
-                // Добавляем папку "Назад", если мы не в корне
-                if (CurrentDirectory != "/")
-                {
-                    Files.Add(new RemoteFileItem { Name = "..", IsDirectory = true });
-                }
-
-                foreach (var line in lines)
-                {
-                    bool isDir = line.EndsWith("/");
-                    string name = isDir ? line.TrimEnd('/') : line;
-
-                    // Игнорируем текущую директорию
-                    if (name == "./" || name == "../" || name == ".") continue;
-
-                    Files.Add(new RemoteFileItem { Name = name, IsDirectory = isDir });
-                }
+                if (CurrentDirectory != "/") Files.Add(new RemoteFileItem { Name = "..", IsDirectory = true });
+                foreach (var file in remoteFiles) Files.Add(new RemoteFileItem { Name = file.Name, IsDirectory = file.IsDir });
             });
         }
-        catch { /* Игнорируем ошибки доступа к папкам */ }
+        catch { }
     }
 
     [RelayCommand]
     private async Task NavigateAsync(RemoteFileItem? item)
     {
-        if (item == null || !item.IsDirectory) return;
+        if (item == null) return;
+
+        if (!item.IsDirectory)
+        {
+            await OpenFileForEditAsync(item);
+            return;
+        }
 
         if (item.Name == "..")
         {
-            // Поднимаемся на уровень выше
             var parts = CurrentDirectory.TrimEnd('/').Split('/');
             if (parts.Length > 1)
             {
@@ -101,10 +236,167 @@ public partial class TerminalViewModel : ObservableObject
         }
         else
         {
-            // Проваливаемся внутрь папки
             CurrentDirectory = CurrentDirectory == "/" ? $"/{item.Name}" : $"{CurrentDirectory}/{item.Name}";
         }
 
         await LoadFilesAsync();
+    }
+
+    private async Task OpenFileForEditAsync(RemoteFileItem item)
+    {
+        if (_sshService == null || !_sshService.IsConnected) return;
+
+        string remotePath = CurrentDirectory.EndsWith("/") ? CurrentDirectory + item.Name : CurrentDirectory + "/" + item.Name;
+
+        string tempDir = Path.Combine(Path.GetTempPath(), "KoFFPanel_Editor");
+        Directory.CreateDirectory(tempDir);
+        string localPath = Path.Combine(tempDir, item.Name);
+
+        try
+        {
+            _logger.Log("TERM-SFTP", $"Скачивание файла для редактора: {remotePath}");
+            using (var fileStream = File.Create(localPath))
+            {
+                await _sshService.DownloadFileAsync(remotePath, fileStream);
+            }
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                OnFileReadyForEdit?.Invoke(localPath, remotePath);
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TERM-SFTP-ERR", $"Ошибка скачивания: {ex.Message}");
+        }
+    }
+
+    public async Task UploadEditedFileAsync(string localPath, string remotePath)
+    {
+        if (_sshService == null || !_sshService.IsConnected) return;
+
+        try
+        {
+            _logger.Log("TERM-SFTP", $"Выгрузка файла на сервер: {remotePath}");
+            using (var fileStream = File.OpenRead(localPath))
+            {
+                await Task.Run(() => _sshService.UploadFile(fileStream, remotePath));
+            }
+            _logger.Log("TERM-SFTP", $"Файл {remotePath} успешно сохранен!");
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TERM-SFTP-ERR", $"Ошибка выгрузки: {ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task RenameItemAsync((string OldName, string NewName) tuple)
+    {
+        if (_sshService == null || !_sshService.IsConnected || string.IsNullOrEmpty(tuple.OldName) || string.IsNullOrEmpty(tuple.NewName) || tuple.OldName == tuple.NewName) return;
+
+        string basePath = CurrentDirectory.EndsWith("/") ? CurrentDirectory : CurrentDirectory + "/";
+        string oldPath = basePath + tuple.OldName;
+        string newPath = basePath + tuple.NewName;
+
+        string safeOld = oldPath.Replace("'", "'\\''");
+        string safeNew = newPath.Replace("'", "'\\''");
+
+        try
+        {
+            await _sshService.ExecuteCommandAsync($"mv '{safeOld}' '{safeNew}'");
+            _logger.Log("TERM-SFTP", $"Переименовано: {oldPath} -> {newPath}");
+            await LoadFilesAsync();
+        }
+        catch (Exception ex) { _logger.Log("TERM-SFTP-ERR", $"Ошибка переименования: {ex.Message}"); }
+    }
+
+    [RelayCommand]
+    private async Task DeleteItemAsync(RemoteFileItem item)
+    {
+        if (_sshService == null || !_sshService.IsConnected || item == null || item.Name == "..") return;
+
+        string fullPath = CurrentDirectory.EndsWith("/") ? CurrentDirectory + item.Name : CurrentDirectory + "/" + item.Name;
+        string safePath = fullPath.Replace("'", "'\\''");
+
+        try
+        {
+            await _sshService.ExecuteCommandAsync($"rm -rf '{safePath}'");
+            _logger.Log("TERM-SFTP", $"Удалено: {fullPath}");
+            await LoadFilesAsync();
+        }
+        catch (Exception ex) { _logger.Log("TERM-SFTP-ERR", $"Ошибка удаления: {ex.Message}"); }
+    }
+
+    [RelayCommand]
+    private async Task CreateItemAsync((string Name, bool IsFolder) tuple)
+    {
+        if (_sshService == null || !_sshService.IsConnected || string.IsNullOrEmpty(tuple.Name)) return;
+
+        string fullPath = CurrentDirectory.EndsWith("/") ? CurrentDirectory + tuple.Name : CurrentDirectory + "/" + tuple.Name;
+        string safePath = fullPath.Replace("'", "'\\''");
+
+        try
+        {
+            if (tuple.IsFolder) await _sshService.ExecuteCommandAsync($"mkdir -p '{safePath}'");
+            else await _sshService.ExecuteCommandAsync($"touch '{safePath}'");
+
+            _logger.Log("TERM-SFTP", $"Создано (IsFolder: {tuple.IsFolder}): {fullPath}");
+            await LoadFilesAsync();
+        }
+        catch (Exception ex) { _logger.Log("TERM-SFTP-ERR", $"Ошибка создания: {ex.Message}"); }
+    }
+
+    public void Dispose()
+    {
+        _readCts?.Cancel();
+        _readCts?.Dispose();
+        _shellStream?.Dispose();
+    }
+
+    private string GetTerminalHtml()
+    {
+        return @"
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=""utf-8"" />
+    <link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"" />
+    <script src=""https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js""></script>
+    <script src=""https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js""></script>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: linear-gradient(320deg, #13151b, #2a0845, #6441A5); background-size: 400% 400%; animation: aurora 15s ease infinite; height: 100vh; width: 100vw; }
+        @keyframes aurora { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        #terminal { height: 100%; width: 100%; padding: 15px; box-sizing: border-box; background: rgba(19, 21, 27, 0.85); }
+        .xterm-viewport::-webkit-scrollbar { display: none; width: 0px; background: transparent; }
+        .xterm-viewport { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body>
+    <div id=""terminal""></div>
+    <script>
+        const term = new Terminal({
+            theme: { background: 'transparent', foreground: '#d4d4d4', cursor: '#569cd6', selectionBackground: 'rgba(38, 79, 120, 0.5)' },
+            cursorBlink: true, fontSize: 15, fontFamily: ""'Cascadia Code', Consolas, 'Courier New', monospace"", scrollback: 5000
+        });
+
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal'));
+        
+        function resizeTerminal() {
+            fitAddon.fit();
+            window.chrome.webview.postMessage({ type: 'resize', cols: term.cols, rows: term.rows });
+        }
+
+        setTimeout(resizeTerminal, 100);
+        let resizeTimeout;
+        window.addEventListener('resize', () => { clearTimeout(resizeTimeout); resizeTimeout = setTimeout(resizeTerminal, 100); });
+        term.onData(data => { window.chrome.webview.postMessage({ type: 'input', data: data }); });
+        
+        window.chrome.webview.postMessage({ type: 'ready' });
+    </script>
+</body>
+</html>";
     }
 }

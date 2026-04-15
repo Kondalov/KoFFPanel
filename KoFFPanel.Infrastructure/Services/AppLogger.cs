@@ -8,6 +8,7 @@ public class AppLogger : IAppLogger
 {
     private readonly string _logDir;
     private readonly string _logFile;
+    private readonly string _terminalLogFile;
 
     public AppLogger()
     {
@@ -19,7 +20,9 @@ public class AppLogger : IAppLogger
 
         _logFile = Path.Combine(_logDir, "app_analytics.log");
 
-        // Отбивка начала сессии
+        // ИСПРАВЛЕНИЕ: Создаем выделенный лог для терминала!
+        _terminalLogFile = Path.Combine(_logDir, "terminal.log");
+
         Log("SESSION", "\n====================== СТАРТ СЕССИИ ======================");
     }
 
@@ -28,7 +31,16 @@ public class AppLogger : IAppLogger
         try
         {
             string logEntry = $"[{DateTime.Now:HH:mm:ss.fff}] [{module}] {message}\n";
-            File.AppendAllText(_logFile, logEntry);
+
+            // ИСПРАВЛЕНИЕ: Умная маршрутизация логов
+            if (module.StartsWith("TERM") || module.StartsWith("SSH"))
+            {
+                File.AppendAllText(_terminalLogFile, logEntry);
+            }
+            else
+            {
+                File.AppendAllText(_logFile, logEntry);
+            }
         }
         catch { /* Игнорируем ошибки ввода-вывода, чтобы не крашнуть панель */ }
     }

@@ -4,254 +4,385 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
                  Title="{Binding WindowTitle}"
-                 Height="750"
-                 Width="1200"
+                 Height="850"
+                 Width="1400"
                  WindowStartupLocation="CenterOwner"
                  WindowBackdropType="None"
-                 Background="#13151b"
+                 Background="#0a0a0a"
                  ExtendsContentIntoTitleBar="True">
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0"
-                     Title="{Binding WindowTitle}"
-                     Background="#13151b"
-                     Foreground="White"
-                     Padding="10,5" />
-
-        <Border Grid.Row="1"
-                Background="#1c1e27"
-                BorderBrush="#2a2d3d"
-                BorderThickness="0,1,0,1"
-                Padding="20,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Column="0"
-                            Orientation="Horizontal">
-                    <Border Background="#13151b"
-                            CornerRadius="6"
-                            Padding="8"
-                            Margin="0,0,15,0">
-                        <ui:SymbolIcon Symbol="Desktop24"
-                                       Foreground="#8be9fd"
-                                       FontSize="24" />
-                    </Border>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="ТЕРМИНАЛ"
-                                   Foreground="#50fa7b"
-                                   FontSize="18"
-                                   FontWeight="Bold" />
-                        <TextBlock Text="{Binding ConnectionInfo}"
-                                   Foreground="#6272a4"
-                                   FontSize="12"
-                                   FontWeight="SemiBold" />
-                    </StackPanel>
-                </StackPanel>
-
-                <StackPanel Grid.Column="1"
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Right"
-                            VerticalAlignment="Center">
-                    <ui:SymbolIcon Symbol="Globe24"
-                                   Foreground="#50fa7b"
-                                   FontSize="16"
-                                   Margin="0,0,5,0" />
-                    <TextBlock Text="{Binding PingMs, StringFormat='{}{0} ms'}"
-                               Foreground="#50fa7b"
-                               FontSize="13"
-                               FontWeight="Bold"
-                               Margin="0,0,20,0" />
-
-                    <ui:SymbolIcon Symbol="Laptop24"
-                                   Foreground="#a0aabf"
-                                   FontSize="16"
-                                   Margin="0,0,5,0" />
-                    <TextBlock Text="{Binding CpuUsage, StringFormat='CPU: {0}%'}"
-                               Foreground="#a0aabf"
-                               FontSize="13"
-                               Margin="0,0,15,0" />
-
-                    <ui:SymbolIcon Symbol="Server24"
-                                   Foreground="#bd93f9"
-                                   FontSize="16"
-                                   Margin="0,0,5,0" />
-                    <TextBlock Text="{Binding RamUsage, StringFormat='RAM: {0}%'}"
-                               Foreground="#bd93f9"
-                               FontSize="13"
-                               Margin="0,0,15,0" />
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="280" />
-                <ColumnDefinition Width="1" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <Grid Grid.Column="0"
-                  Background="#1c1e27">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-                <Border Grid.Row="0"
-                        Padding="20,15"
-                        BorderBrush="#2a2d3d"
-                        BorderThickness="0,0,0,1">
-                    <StackPanel Orientation="Horizontal">
-                        <ui:SymbolIcon Symbol="Folder24"
-                                       Foreground="#ffb86c"
-                                       FontSize="18"
-                                       Margin="0,0,10,0" />
-                        <TextBlock Text="{Binding CurrentDirectory}"
-                                   Foreground="#50fa7b"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </Border>
-
-                <ListView Grid.Row="1"
-                          ItemsSource="{Binding Files}"
-                          Background="Transparent"
-                          BorderThickness="0"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                          Padding="10">
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="Padding"
-                                    Value="10,8" />
-                            <Setter Property="Margin"
-                                    Value="0,2" />
-                            <Setter Property="Cursor"
-                                    Value="Hand" />
-                            <EventSetter Event="MouseDoubleClick"
-                                         Handler="ExplorerItem_DoubleClick" />
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ListViewItem">
-                                        <Border CornerRadius="6"
-                                                Background="{TemplateBinding Background}"
-                                                Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter />
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver"
-                                                     Value="True">
-                                                <Setter Property="Background"
-                                                        Value="#282a36" />
-                                            </Trigger>
-                                            <Trigger Property="IsSelected"
-                                                     Value="True">
-                                                <Setter Property="Background"
-                                                        Value="#3e4152" />
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Orientation="Horizontal">
-                                <ui:SymbolIcon Symbol="{Binding Icon}"
-                                               Foreground="{Binding IconColor}"
-                                               FontSize="18"
-                                               Margin="0,0,15,0" />
-                                <TextBlock Text="{Binding Name}"
-                                           Foreground="White"
-                                           FontSize="14"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-            </Grid>
-
-            <Border Grid.Column="1"
-                    Background="#2a2d3d" />
-
-            <Grid Grid.Column="2"
-                  Background="#13151b">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-
-                <wv2:WebView2 x:Name="TerminalWebView"
-                              Grid.Row="0"
-                              DefaultBackgroundColor="Transparent" />
-
-                <Border Grid.Row="1"
-                        Background="#1c1e27"
-                        Padding="20">
-                    <Grid>
+        <Border Grid.Row="0"
+                Background="#08FFFFFF"
+                BorderBrush="#1AFFFFFF"
+                BorderThickness="0,0,0,1">
+            <ui:TitleBar Title="{Binding WindowTitle}"
+                         Background="Transparent"
+                         Foreground="White"
+                         Padding="12,8">
+                <ui:TitleBar.Header>
+                    <Grid HorizontalAlignment="Stretch">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <Border Grid.Column="0"
-                                Background="#282a36"
-                                CornerRadius="25,0,0,25"
-                                Padding="15,0,10,0">
-                            <ui:SymbolIcon Symbol="Star24"
-                                           Foreground="#a0aabf"
-                                           FontSize="20"
+                        <StackPanel Grid.Column="0"
+                                    Orientation="Horizontal"
+                                    Margin="20,0,0,0"
+                                    VerticalAlignment="Center">
+                            <Ellipse Width="8"
+                                     Height="8"
+                                     Fill="#00ff88"
+                                     Margin="0,0,10,0">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect Color="#00ff88"
+                                                      BlurRadius="8"
+                                                      ShadowDepth="0" />
+                                </Ellipse.Effect>
+                            </Ellipse>
+                            <TextBlock Text="{Binding ConnectionInfo}"
+                                       Foreground="#a0aabf"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       FontFamily="Inter, Segoe UI" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,20,0"
+                                    Visibility="{Binding IsConnected, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <ui:SymbolIcon Symbol="Pulse24"
+                                           Foreground="#39ff14"
+                                           FontSize="18"
+                                           Margin="0,0,6,0"
                                            VerticalAlignment="Center" />
-                        </Border>
+                            <TextBlock Text="{Binding PingMs, StringFormat='{}{0} ms'}"
+                                       Foreground="#39ff14"
+                                       FontFamily="Consolas"
+                                       FontSize="14"
+                                       FontWeight="Bold"
+                                       Margin="0,0,20,0"
+                                       VerticalAlignment="Center" />
 
-                        <ui:TextBox x:Name="CommandTextBox"
-                                    Grid.Column="1"
-                                    Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}"
-                                    Background="#282a36"
-                                    Foreground="White"
-                                    BorderThickness="0"
-                                    FontSize="15"
-                                    Padding="10,15"
-                                    PlaceholderText="Введите команду и нажмите Enter..."
-                                    VerticalContentAlignment="Center"
-                                    KeyDown="CommandTextBox_KeyDown"
-                                    ClearButtonEnabled="False" />
+                            <ui:SymbolIcon Symbol="DeveloperBoard24"
+                                           Foreground="#2962ff"
+                                           FontSize="18"
+                                           Margin="0,0,6,0"
+                                           VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding CpuUsage, StringFormat='CPU: {0}%'}"
+                                       Foreground="#a0aabf"
+                                       FontFamily="Consolas"
+                                       FontSize="14"
+                                       FontWeight="Bold"
+                                       Margin="0,0,20,0"
+                                       VerticalAlignment="Center" />
 
-                        <Button Grid.Column="2"
-                                Click="SendCommand_Click"
-                                Background="#0078D4"
-                                Foreground="White"
-                                BorderThickness="0"
-                                Padding="20,0"
-                                Cursor="Hand"
-                                HorizontalAlignment="Right">
-                            <Button.Template>
-                                <ControlTemplate TargetType="Button">
-                                    <Border Background="{TemplateBinding Background}"
-                                            CornerRadius="0,25,25,0">
-                                        <ui:SymbolIcon Symbol="Send24"
-                                                       Foreground="White"
-                                                       FontSize="20"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center" />
-                                    </Border>
-                                </ControlTemplate>
-                            </Button.Template>
-                        </Button>
+                            <ui:SymbolIcon Symbol="Board24"
+                                           Foreground="#b026ff"
+                                           FontSize="18"
+                                           Margin="0,0,6,0"
+                                           VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding RamUsage, StringFormat='RAM: {0}%'}"
+                                       Foreground="#a0aabf"
+                                       FontFamily="Consolas"
+                                       FontSize="14"
+                                       FontWeight="Bold"
+                                       Margin="0,0,20,0"
+                                       VerticalAlignment="Center" />
+
+                            <ui:SymbolIcon Symbol="Database24"
+                                           Foreground="#00e676"
+                                           FontSize="18"
+                                           Margin="0,0,6,0"
+                                           VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding SsdUsage, StringFormat='SSD: {0}%'}"
+                                       Foreground="#a0aabf"
+                                       FontFamily="Consolas"
+                                       FontSize="14"
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
                     </Grid>
-                </Border>
-            </Grid>
+                </ui:TitleBar.Header>
+            </ui:TitleBar>
+        </Border>
+
+        <Grid Grid.Row="1"
+              Margin="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="350"
+                                  MinWidth="250"
+                                  MaxWidth="500" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="#08FFFFFF"
+                    BorderBrush="#1AFFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    ClipToBounds="True">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <TabControl Grid.Row="1"
+                                Background="Transparent"
+                                BorderThickness="0">
+                        <TabControl.Resources>
+                            <Style TargetType="TabItem"
+                                   BasedOn="{StaticResource {x:Type TabItem}}">
+                                <Setter Property="Background"
+                                        Value="Transparent" />
+                            </Style>
+                        </TabControl.Resources>
+
+                        <TabItem Header="SFTP Проводник">
+                            <Grid Margin="0,10,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0"
+                                        Background="#1A000000"
+                                        BorderBrush="#1AFFFFFF"
+                                        BorderThickness="0,0,0,1"
+                                        Padding="16,12">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Folder24"
+                                                       Foreground="#ffb86c"
+                                                       Margin="0,0,8,0" />
+                                        <TextBlock Text="{Binding CurrentDirectory}"
+                                                   Foreground="#00f2ff"
+                                                   VerticalAlignment="Center"
+                                                   FontFamily="Consolas"
+                                                   FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Border>
+
+                                <ListView Grid.Row="1"
+                                          ItemsSource="{Binding Files}"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          Margin="0,8,0,0">
+                                    <ListView.ItemContainerStyle>
+                                        <Style TargetType="ListViewItem">
+                                            <Setter Property="Padding"
+                                                    Value="0" />
+                                            <Setter Property="Cursor"
+                                                    Value="Hand" />
+                                            <Setter Property="HorizontalContentAlignment"
+                                                    Value="Stretch" />
+                                            <EventSetter Event="MouseDoubleClick"
+                                                         Handler="ExplorerItem_DoubleClick" />
+                                        </Style>
+                                    </ListView.ItemContainerStyle>
+
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="Transparent"
+                                                    Padding="16,10">
+                                                <Border.ContextMenu>
+                                                    <ContextMenu Background="#1c1e27"
+                                                                 Foreground="White"
+                                                                 BorderBrush="#2a2d3d">
+                                                        <MenuItem Header="Открыть"
+                                                                  Click="MenuItem_Open_Click"
+                                                                  Foreground="White">
+                                                            <MenuItem.Icon>
+                                                                <ui:SymbolIcon Symbol="Open24"
+                                                                               Foreground="#00f2ff" />
+                                                            </MenuItem.Icon>
+                                                        </MenuItem>
+                                                        <MenuItem Header="Переименовать"
+                                                                  Click="MenuItem_Rename_Click"
+                                                                  Foreground="White">
+                                                            <MenuItem.Icon>
+                                                                <ui:SymbolIcon Symbol="Rename24"
+                                                                               Foreground="#ffaa00" />
+                                                            </MenuItem.Icon>
+                                                        </MenuItem>
+                                                        <Separator Background="#2a2d3d" />
+                                                        <MenuItem Header="Удалить"
+                                                                  Click="MenuItem_Delete_Click"
+                                                                  Foreground="#ff4444">
+                                                            <MenuItem.Icon>
+                                                                <ui:SymbolIcon Symbol="Delete24"
+                                                                               Foreground="#ff4444" />
+                                                            </MenuItem.Icon>
+                                                        </MenuItem>
+                                                    </ContextMenu>
+                                                </Border.ContextMenu>
+
+                                                <StackPanel Orientation="Horizontal">
+                                                    <ui:SymbolIcon Symbol="{Binding Icon}"
+                                                                   Foreground="{Binding IconColor}"
+                                                                   FontSize="18"
+                                                                   Margin="0,0,10,0" />
+                                                    <TextBlock Text="{Binding Name}"
+                                                               Foreground="White"
+                                                               FontSize="13"
+                                                               VerticalAlignment="Center"
+                                                               FontFamily="Inter, Segoe UI" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+
+                                    <ListView.ContextMenu>
+                                        <ContextMenu Background="#1c1e27"
+                                                     Foreground="White"
+                                                     BorderBrush="#2a2d3d">
+                                            <MenuItem Header="Создать папку"
+                                                      Click="MenuItem_CreateFolder_Click"
+                                                      Foreground="White">
+                                                <MenuItem.Icon>
+                                                    <ui:SymbolIcon Symbol="FolderAdd24"
+                                                                   Foreground="#ffb86c" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Создать файл"
+                                                      Click="MenuItem_CreateFile_Click"
+                                                      Foreground="White">
+                                                <MenuItem.Icon>
+                                                    <ui:SymbolIcon Symbol="DocumentAdd24"
+                                                                   Foreground="#00f2ff" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </ListView.ContextMenu>
+                                </ListView>
+                            </Grid>
+                        </TabItem>
+
+                        <TabItem Header="Сниппеты">
+                            <Grid Margin="0,10,0,0">
+                                <TextBlock Text="Сниппеты будут здесь (Next Step)"
+                                           Foreground="#a0aabf"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Border>
+
+            <Border Grid.Column="2"
+                    Background="#08FFFFFF"
+                    BorderBrush="#1AFFFFFF"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    ClipToBounds="True">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <wv2:WebView2 Grid.Row="0"
+                                  x:Name="TerminalWebView"
+                                  DefaultBackgroundColor="Transparent"
+                                  Margin="2" />
+
+                    <Border Grid.Row="1"
+                            Background="#1A000000"
+                            BorderBrush="#1AFFFFFF"
+                            BorderThickness="0,1,0,0"
+                            Padding="16,12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0"
+                                    Background="#0DFFFFFF"
+                                    BorderBrush="#1AFFFFFF"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="12,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <ui:SymbolIcon Grid.Column="0"
+                                                   Symbol="Star24"
+                                                   Foreground="#a0aabf"
+                                                   FontSize="18"
+                                                   VerticalAlignment="Center"
+                                                   Margin="0,0,10,0"
+                                                   Opacity="0.5" />
+
+                                    <ui:TextBox x:Name="CommandTextBox"
+                                                Grid.Column="1"
+                                                Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}"
+                                                Background="Transparent"
+                                                Foreground="White"
+                                                BorderThickness="0"
+                                                FontSize="14"
+                                                FontFamily="Consolas"
+                                                Padding="0,12"
+                                                PlaceholderText="Введите команду и нажмите Enter..."
+                                                VerticalContentAlignment="Center"
+                                                KeyDown="CommandTextBox_KeyDown"
+                                                ClearButtonEnabled="False" />
+                                </Grid>
+                            </Border>
+
+                            <ui:Button Grid.Column="2"
+                                       Click="SendCommand_Click"
+                                       BorderThickness="0"
+                                       Padding="0"
+                                       Width="44"
+                                       Height="44"
+                                       Cursor="Hand">
+                                <ui:Button.Background>
+                                    <LinearGradientBrush StartPoint="0,0"
+                                                         EndPoint="1,1">
+                                        <GradientStop Color="#00f2ff"
+                                                      Offset="0" />
+                                        <GradientStop Color="#7000ff"
+                                                      Offset="1" />
+                                    </LinearGradientBrush>
+                                </ui:Button.Background>
+                                <ui:Button.Effect>
+                                    <DropShadowEffect Color="#00f2ff"
+                                                      BlurRadius="12"
+                                                      ShadowDepth="0"
+                                                      Opacity="0.5" />
+                                </ui:Button.Effect>
+                                <ui:Button.Template>
+                                    <ControlTemplate TargetType="ui:Button">
+                                        <Border Background="{TemplateBinding Background}"
+                                                CornerRadius="12">
+                                            <ui:SymbolIcon Symbol="Send24"
+                                                           Foreground="#000000"
+                                                           FontSize="18"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </ui:Button.Template>
+                            </ui:Button>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Border>
         </Grid>
     </Grid>
 </ui:FluentWindow>
