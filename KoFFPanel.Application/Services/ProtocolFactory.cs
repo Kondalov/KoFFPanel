@@ -1,10 +1,18 @@
 ﻿using KoFFPanel.Application.Interfaces.ProtocolBuilders;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace KoFFPanel.Application.Services;
 
-public class ProtocolFactory
+public static class CoreTypes
+{
+    public const string Xray = "xray";
+    public const string SingBox = "sing-box";
+    public const string TrustTunnel = "trusttunnel";
+}
+
+public sealed class ProtocolFactory
 {
     private readonly IEnumerable<IProtocolBuilder> _builders;
 
@@ -13,23 +21,25 @@ public class ProtocolFactory
         _builders = builders;
     }
 
-    // Умный фильтр: распределяет протоколы по ядрам
-    public IEnumerable<IProtocolBuilder> GetAvailableProtocols(bool isSingBox)
+    // Умный фильтр: жестко распределяет протоколы по выбранному ядру
+    public IEnumerable<IProtocolBuilder> GetAvailableProtocols(string coreType)
     {
-        if (isSingBox)
+        return coreType.ToLower() switch
         {
-            // Sing-box получает весь список (TrustTunnel дополнительно скрывается во ViewModel для безопасности)
-            return _builders;
-        }
-        else
-        {
-            // ИСПРАВЛЕНИЕ: Xray умеет TCP (VLESS) + эксклюзивно поддерживает TrustTunnel (QUIC/UDP)
-            return _builders.Where(b => b.TransportType == "tcp" || b.ProtocolType.ToLower() == "trusttunnel");
-        }
+            CoreTypes.SingBox => _builders.Where(b =>
+                b.ProtocolType.Equals("vless", StringComparison.OrdinalIgnoreCase) ||
+                b.ProtocolType.Equals("hysteria2", StringComparison.OrdinalIgnoreCase)),
+
+            CoreTypes.Xray => _builders.Where(b =>
+                b.ProtocolType.Equals("vless", StringComparison.OrdinalIgnoreCase) && b.TransportType == "tcp"),
+
+            CoreTypes.TrustTunnel => _builders.Where(b =>
+                b.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase)),
+
+            _ => Enumerable.Empty<IProtocolBuilder>()
+        };
     }
 
-    public IProtocolBuilder? GetBuilder(string protocolType)
-    {
-        return _builders.FirstOrDefault(b => b.ProtocolType == protocolType);
-    }
+    public IProtocolBuilder? GetBuilder(string protocolType) =>
+        _builders.FirstOrDefault(b => b.ProtocolType.Equals(protocolType, StringComparison.OrdinalIgnoreCase));
 }

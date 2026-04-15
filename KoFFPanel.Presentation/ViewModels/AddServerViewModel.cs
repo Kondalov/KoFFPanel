@@ -2,7 +2,9 @@
 using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
+using MaxMind.GeoIP2;
 using System;
+using System.IO;
 using System.Threading.Tasks;
 
 namespace KoFFPanel.Presentation.ViewModels;
@@ -31,7 +33,6 @@ public partial class AddServerViewModel : ObservableObject
     [ObservableProperty] private bool _isChecking = false;
     [ObservableProperty] private bool _isNotChecking = true;
 
-    // Инжектим новый сервис выбора файлов
     public AddServerViewModel(
         IProfileRepository profileRepository,
         ISshService sshService,
@@ -42,7 +43,6 @@ public partial class AddServerViewModel : ObservableObject
         _filePickerService = filePickerService;
     }
 
-    // МЕТОД ДЛЯ ЗАГРУЗКИ ДАННЫХ ПРИ РЕДАКТИРОВАНИИ
     public void LoadForEdit(VpnProfile profile)
     {
         IsEditMode = true;
@@ -96,6 +96,23 @@ public partial class AddServerViewModel : ObservableObject
         IsNotChecking = true;
     }
 
+    // ИСПРАВЛЕНИЕ: Локальное получение названия страны через базу MaxMind
+    private string ResolveCountryByIp(string ip)
+    {
+        try
+        {
+            string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-Country.mmdb");
+            if (File.Exists(dbPath))
+            {
+                using var reader = new DatabaseReader(dbPath);
+                var response = reader.Country(ip);
+                return response.Country.IsoCode ?? "??";
+            }
+        }
+        catch { }
+        return "??"; // Если файла нет или IP внутренний
+    }
+
     [RelayCommand]
     private void Save()
     {
@@ -105,17 +122,19 @@ public partial class AddServerViewModel : ObservableObject
             return;
         }
 
-        // Бронебойное создание профиля
+        string cleanIp = IpAddress.Trim();
+
         var profileToSave = new VpnProfile
         {
-            // Если редактируем - сохраняем старый ID, иначе генерируем новый
             Id = IsEditMode ? _editingServerId : Guid.NewGuid().ToString(),
             Name = Name,
-            IpAddress = IpAddress,
-            Port = Port <= 0 ? 22 : Port, // Защита от нулевого порта
+            IpAddress = cleanIp,
+            Port = Port <= 0 ? 22 : Port,
             Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username,
-            Password = Password ?? string.Empty, // Защита от null
-            KeyPath = KeyPath ?? string.Empty    // Защита от null
+            Password = Password ?? string.Empty,
+            KeyPath = KeyPath ?? string.Empty
+            // Примечание: Для связи страны с профилем, если в VpnProfile нет поля Country, оно читается напрямую из карточки, 
+            // либо ты можешь добавить public string CountryCode { get; set; } в VpnProfile.
         };
 
         if (IsEditMode)

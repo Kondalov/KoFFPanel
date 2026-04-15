@@ -169,70 +169,11 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
-
-        <Style x:Key="VlessBtnStyle"
-               TargetType="ui:Button"
-               BasedOn="{StaticResource {x:Type ui:Button}}">
-            <Setter Property="BorderThickness"
-                    Value="0" />
-            <Setter Property="Padding"
-                    Value="0,16" />
-            <Setter Property="HorizontalAlignment"
-                    Value="Stretch" />
-            <Setter Property="Cursor"
-                    Value="Hand" />
-            <Setter Property="Margin"
-                    Value="0,0,0,24" />
-            <Setter Property="Background">
-                <Setter.Value>
-                    <LinearGradientBrush StartPoint="0,0"
-                                         EndPoint="1,1">
-                        <GradientStop Color="#7000ff"
-                                      Offset="0.0" />
-                        <GradientStop Color="#ff00aa"
-                                      Offset="1.0" />
-                    </LinearGradientBrush>
-                </Setter.Value>
-            </Setter>
-            <Setter Property="RenderTransform">
-                <Setter.Value>
-                    <TranslateTransform Y="0" />
-                </Setter.Value>
-            </Setter>
-            <Setter Property="Effect">
-                <Setter.Value>
-                    <DropShadowEffect Color="#7000ff"
-                                      BlurRadius="20"
-                                      ShadowDepth="4"
-                                      Opacity="0.6"
-                                      Direction="315" />
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver"
-                         Value="True">
-                    <Setter Property="RenderTransform">
-                        <Setter.Value>
-                            <TranslateTransform Y="-3" />
-                        </Setter.Value>
-                    </Setter>
-                    <Setter Property="Effect">
-                        <Setter.Value>
-                            <DropShadowEffect Color="#ff00aa"
-                                              BlurRadius="25"
-                                              ShadowDepth="0"
-                                              Opacity="0.9" />
-                        </Setter.Value>
-                    </Setter>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
     </UserControl.Resources>
 
     <Border Style="{StaticResource HeroCardStyle}">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -282,11 +223,6 @@
                                    FontWeight="Bold"
                                    FontSize="13" />
                     </Border>
-                    <TextBlock Text="{Binding XrayProcesses, StringFormat='PID: {0}'}"
-                               Foreground="#B3FFFFFF"
-                               FontSize="13"
-                               Margin="12,0,0,0"
-                               VerticalAlignment="Center" />
                 </StackPanel>
 
                 <StackPanel Grid.Column="2"
@@ -324,7 +260,6 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0"
@@ -352,24 +287,6 @@
                         Margin="0,0,0,8"
                         Padding="0,0,0,8">
                     <Grid>
-                        <TextBlock Text="ОЗУ (RAM)"
-                                   Foreground="#B3FFFFFF"
-                                   FontSize="14" />
-                        <TextBlock Text="{Binding XrayMemory}"
-                                   Foreground="#00f2ff"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   HorizontalAlignment="Right" />
-                    </Grid>
-                </Border>
-
-                <Border Grid.Row="2"
-                        Grid.ColumnSpan="2"
-                        BorderBrush="#0AFFFFFF"
-                        BorderThickness="0,0,0,1"
-                        Margin="0,0,0,8"
-                        Padding="0,0,0,8">
-                    <Grid>
                         <TextBlock Text="Аптайм"
                                    Foreground="#B3FFFFFF"
                                    FontSize="14" />
@@ -381,7 +298,7 @@
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="3"
+                <Border Grid.Row="2"
                         Grid.ColumnSpan="2"
                         BorderBrush="#0AFFFFFF"
                         BorderThickness="0,0,0,1"
@@ -399,7 +316,7 @@
                     </Grid>
                 </Border>
 
-                <Grid Grid.Row="4"
+                <Grid Grid.Row="3"
                       Grid.ColumnSpan="2">
                     <TextBlock Text="Ошибка"
                                Foreground="#B3FFFFFF"
@@ -414,21 +331,7 @@
                 </Grid>
             </Grid>
 
-            <ui:Button Grid.Row="3"
-                       Command="{Binding GenerateRealityConfigCommand}"
-                       Style="{StaticResource VlessBtnStyle}">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="🚀"
-                               FontSize="16"
-                               Margin="0,0,8,0" />
-                    <TextBlock Text="Создать VLESS-Reality"
-                               Foreground="White"
-                               FontSize="15"
-                               FontWeight="Bold" />
-                </StackPanel>
-            </ui:Button>
-
-            <Grid Grid.Row="4">
+            <Grid Grid.Row="3">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />

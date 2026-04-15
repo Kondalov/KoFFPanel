@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddTransient<ClientConfigWindow>();
         services.AddTransient<ISingBoxConfiguratorService, SingBoxConfiguratorService>();
         services.AddTransient<ISingBoxUserManagerService, SingBoxUserManagerService>();
+        services.AddTransient<ITrustTunnelUserManagerService, TrustTunnelUserManagerService>(); // ИСПРАВЛЕНИЕ: Добавлен сервис TT
         services.AddTransient<KoFFPanel.Presentation.ViewModels.ClientProtocolsViewModel>();
         services.AddTransient<KoFFPanel.Presentation.Views.ClientProtocolsWindow>();
 
@@ -49,8 +50,6 @@ public static class DependencyInjection
 
         // 2. Сервисы UI и Билдеры
         services.AddTransient<IFilePickerService, FilePickerService>();
-
-        // ИСПРАВЛЕНИЕ: Интерфейс лежит в Application.Interfaces, а классы в Infrastructure.Services!
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.VlessRealityBuilder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.Hysteria2Builder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrustTunnelBuilder>();

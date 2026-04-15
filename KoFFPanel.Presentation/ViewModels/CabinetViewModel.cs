@@ -30,8 +30,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
     private readonly ISubscriptionService _subscriptionService;
     private readonly IClientAnalyticsService _analyticsService;
     private readonly ISingBoxUserManagerService _singBoxUserManager;
-
-    // ДОБАВЛЕНО 1: Объявляем переменную для логгера
+    private readonly ITrustTunnelUserManagerService _trustTunnelUserManager; // ИСПРАВЛЕНИЕ: Инжектируем новый менеджер
     private readonly IAppLogger _logger;
 
     private readonly Dictionary<string, long> _previousTrafficStats = new();
@@ -83,22 +82,18 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
     [ObservableProperty] private ObservableCollection<VpnClient> _clients = new();
 
-    // ДОБАВЛЕНО 2: Добавляем IAppLogger logger в параметры конструктора
     public CabinetViewModel(
         IServerMonitorService monitorService, IProfileRepository profileRepository, IServiceProvider serviceProvider,
         IXrayCoreService xrayService, IXrayConfiguratorService xrayConfigurator, IXrayUserManagerService userManager,
         IDatabaseBackupService backupService, ISubscriptionService subscriptionService, IClientAnalyticsService analyticsService,
-        ISingBoxUserManagerService singBoxUserManager, IAppLogger logger)
+        ISingBoxUserManagerService singBoxUserManager, ITrustTunnelUserManagerService trustTunnelUserManager, IAppLogger logger)
     {
         _monitorService = monitorService; _profileRepository = profileRepository; _serviceProvider = serviceProvider;
         _xrayService = xrayService; _xrayConfigurator = xrayConfigurator; _userManager = userManager; _singBoxUserManager = singBoxUserManager;
-        _backupService = backupService; _subscriptionService = subscriptionService;
-
-        // ДОБАВЛЕНО 3: Сохраняем переданный логгер в нашу переменную
+        _trustTunnelUserManager = trustTunnelUserManager; _backupService = backupService; _subscriptionService = subscriptionService;
         _logger = logger;
 
         _sshServiceFactory = () => _serviceProvider.GetRequiredService<ISshService>();
-
         _ = _backupService.CreateBackupAsync();
         _analyticsService = analyticsService;
 
@@ -107,7 +102,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         WeakReferenceMessenger.Default.Register(this);
 
         LoadData();
-        _singBoxUserManager = singBoxUserManager;
     }
 
     public async void Receive(CoreDeployedMessage message)
@@ -121,7 +115,8 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         _logger.Log("USER-SYNC", $"[START] Синхронизация БД с ядром для {SelectedServer.IpAddress}");
 
         bool isSingBox = SelectedServer.CoreType == "sing-box";
-        string activeCoreName = isSingBox ? "Sing-box" : "Xray-core";
+        bool isTrustTunnel = SelectedServer.CoreType == "trusttunnel";
+        string activeCoreName = isSingBox ? "Sing-box" : (isTrustTunnel ? "TrustTunnel" : "Xray-core");
 
         System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = $"Синхронизация БД с {activeCoreName}...");
 
@@ -140,9 +135,14 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
         try
         {
-            bool syncSuccess = isSingBox
-                ? await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients)
-                : await _userManager.SyncUsersToCoreAsync(ssh, Clients);
+            // ИСПРАВЛЕНИЕ: Трехуровневая маршрутизация
+            bool syncSuccess = false;
+            if (isSingBox)
+                syncSuccess = await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients);
+            else if (isTrustTunnel)
+                syncSuccess = await _trustTunnelUserManager.SyncUsersToCoreAsync(ssh, Clients);
+            else
+                syncSuccess = await _userManager.SyncUsersToCoreAsync(ssh, Clients);
 
             if (syncSuccess)
             {
@@ -152,7 +152,11 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
                 {
                     string uuid = client.Uuid ?? "";
 
-                    if (vlessInbound != null)
+                    if (isTrustTunnel)
+                    {
+                        await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, client.TrustTunnelLink);
+                    }
+                    else if (vlessInbound != null)
                     {
                         try
                         {
@@ -161,7 +165,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
                             string sni = settings.GetProperty("sni").GetString() ?? "www.microsoft.com";
                             string shortId = settings.GetProperty("shortId").GetString() ?? "";
 
-                            // ИСПРАВЛЕНИЕ: Возвращаем &flow=xtls-rprx-vision
                             client.VlessLink = $"vless://{uuid}@{ip}:{vlessInbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel-{client.Email}";
                             await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, client.VlessLink);
                         }
@@ -210,7 +213,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         catch { }
     }
 
-    // ИСПРАВЛЕНИЕ: Умный наблюдатель. Подписывается на КАЖДОГО клиента в таблице
     private void Clients_CollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
         if (e.NewItems != null)
@@ -224,7 +226,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
                         c.AvatarPath = path;
                     }
                 }
-                // Слушаем изменения внутри этого клиента
                 c.PropertyChanged += Client_PropertyChanged;
             }
         }
@@ -233,7 +234,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         {
             foreach (VpnClient c in e.OldItems)
             {
-                // Отписываемся при удалении
                 c.PropertyChanged -= Client_PropertyChanged;
             }
         }
@@ -241,7 +241,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         RecalculateActiveUsers();
     }
 
-    // ИСПРАВЛЕНИЕ: Мгновенно реагируем, если у кого-то поменялся онлайн
     private void Client_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(VpnClient.ActiveConnections))
@@ -250,7 +249,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         }
     }
 
-    // ИСПРАВЛЕНИЕ: Считаем реальных онлайн клиентов (у кого подключений > 0)
     private void RecalculateActiveUsers()
     {
         TotalUsers = Clients.Count;
@@ -294,7 +292,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         {
             foreach (var profile in profiles)
             {
-                // ЗАПУСК МЯГКОЙ МИГРАЦИИ (Безболезненный переход на мульти-протоколы)
                 profile.MigrateLegacyData();
                 Servers.Add(profile);
             }
@@ -314,10 +311,8 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
         if (value != null)
         {
-            // 1. Устанавливаем динамический заголовок ядра
-            ActiveCoreTitle = value.CoreType == "sing-box" ? "Ядро (Sing-box)" : "Ядро (Xray-core)";
+            ActiveCoreTitle = value.CoreType == "sing-box" ? "Ядро (Sing-box)" : (value.CoreType == "trusttunnel" ? "Ядро (TrustTunnel)" : "Ядро (Xray-core)");
 
-            // 2. ЖЕСТКО ГРУЗИМ ЮЗЕРОВ ИЗ SQLITE (Без фильтра ServerId)
             try
             {
                 var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();

@@ -1,7 +1,9 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 
@@ -9,10 +11,13 @@ namespace KoFFPanel.Presentation.ViewModels;
 
 public partial class ClientProtocolsViewModel : ObservableObject
 {
+    private readonly IProfileRepository _profileRepository;
     private VpnClient _originalClient = null!;
 
     [ObservableProperty] private string _windowTitle = "Управление протоколами";
     [ObservableProperty] private string _email = "";
+
+    [ObservableProperty] private bool _isTrustTunnelMode = false;
 
     // === VLESS ===
     [ObservableProperty] private bool _isVlessEnabled;
@@ -32,11 +37,22 @@ public partial class ClientProtocolsViewModel : ObservableObject
     public Action<VpnClient>? SaveCallback { get; set; }
     public Action? CloseAction { get; set; }
 
+    // ИСПРАВЛЕНИЕ: Внедряем репозиторий через конструктор (DI-контейнер сделает это автоматически)
+    public ClientProtocolsViewModel(IProfileRepository profileRepository)
+    {
+        _profileRepository = profileRepository;
+    }
+
+    // ИСПРАВЛЕНИЕ: Вернули старую сигнатуру метода, чтобы не ломать вызов из других окон!
     public void Initialize(VpnClient client)
     {
         _originalClient = client;
         Email = client.Email;
         WindowTitle = $"Протоколы: {client.Email}";
+
+        // Умное определение ядра: ищем профиль сервера по IP клиента
+        var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == client.ServerIp);
+        IsTrustTunnelMode = (profile?.CoreType?.ToLower() == "trusttunnel");
 
         IsVlessEnabled = client.IsVlessEnabled;
         VlessLink = client.VlessLink;
@@ -48,19 +64,20 @@ public partial class ClientProtocolsViewModel : ObservableObject
         TrustTunnelLink = client.TrustTunnelLink;
     }
 
-    // ИСПРАВЛЕНИЕ: Жесткая защита буфера обмена от блокировок WPF (COMException)
     private async Task SafeCopyToClipboardAsync(string text)
     {
         for (int i = 0; i < 5; i++)
         {
             try
             {
-                Clipboard.SetText(text);
-                return; // Успешно скопировано
+                // ИСПРАВЛЕНИЕ: Явное указание System.Windows.Application
+                // Это решает ошибку конфликта с пространством имен KoFFPanel.Application
+                System.Windows.Application.Current.Dispatcher.Invoke(() => Clipboard.SetText(text));
+                return;
             }
             catch (System.Runtime.InteropServices.COMException)
             {
-                await Task.Delay(20); // Ждем 20 мс и агрессивно пробуем снова
+                await Task.Delay(20);
             }
         }
     }

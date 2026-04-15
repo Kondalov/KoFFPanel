@@ -6,7 +6,6 @@ using KoFFPanel.Application.Interfaces.ProtocolBuilders;
 using KoFFPanel.Application.Services;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Services;
-using KoFFPanel.Infrastructure.Services.ProtocolBuilders;
 using KoFFPanel.Presentation.Messages;
 using System;
 using System.Collections.ObjectModel;
@@ -37,7 +36,7 @@ public partial class DeployWizardViewModel : ObservableObject
     private readonly ProtocolFactory _protocolFactory;
     private readonly ISmartPortValidator _portValidator;
     private readonly IAppLogger _logger;
-    private readonly ICoreDeploymentService _deploymentService; // ДОБАВЛЕНО
+    private readonly ICoreDeploymentService _deploymentService;
     private VpnProfile _server = null!;
 
     public Action? CloseAction { get; set; }
@@ -45,6 +44,7 @@ public partial class DeployWizardViewModel : ObservableObject
 
     [ObservableProperty] private bool _isXraySelected = true;
     [ObservableProperty] private bool _isSingBoxSelected;
+    [ObservableProperty] private bool _isTrustTunnelSelected; // ИСПРАВЛЕНИЕ: Добавлено ядро TrustTunnel
     [ObservableProperty] private bool _isCustomSelected;
 
     [ObservableProperty] private bool _isNotInstalling = true;
@@ -52,7 +52,6 @@ public partial class DeployWizardViewModel : ObservableObject
 
     public ObservableCollection<ProtocolSetupItem> AvailableProtocols { get; } = new();
 
-    // ОБНОВЛЕННЫЙ КОНСТРУКТОР
     public DeployWizardViewModel(
         ISshService ssh,
         ProtocolFactory protocolFactory,
@@ -96,21 +95,24 @@ public partial class DeployWizardViewModel : ObservableObject
 
     partial void OnIsXraySelectedChanged(bool value)
     {
-        if (value)
-        {
-            IsSingBoxSelected = false;
-            LoadProtocolsForCurrentCore();
-        }
+        if (value) { IsSingBoxSelected = false; IsTrustTunnelSelected = false; LoadProtocolsForCurrentCore(); }
     }
 
     partial void OnIsSingBoxSelectedChanged(bool value)
     {
-        if (value)
-        {
-            // ИСПРАВЛЕНИЕ: Принудительно синхронизируем состояние ДО генерации списка
-            IsXraySelected = false;
-            LoadProtocolsForCurrentCore();
-        }
+        if (value) { IsXraySelected = false; IsTrustTunnelSelected = false; LoadProtocolsForCurrentCore(); }
+    }
+
+    partial void OnIsTrustTunnelSelectedChanged(bool value)
+    {
+        if (value) { IsXraySelected = false; IsSingBoxSelected = false; LoadProtocolsForCurrentCore(); }
+    }
+
+    private string GetSelectedCoreType()
+    {
+        if (IsSingBoxSelected) return CoreTypes.SingBox;
+        if (IsTrustTunnelSelected) return CoreTypes.TrustTunnel;
+        return CoreTypes.Xray;
     }
 
     private void LoadProtocolsForCurrentCore()
@@ -120,26 +122,25 @@ public partial class DeployWizardViewModel : ObservableObject
 
         if (IsCustomSelected) return;
 
-        var builders = _protocolFactory.GetAvailableProtocols(IsSingBoxSelected);
+        var builders = _protocolFactory.GetAvailableProtocols(GetSelectedCoreType());
         foreach (var builder in builders)
         {
-            // ИСПРАВЛЕНИЕ: Я удалил ошибочную блокировку TrustTunnel для Sing-box!
-            // Оставляем только защиту Hysteria 2 от Xray (так как Xray ее реально не поддерживает)
-            if (!IsSingBoxSelected && builder.ProtocolType.ToLower() == "hysteria2")
-                continue;
-
             var item = new ProtocolSetupItem(builder);
 
-            // Умный алгоритм! Информируем, но НЕ включаем тумблер
-            if (_server != null && _server.Inbounds != null)
+            if (_server?.Inbounds != null)
             {
-                var existing = _server.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == builder.ProtocolType.ToLower());
+                var existing = _server.Inbounds.FirstOrDefault(i => i.Protocol.Equals(builder.ProtocolType, StringComparison.OrdinalIgnoreCase));
                 if (existing != null)
                 {
-                    item.IsSelected = false; // Тумблер выключен, ждем решения юзера
+                    item.IsSelected = false;
                     item.PortText = existing.Port.ToString();
                     item.IsValid = true;
                     item.ValidationMessage = "Установлен (Включите для переустановки)";
+                }
+                // Для TrustTunnel задаем порт 443 по умолчанию
+                else if (builder.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase))
+                {
+                    item.PortText = "443";
                 }
             }
 
@@ -158,11 +159,12 @@ public partial class DeployWizardViewModel : ObservableObject
                 {
                     item.ValidationMessage = "Сканирование...";
                     item.IsValid = true;
-                    int bestPort = await _portValidator.SuggestBestPortAsync(_ssh, _server.Id, item.Builder.ProtocolType);
+
+                    int bestPort = int.TryParse(item.PortText, out int parsedPort) ? parsedPort :
+                        await _portValidator.SuggestBestPortAsync(_ssh, _server.Id, item.Builder.ProtocolType);
 
                     string newPortText = bestPort.ToString();
 
-                    // ИСПРАВЛЕНИЕ: Если порт не поменялся визуально, принудительно запускаем проверку!
                     if (item.PortText == newPortText)
                     {
                         item.ValidationMessage = "Проверка...";
@@ -180,7 +182,7 @@ public partial class DeployWizardViewModel : ObservableObject
                     }
                     else
                     {
-                        item.PortText = newPortText; // Это само вызовет валидацию ниже
+                        item.PortText = newPortText;
                     }
                 }
                 else
@@ -218,7 +220,6 @@ public partial class DeployWizardViewModel : ObservableObject
     [RelayCommand]
     private void Cancel() => CloseAction?.Invoke();
 
-    // ИСПРАВЛЕНИЕ: Асинхронный метод для связи с сервисом и синхронизации клиентов
     [RelayCommand]
     private async Task StartInstallAsync()
     {
@@ -243,14 +244,14 @@ public partial class DeployWizardViewModel : ObservableObject
 
         var protocolsToInstall = selectedItems.Select(p => (p.Builder, int.Parse(p.PortText))).ToList();
 
-        var (success, log) = await _deploymentService.DeployFullStackAsync(_ssh, _server, IsSingBoxSelected, protocolsToInstall);
+        // ИСПРАВЛЕНИЕ: Передаем строковый идентификатор ядра вместо bool isSingBox
+        var (success, log) = await _deploymentService.DeployFullStackAsync(_ssh, _server, GetSelectedCoreType(), protocolsToInstall);
 
         if (success)
         {
             StatusMessage = "✅ УСТАНОВКА УСПЕШНА! Синхронизация клиентов...";
             _logger.Log("WIZARD-TRACE", "[SUCCESS] Отправка сигнала CabinetViewModel для вшивки клиентов.");
 
-            // ВАЖНО: Этот сигнал заставит панель прописать старых клиентов в новый конфиг!
             WeakReferenceMessenger.Default.Send(new CoreDeployedMessage(_server));
 
             await Task.Delay(2000);

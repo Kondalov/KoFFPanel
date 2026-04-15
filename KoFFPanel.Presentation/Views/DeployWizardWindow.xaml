@@ -3,9 +3,9 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="Мастер установки"
-                 Width="600"
+                 Width="700"
                  Height="780"
-                 MinWidth="550"
+                 MinWidth="650"
                  MinHeight="700"
                  WindowStartupLocation="CenterOwner"
                  WindowBackdropType="None"
@@ -223,6 +223,8 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
                         <RadioButton Grid.Column="0"
@@ -263,6 +265,28 @@
                                            FontSize="14"
                                            HorizontalAlignment="Center" />
                                 <TextBlock Text="UDP/TCP протоколы"
+                                           Foreground="#a0aabf"
+                                           FontSize="10"
+                                           TextAlignment="Center" />
+                            </StackPanel>
+                        </RadioButton>
+
+                        <RadioButton Grid.Column="4"
+                                     GroupName="CoreSelection"
+                                     Style="{StaticResource KernelCardRadioStyle}"
+                                     IsChecked="{Binding IsTrustTunnelSelected}"
+                                     IsEnabled="{Binding IsNotInstalling}">
+                            <StackPanel HorizontalAlignment="Center">
+                                <ui:SymbolIcon Symbol="ShieldKeyhole24"
+                                               Foreground="#50fa7b"
+                                               FontSize="32"
+                                               Margin="0,0,0,10" />
+                                <TextBlock Text="TRUSTTUNNEL"
+                                           Foreground="White"
+                                           FontWeight="ExtraBold"
+                                           FontSize="14"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Text="MASQUE HTTP/3"
                                            Foreground="#a0aabf"
                                            FontSize="10"
                                            TextAlignment="Center" />

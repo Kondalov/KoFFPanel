@@ -29,8 +29,9 @@ public partial class CabinetViewModel
         string key = profile.KeyPath ?? "";
 
         bool isSingBox = profile.CoreType == "sing-box";
-        string displayCoreName = isSingBox ? "Sing-box" : "Xray-core";
-        string serviceName = isSingBox ? "sing-box" : "xray";
+        bool isTrustTunnel = profile.CoreType == "trusttunnel";
+        string displayCoreName = isSingBox ? "Sing-box" : (isTrustTunnel ? "TrustTunnel" : "Xray-core");
+        string serviceName = isSingBox ? "sing-box" : (isTrustTunnel ? "trusttunnel" : "xray");
 
         _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ядро по БД: {displayCoreName.ToUpper()}");
 
@@ -52,7 +53,8 @@ public partial class CabinetViewModel
             {
                 var pingResult = await _monitorService.PingServerAsync(ip); PingMs = pingResult.Success ? pingResult.RoundtripTime : 0;
 
-                var res = await _monitorService.GetResourcesAsync(localSsh);
+                // Передаем coreType
+                var res = await _monitorService.GetResourcesAsync(localSsh, profile.CoreType);
                 NetworkSpeed = res.NetworkSpeed; XrayProcesses = res.XrayProcesses; SynRecv = res.SynRecv; ErrorRate = res.ErrorRate;
 
                 try
@@ -117,20 +119,26 @@ public partial class CabinetViewModel
                 string journalLogsCmd = $"journalctl -u {serviceName} -n 5 --no-pager";
                 string journalLogs = await localSsh.ExecuteCommandAsync(journalLogsCmd);
 
-                string accessLogs = await localSsh.ExecuteCommandAsync(isSingBox
-                    ? "journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'"
-                    : "tail -n 5 /var/log/xray/access.log 2>/dev/null || echo 'Нет логов'");
+                string accessLogs = await localSsh.ExecuteCommandAsync(
+                    isSingBox ? "journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'" :
+                    isTrustTunnel ? "journalctl -u trusttunnel -n 5 --no-pager || echo 'Нет логов'" :
+                    "tail -n 5 /var/log/xray/access.log 2>/dev/null || echo 'Нет логов'"
+                );
 
-                string grepTest = await localSsh.ExecuteCommandAsync(isSingBox
-                    ? "journalctl -u sing-box -n 50 --no-pager | grep -iE 'inbound connection|sniff' | tail -n 3"
-                    : "tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3");
+                string grepTest = await localSsh.ExecuteCommandAsync(
+                    isSingBox ? "journalctl -u sing-box -n 50 --no-pager | grep -iE 'inbound connection|sniff' | tail -n 3" :
+                    isTrustTunnel ? "journalctl -u trusttunnel -n 50 --no-pager | tail -n 3" :
+                    "tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3"
+                );
 
-                var coreStats = await _monitorService.GetCoreStatusInfoAsync(localSsh);
-                var allOnlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh);
+                // Передаем coreType для получения статуса и онлайна!
+                var coreStats = await _monitorService.GetCoreStatusInfoAsync(localSsh, profile.CoreType);
+                var allOnlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh, profile.CoreType);
 
-                string recentLogsCmd = isSingBox
-                    ? "journalctl -u sing-box --since \"1 min ago\" --no-pager | grep 'inbound connection'"
-                    : "tail -n 200 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
+                string recentLogsCmd =
+                    isSingBox ? "journalctl -u sing-box --since \"1 min ago\" --no-pager | grep 'inbound connection'" :
+                    isTrustTunnel ? "journalctl -u trusttunnel --since \"1 min ago\" --no-pager" :
+                    "tail -n 200 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
 
                 string recentLogs = await localSsh.ExecuteCommandAsync(recentLogsCmd);
                 var activeUsernames = new HashSet<string>();
@@ -185,9 +193,10 @@ public partial class CabinetViewModel
                     if (validLines.Any()) torrentDomains = validLines;
                 }
 
-                string rawViolationLogs = isSingBox
-                    ? await localSsh.ExecuteCommandAsync("journalctl -u sing-box --since \"1 min ago\" --no-pager | grep -iE 'inbound connection|sniffed'")
-                    : await localSsh.ExecuteCommandAsync("tail -n 200 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected|torrent-logger'");
+                string rawViolationLogs =
+                    isSingBox ? await localSsh.ExecuteCommandAsync("journalctl -u sing-box --since \"1 min ago\" --no-pager | grep -iE 'inbound connection|sniffed'") :
+                    isTrustTunnel ? "" :
+                    await localSsh.ExecuteCommandAsync("tail -n 200 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected|torrent-logger'");
 
                 var violationsBatch = new List<(string Email, string ViolationType)>();
                 if (!string.IsNullOrWhiteSpace(rawViolationLogs))
@@ -289,7 +298,7 @@ public partial class CabinetViewModel
                 violationsBatch = violationsBatch.Distinct().ToList();
 
                 var trafficStats = new Dictionary<string, long>();
-                if (!isSingBox)
+                if (!isSingBox && !isTrustTunnel)
                 {
                     trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
                 }
@@ -314,10 +323,10 @@ public partial class CabinetViewModel
                             trafficStats[uname] = prevUserBytes + bytesPerUser;
                         }
                     }
-                    await _singBoxUserManager.GetTrafficStatsAsync(localSsh);
+                    if (isSingBox) await _singBoxUserManager.GetTrafficStatsAsync(localSsh);
+                    if (isTrustTunnel) await _trustTunnelUserManager.GetTrafficStatsAsync(localSsh);
                 }
 
-                // === ИСПРАВЛЕНИЕ: ДОБАВЛЕНО ОБЪЯВЛЕНИЕ trafficBatch ===
                 var trafficBatch = new Dictionary<string, long>();
                 var connectionBatch = new List<(string Email, string Ip, string Country)>();
 
@@ -325,8 +334,14 @@ public partial class CabinetViewModel
                 {
                     CoreTitleLabel = $"Ядро ({displayCoreName})";
 
-                    XrayStatus = coreStatusStr; XrayVersion = coreStats.Version; XrayConfigStatus = coreStats.ConfigStatus;
+                    XrayStatus = coreStatusStr;
+                    XrayVersion = coreStats.Version;
+                    XrayConfigStatus = coreStats.ConfigStatus;
                     XrayLastError = coreStats.LastError;
+
+                    // ИСПРАВЛЕНИЕ: ВОТ ЭТА СТРОЧКА ИСПРАВЛЯЕТ "НЕИЗВЕСТНО" В КАРТОЧКЕ АПТАЙМА!
+                    XrayUptime = coreStats.Uptime;
+
                     XrayLogs = $"=== СИСТЕМНЫЙ ЖУРНАЛ ===\n{journalLogs.Trim()}\n\n=== ACCESS.LOG ===\n{accessLogs.Trim()}\n\n=== ТЕСТ ПАРСЕРА ===\n{grepTest.Trim()}";
 
                     long currentTotalBytes = 0; bool dbNeedsUpdate = false;
@@ -405,6 +420,7 @@ public partial class CabinetViewModel
                     if (dbNeedsUpdate && SelectedServer != null)
                     {
                         if (isSingBox) _ = _singBoxUserManager.SaveTrafficToDbAsync(ip, Clients);
+                        else if (isTrustTunnel) _ = _trustTunnelUserManager.SaveTrafficToDbAsync(ip, Clients);
                         else _ = _userManager.SaveTrafficToDbAsync(ip, Clients);
                     }
 
@@ -427,15 +443,14 @@ public partial class CabinetViewModel
         if (ssh == null || !ssh.IsConnected || server == null) return;
 
         string ip = server.IpAddress ?? "";
-
-        // === ИСПРАВЛЕНИЕ: Жестко берем тип ядра из базы данных! ===
         bool isSingBox = server.CoreType == "sing-box";
+        bool isTrustTunnel = server.CoreType == "trusttunnel";
 
-        _logger.Log("MONITORING", $"[LoadUsers] Запрос юзеров. Ядро по БД: {(isSingBox ? "Sing-Box" : "Xray")}");
+        _logger.Log("MONITORING", $"[LoadUsers] Запрос юзеров. Ядро по БД: {server.CoreType}");
 
         var realUsers = isSingBox
             ? await _singBoxUserManager.GetUsersAsync(ssh, ip)
-            : await _userManager.GetUsersAsync(ssh, ip);
+            : (isTrustTunnel ? await _trustTunnelUserManager.GetUsersAsync(ssh, ip) : await _userManager.GetUsersAsync(ssh, ip));
 
         _logger.Log("MONITORING", $"[LoadUsers] Из ядра получено {realUsers.Count} юзеров. UI обновлен.");
 
@@ -450,16 +465,14 @@ public partial class CabinetViewModel
 
         string email = client.Email ?? "Unknown";
         string ip = server.IpAddress ?? "";
-
-        // === ИСПРАВЛЕНИЕ: Жестко берем тип ядра из базы данных! ===
         bool isSingBox = server.CoreType == "sing-box";
+        bool isTrustTunnel = server.CoreType == "trusttunnel";
 
         ServerStatus = $"Блокировка {email} ({reason})...";
-        _logger.Log("MONITORING", $"[BlockUser] Блокировка {email}. Ядро по БД: {(isSingBox ? "Sing-Box" : "Xray")}");
 
         var (success, msg) = isSingBox
             ? await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, false)
-            : await _userManager.ToggleUserStatusAsync(ssh, ip, email, false);
+            : (isTrustTunnel ? await _trustTunnelUserManager.ToggleUserStatusAsync(ssh, ip, email, false) : await _userManager.ToggleUserStatusAsync(ssh, ip, email, false));
 
         ServerStatus = success ? $"Онлайн ({email} заблокирован)" : $"Ошибка блокировки: {msg}";
     }

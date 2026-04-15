@@ -103,14 +103,14 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                 }
                 else
                 {
-                    // ИСПРАВЛЕНИЕ: Генерация ссылки TrustTunnel. ДОБАВЛЕНЫ allowInsecure=1 и insecure=1
                     string sni = inbound["tls"]?["server_name"]?.ToString().Trim() ?? "adguard.com";
                     int port = (int?)inbound["listen_port"] ?? 4433;
                     string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
 
                     foreach (var u in dbUsers)
                     {
-                        u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=quic&security=tls&sni={sni}&alpn=h3&allowInsecure=1&insecure=1#TrustTunnel_{u.Email}";
+                        // ИСПРАВЛЕНИЕ: Формируем чистую ссылку type=quic без alpn
+                        u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=quic&security=tls&sni={sni}&allowInsecure=1&insecure=1#TrustTunnel_{u.Email}";
                     }
                 }
             }
@@ -369,17 +369,16 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
         await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /tmp/sb_test.json");
 
         var testResult = await ssh.ExecuteCommandAsync("sing-box check -c /tmp/sb_test.json 2>&1");
-        _logger.Log("SB-DIAGNOSTIC", $"Ответ от проверки sing-box check:\n{testResult.Trim()}");
 
         if (testResult.Contains("FATAL") || testResult.Contains("error"))
         {
+            _logger.Log("SB-DIAGNOSTIC", $"Ответ от проверки sing-box check:\n{testResult.Trim()}");
             return (false, "ОШИБКА: Конфиг не прошел тест Sing-box!");
         }
 
         await ssh.ExecuteCommandAsync("cp /etc/sing-box/config.json /etc/sing-box/config.backup.json");
         await ssh.ExecuteCommandAsync("mv /tmp/sb_test.json /etc/sing-box/config.json");
 
-        // ИСПРАВЛЕНИЕ: ЖЕСТКО убиваем зомби-процессы перед обновлением пользователей!
         string preRestartCleanup = @"
             systemctl stop sing-box xray 2>/dev/null || true
             killall -9 sing-box xray 2>/dev/null || true
@@ -388,13 +387,20 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
 
         await ssh.ExecuteCommandAsync("systemctl restart sing-box");
 
-        // ИСПРАВЛЕНИЕ: Расширенный лог проверки портов (как ты и просил)
+        // ИСПРАВЛЕНИЕ: Глубокий дамп пакетов (Hex/ASCII) для анализа 37-байтного отказа QUIC
         string diagCmd = @"
-            sleep 2
-            echo '=== DIAGNOSTIC AFTER SYNC ==='
+            echo '=== ЖДЕМ 3 СЕКУНДЫ ДЛЯ ЗАПУСКА ЯДРА ==='
+            sleep 3
+            echo '=== 1. ПРОВЕРКА ПРОСЛУШИВАНИЯ ПОРТОВ (SS) ==='
             ss -tulpn | grep -E 'sing-box|xray' || true
+            echo '=== 2. СНИФФЕР UDP 443 С HEX-ДАМПОМ (ОЖИДАНИЕ 15 СЕКУНД) ==='
+            echo 'Пожалуйста, нажмите Подключиться в Hiddify прямо сейчас...'
+            timeout 15 tcpdump -i any udp port 443 -c 6 -nn -XX 2>/dev/null || echo 'Сниффер завершен'
+            echo '=== 3. ВНУТРЕННИЕ ЛОГИ ЯДРА SING-BOX (TRACE) ==='
+            journalctl -u sing-box --since ""20 seconds ago"" --no-pager
         ".Replace("\r", "");
-        string diagLog = await ssh.ExecuteCommandAsync(diagCmd);
+
+        string diagLog = await ssh.ExecuteCommandAsync(diagCmd, TimeSpan.FromSeconds(30));
         _logger.Log("SB-DIAGNOSTIC", $"\n{diagLog}");
 
         return (true, "Пользователи обновлены!");

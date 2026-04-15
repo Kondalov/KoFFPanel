@@ -11,21 +11,24 @@ public class TrustTunnelBuilder : IProtocolBuilder
     public string ProtocolType => "trusttunnel";
     public string DisplayName => "TrustTunnel (MASQUE HTTP/3)";
     public string TransportType => "udp";
-    public int DefaultPort => 4433;
+    public int DefaultPort => 443;
 
     public async Task<ServerInbound> GenerateNewInboundAsync(ISshService ssh, int port)
     {
-        // ИСПРАВЛЕНИЕ: Больше никаких заглушек! Генерируем реальный сертификат для QUIC/HTTP3
-        string certPath = $"/etc/sing-box/tt_{port}.crt";
-        string keyPath = $"/etc/sing-box/tt_{port}.key";
-        string certCmd = $"openssl req -x509 -nodes -newkey rsa:2048 -keyout {keyPath} -out {certPath} -days 3650 -subj \"/CN=adguard.com\" 2>/dev/null";
+        string certDir = "/etc/trusttunnel/certs";
+        string certPath = $"{certDir}/server.crt";
+        string keyPath = $"{certDir}/server.key";
+        string hostname = "vpn.trusttunnel.local"; // Дефолтный хост для самоподписанных сертификатов
+
+        await ssh.ExecuteCommandAsync($"mkdir -p {certDir}");
+        string certCmd = $"openssl req -x509 -nodes -newkey rsa:2048 -keyout {keyPath} -out {certPath} -days 3650 -subj \"/CN={hostname}\" 2>/dev/null";
         await ssh.ExecuteCommandAsync(certCmd);
 
         var settings = new
         {
             certPath = certPath,
             keyPath = keyPath,
-            sni = "adguard.com",
+            sni = hostname,
             masqueEnabled = true
         };
 
@@ -41,13 +44,32 @@ public class TrustTunnelBuilder : IProtocolBuilder
     public string GenerateClientLink(ServerInbound inbound, string serverIp, string clientUuid, string clientEmail)
     {
         var settings = System.Text.Json.JsonDocument.Parse(inbound.SettingsJson).RootElement;
-        string pubKey = settings.GetProperty("publicKey").GetString() ?? "";
-        string sni = settings.GetProperty("sni").GetString() ?? "www.microsoft.com";
-        string shortId = settings.GetProperty("shortId").GetString() ?? "";
-
+        string hostname = settings.GetProperty("sni").GetString() ?? "vpn.trusttunnel.local";
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
 
-        // ИСПРАВЛЕНИЕ: Убрали &flow=xtls-rprx-vision. Теперь Hiddify и другие клиенты подключатся моментально!
-        return $"vless://{clientUuid}@{safeIp}:{inbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F#KoFFPanel-{clientEmail}";
+        // Генерируем идеальный рабочий клиентский TOML-конфиг
+        return $@"loglevel = ""info""
+vpn_mode = ""general""
+killswitch_enabled = true
+post_quantum_group_enabled = true
+exclusions = []
+
+[endpoint]
+hostname = ""{hostname}""
+addresses = [""{safeIp}:{inbound.Port}""]
+has_ipv6 = true
+username = ""{clientEmail}""
+password = ""{clientUuid}""
+client_random = """"
+skip_verification = true
+upstream_protocol = ""http3""
+anti_dpi = true
+dns_upstreams = [""tls://1.1.1.1"", ""tls://8.8.8.8""]
+
+[listener.tun]
+included_routes = [""0.0.0.0/0"", ""2000::/3""]
+excluded_routes = [""10.0.0.0/8"", ""172.16.0.0/12"", ""192.168.0.0/16"", ""fc00::/7""]
+mtu_size = 1280
+change_system_dns = true";
     }
 }

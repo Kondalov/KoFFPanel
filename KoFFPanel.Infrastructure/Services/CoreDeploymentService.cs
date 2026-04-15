@@ -3,6 +3,7 @@ using KoFFPanel.Application.Interfaces.ProtocolBuilders;
 using KoFFPanel.Domain.Entities;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -54,6 +55,13 @@ public class CoreDeploymentService : ICoreDeploymentService
         return string.IsNullOrWhiteSpace(result) ? "Не установлено" : result.Trim();
     }
 
+    public async Task<string> GetInstalledTrustTunnelVersionAsync(ISshService ssh)
+    {
+        if (!ssh.IsConnected) return "Отключен";
+        string result = await ssh.ExecuteCommandAsync("trusttunnel --version 2>/dev/null | awk '{print $2}'");
+        return string.IsNullOrWhiteSpace(result) ? "Не установлено" : result.Trim();
+    }
+
     public async Task<(bool IsSuccess, string Log)> InstallXrayAsync(ISshService ssh, string targetVersion = "latest")
     {
         _logger.Log("DEPLOY-TRACE", $"[INSTALL] Скачивание и установка Xray-core ({targetVersion})...");
@@ -68,56 +76,300 @@ public class CoreDeploymentService : ICoreDeploymentService
     public async Task<(bool IsSuccess, string Log)> InstallSingBoxAsync(ISshService ssh, string targetVersion = "latest")
     {
         _logger.Log("DEPLOY-TRACE", $"[INSTALL] Скачивание и установка Sing-box ({targetVersion})...");
-
         string log = await ssh.ExecuteCommandAsync("bash <(curl -fsSL https://sing-box.app/install.sh)", TimeSpan.FromMinutes(3));
 
-        // ИСПРАВЛЕНИЕ: Переводим ответ Linux в нижний регистр для игнорирования больших/маленьких букв
         string lowerLog = log.ToLower();
-
-        // ИСПРАВЛЕНИЕ: Умная проверка по всем возможным ключевым словам успешной установки/обновления
-        bool isSuccess = lowerLog.Contains("installed") ||
-                         lowerLog.Contains("success") ||
-                         lowerLog.Contains("already") ||
-                         lowerLog.Contains("setting up sing-box");
-
+        bool isSuccess = lowerLog.Contains("installed") || lowerLog.Contains("success") || lowerLog.Contains("already") || lowerLog.Contains("setting up sing-box");
         return (isSuccess, log);
     }
 
+    public async Task<(bool IsSuccess, string Log)> InstallTrustTunnelAsync(ISshService ssh, string targetVersion = "latest")
+    {
+        _logger.Log("DEPLOY-TRACE", $"[INSTALL] Скачивание и установка официального TrustTunnel-core ({targetVersion})...");
+
+        string installCmd = @"
+            wget -qO /tmp/trusttunnel.tar.gz https://github.com/TrustTunnel/TrustTunnel/releases/latest/download/trusttunnel-linux-amd64.tar.gz || \
+            wget -qO /usr/local/bin/trusttunnel https://github.com/TrustTunnel/TrustTunnel/releases/latest/download/trusttunnel-linux-amd64
+            
+            if [ -f /tmp/trusttunnel.tar.gz ]; then
+                tar -xzf /tmp/trusttunnel.tar.gz -C /tmp/
+                mv /tmp/trusttunnel /usr/local/bin/trusttunnel
+                rm /tmp/trusttunnel.tar.gz
+            fi
+            
+            chmod +x /usr/local/bin/trusttunnel
+            if command -v trusttunnel >/dev/null 2>&1; then echo 'success'; else echo 'failed'; fi
+        ".Replace("\r", "");
+
+        string log = await ssh.ExecuteCommandAsync(installCmd, TimeSpan.FromMinutes(3));
+        return (log.Contains("success"), log);
+    }
+
     public async Task<(bool IsSuccess, string Log)> DeployFullStackAsync(
-        ISshService ssh, VpnProfile profile, bool isSingBox, List<(IProtocolBuilder Builder, int Port)> protocols)
+        ISshService ssh, VpnProfile profile, string coreType, List<(IProtocolBuilder Builder, int Port)> protocols)
     {
         try
         {
-            string coreName = isSingBox ? "sing-box" : "xray";
-            _logger.Log("DEPLOY-TRACE", $"[1/7] Начало развертывания. Выбранное ядро: {coreName.ToUpper()}");
+            _logger.Log("DEPLOY-TRACE", $"[1/7] Начало развертывания. Выбранное ядро: {coreType.ToUpper()}");
 
-            // === ИСПРАВЛЕНИЕ: ТОТАЛЬНАЯ ЖЕСТКАЯ ЗАЧИСТКА ===
-            // Выжигаем оба ядра, снимаем их с автозагрузки, убиваем все процессы и удаляем старые конфиги
-            _logger.Log("DEPLOY-TRACE", "[2/7] Тотальная очистка старых ядер и освобождение портов...");
+            _logger.Log("DEPLOY-TRACE", "[2/7] ТОТАЛЬНАЯ ЖЕСТКАЯ ЗАЧИСТКА ВСЕХ ЯДЕР И ПОРТОВ...");
             string hardWipeCmd = @"
-                systemctl disable sing-box xray --now 2>/dev/null || true
-                systemctl stop sing-box xray 2>/dev/null || true
-                killall -9 sing-box xray 2>/dev/null || true
-                rm -rf /usr/local/etc/xray/config.json /etc/sing-box/config.json
-                mkdir -p /etc/sing-box /usr/local/etc/xray
+                systemctl stop sing-box xray trusttunnel 2>/dev/null || true
+                systemctl disable sing-box xray trusttunnel 2>/dev/null || true
+                killall -9 sing-box xray trusttunnel 2>/dev/null || true
+                rm -rf /usr/local/etc/xray /etc/sing-box /etc/trusttunnel
+                mkdir -p /etc/sing-box /usr/local/etc/xray /etc/trusttunnel
             ".Replace("\r", "");
             await ssh.ExecuteCommandAsync(hardWipeCmd);
 
             _logger.Log("DEPLOY-TRACE", "[3/7] Установка/Обновление ядра на сервере...");
-            _logger.Log("DEPLOY-TRACE", $"[3.1/7] Запуск официального скрипта установки (Таймаут 3 минуты!)...");
-            var installResult = isSingBox ? await InstallSingBoxAsync(ssh) : await InstallXrayAsync(ssh);
-            if (!installResult.IsSuccess)
+            bool installSuccess = false;
+            string installLog = "";
+
+            if (coreType.ToLower() == "sing-box")
             {
-                _logger.Log("DEPLOY-ERROR", $"[FAIL] Провал установки ядра: {installResult.Log}");
-                return (false, $"Ошибка установки ядра: {installResult.Log}");
+                var res = await InstallSingBoxAsync(ssh); installSuccess = res.IsSuccess; installLog = res.Log;
+            }
+            else if (coreType.ToLower() == "trusttunnel")
+            {
+                var res = await InstallTrustTunnelAsync(ssh); installSuccess = res.IsSuccess; installLog = res.Log;
+            }
+            else
+            {
+                var res = await InstallXrayAsync(ssh); installSuccess = res.IsSuccess; installLog = res.Log;
             }
 
-            _logger.Log("DEPLOY-TRACE", "[3.2/7] Принудительная генерация systemd службы (Защита от 203/EXEC)...");
-            string fixServiceCmd = isSingBox ? @"
-                BIN_PATH=$(command -v sing-box)
-                if [ -z ""$BIN_PATH"" ]; then BIN_PATH=""/usr/local/bin/sing-box""; fi
-                chmod +x $BIN_PATH
-                cat > /etc/systemd/system/sing-box.service <<EOF
+            if (!installSuccess)
+            {
+                _logger.Log("DEPLOY-ERROR", $"[FAIL] Провал установки ядра: {installLog}");
+                return (false, $"Ошибка установки ядра: {installLog}");
+            }
+
+            _logger.Log("DEPLOY-TRACE", "[4/7] Настройка Firewall и генерация криптографии для Inbounds...");
+            var existingInbounds = profile.Inbounds.ToList();
+            profile.Inbounds.Clear();
+            var processedTypes = new HashSet<string>();
+
+            foreach (var p in protocols)
+            {
+                _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Подготовка {p.Builder.ProtocolType.ToUpper()} на порту {p.Port}...");
+
+                string fwCmd = $@"
+                    if command -v ufw >/dev/null 2>&1; then ufw allow {p.Port}/tcp && ufw allow {p.Port}/udp || true; fi
+                    if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --add-port={p.Port}/tcp --permanent && firewall-cmd --add-port={p.Port}/udp --permanent && firewall-cmd --reload || true; fi
+                    iptables -I INPUT 1 -p tcp --dport {p.Port} -j ACCEPT || true
+                    iptables -I INPUT 1 -p udp --dport {p.Port} -j ACCEPT || true
+                    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+                ".Replace("\r", "");
+                await ssh.ExecuteCommandAsync(fwCmd);
+
+                var existingDb = existingInbounds.FirstOrDefault(i => i.Protocol.ToLower() == p.Builder.ProtocolType.ToLower());
+                ServerInbound inboundDb;
+
+                if (existingDb != null && existingDb.Port == p.Port)
+                {
+                    _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Найдена рабочая конфигурация {p.Builder.ProtocolType.ToUpper()}! Ключи восстановлены из БД.");
+                    inboundDb = existingDb;
+                }
+                else
+                {
+                    _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Генерация НОВЫХ ключей для {p.Builder.ProtocolType.ToUpper()}...");
+                    inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
+                }
+
+                profile.Inbounds.Add(inboundDb);
+                processedTypes.Add(inboundDb.Protocol.ToLower());
+            }
+
+            _logger.Log("DEPLOY-TRACE", "[5/7] Сборка и заливка базового конфига...");
+
+            if (coreType.ToLower() == "trusttunnel")
+            {
+                var inbound = profile.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == "trusttunnel");
+                if (inbound != null)
+                {
+                    var settings = JsonNode.Parse(inbound.SettingsJson);
+                    string certPath = settings?["certPath"]?.ToString() ?? "";
+                    string keyPath = settings?["keyPath"]?.ToString() ?? "";
+                    string sni = settings?["sni"]?.ToString() ?? "vpn.trusttunnel.local";
+
+                    string vpnToml = $@"
+listen_address = ""0.0.0.0:{inbound.Port}""
+ipv6_available = true
+allow_private_network_connections = false
+tls_handshake_timeout_secs = 10
+client_listener_timeout_secs = 600
+connection_establishment_timeout_secs = 30
+tcp_connections_timeout_secs = 604800
+udp_connections_timeout_secs = 300
+credentials_file = ""credentials.toml""
+rules_file = ""rules.toml""
+
+[listen_protocols.http2]
+initial_connection_window_size = 8388608
+initial_stream_window_size = 131072
+max_concurrent_streams = 1000
+
+[listen_protocols.quic]
+recv_udp_payload_size = 1350
+send_udp_payload_size = 1350
+initial_max_data = 104857600
+initial_max_stream_data_bidi_local = 1048576
+initial_max_stream_data_bidi_remote = 1048576
+initial_max_streams_bidi = 4096
+enable_early_data = true
+
+[forward_protocol]
+direct = {{}}
+";
+                    string hostsToml = $@"
+[[main_hosts]]
+hostname = ""{sni}""
+cert_chain_path = ""{certPath}""
+private_key_path = ""{keyPath}""
+
+[[ping_hosts]]
+hostname = ""ping.{sni}""
+cert_chain_path = ""{certPath}""
+private_key_path = ""{keyPath}""
+";
+                    string rulesToml = "[[rule]]\naction = \"allow\"\n";
+                    string credsToml = "# Users will be added here by UserManager\n";
+
+                    await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(vpnToml))}' | base64 -d > /etc/trusttunnel/vpn.toml");
+                    await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(hostsToml))}' | base64 -d > /etc/trusttunnel/hosts.toml");
+                    await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(rulesToml))}' | base64 -d > /etc/trusttunnel/rules.toml");
+                    await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(credsToml))}' | base64 -d > /etc/trusttunnel/credentials.toml");
+
+                    string serviceCmd = @"
+                        cat > /etc/systemd/system/trusttunnel.service <<EOF
+[Unit]
+Description=TrustTunnel VPN Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/etc/trusttunnel
+ExecStart=/usr/local/bin/trusttunnel --config /etc/trusttunnel/vpn.toml
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=infinity
+
+[Install]
+WantedBy=multi-user.target
+EOF
+                        systemctl daemon-reload
+                    ".Replace("\r", "");
+                    await ssh.ExecuteCommandAsync(serviceCmd);
+                }
+            }
+            else
+            {
+                var inboundsArray = new JsonArray();
+                foreach (var inboundDb in profile.Inbounds)
+                {
+                    var settings = JsonNode.Parse(inboundDb.SettingsJson);
+                    string protocol = inboundDb.Protocol.ToLower();
+
+                    if (coreType.ToLower() == "sing-box")
+                    {
+                        // ИСПРАВЛЕНИЕ: Удален невалидный параметр "network": "tcp"
+                        if (protocol == "vless")
+                        {
+                            inboundsArray.Add(new JsonObject
+                            {
+                                ["type"] = "vless",
+                                ["tag"] = inboundDb.Tag,
+                                ["listen"] = "0.0.0.0",
+                                ["listen_port"] = inboundDb.Port,
+                                ["users"] = new JsonArray(),
+                                ["tls"] = new JsonObject
+                                {
+                                    ["enabled"] = true,
+                                    ["server_name"] = settings?["sni"]?.ToString(),
+                                    ["reality"] = new JsonObject
+                                    {
+                                        ["enabled"] = true,
+                                        ["handshake"] = new JsonObject { ["server"] = settings?["sni"]?.ToString(), ["server_port"] = 443 },
+                                        ["private_key"] = settings?["privateKey"]?.ToString(),
+                                        ["short_id"] = new JsonArray { settings?["shortId"]?.ToString() }
+                                    }
+                                }
+                            });
+                        }
+                        else if (protocol == "hysteria2")
+                        {
+                            inboundsArray.Add(new JsonObject
+                            {
+                                ["type"] = "hysteria2",
+                                ["tag"] = inboundDb.Tag,
+                                ["listen"] = "0.0.0.0",
+                                ["listen_port"] = inboundDb.Port,
+                                ["users"] = new JsonArray(),
+                                ["tls"] = new JsonObject
+                                {
+                                    ["enabled"] = true,
+                                    ["alpn"] = new JsonArray { "h3" },
+                                    ["certificate_path"] = settings?["certPath"]?.ToString(),
+                                    ["key_path"] = settings?["keyPath"]?.ToString()
+                                },
+                                ["obfs"] = new JsonObject { ["type"] = "salamander", ["password"] = settings?["obfsPassword"]?.ToString() }
+                            });
+                        }
+                    }
+                    else
+                    {
+                        if (protocol == "vless")
+                        {
+                            inboundsArray.Add(new JsonObject
+                            {
+                                ["protocol"] = "vless",
+                                ["port"] = inboundDb.Port,
+                                ["listen"] = "0.0.0.0",
+                                ["settings"] = new JsonObject { ["clients"] = new JsonArray(), ["decryption"] = "none" },
+                                ["streamSettings"] = new JsonObject
+                                {
+                                    ["network"] = "tcp",
+                                    ["security"] = "reality",
+                                    ["realitySettings"] = new JsonObject
+                                    {
+                                        ["show"] = false,
+                                        ["dest"] = $"{settings?["sni"]}:443",
+                                        ["serverNames"] = new JsonArray { settings?["sni"]?.ToString() },
+                                        ["privateKey"] = settings?["privateKey"]?.ToString(),
+                                        ["shortIds"] = new JsonArray { settings?["shortId"]?.ToString() }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+
+                var baseConfig = new JsonObject();
+                if (coreType.ToLower() == "sing-box")
+                {
+                    baseConfig["log"] = new JsonObject { ["level"] = "info" };
+                    baseConfig["inbounds"] = inboundsArray;
+                    baseConfig["outbounds"] = new JsonArray { new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, new JsonObject { ["type"] = "block", ["tag"] = "block" } };
+                    baseConfig["route"] = new JsonObject { ["rules"] = new JsonArray() };
+                }
+                else
+                {
+                    baseConfig["log"] = new JsonObject { ["loglevel"] = "warning" };
+                    baseConfig["inbounds"] = inboundsArray;
+                    baseConfig["outbounds"] = new JsonArray { new JsonObject { ["protocol"] = "freedom", ["tag"] = "direct" }, new JsonObject { ["protocol"] = "blackhole", ["tag"] = "block" } };
+                    baseConfig["routing"] = new JsonObject { ["rules"] = new JsonArray() };
+                }
+
+                string configPath = coreType.ToLower() == "sing-box" ? "/etc/sing-box/config.json" : "/usr/local/etc/xray/config.json";
+                string configStr = baseConfig.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+                await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(configStr))}' | base64 -d > {configPath}");
+
+                string fixServiceCmd = coreType.ToLower() == "sing-box" ? @"
+                    BIN_PATH=$(command -v sing-box)
+                    if [ -z ""$BIN_PATH"" ]; then BIN_PATH=""/usr/local/bin/sing-box""; fi
+                    cat > /etc/systemd/system/sing-box.service <<EOF
 [Unit]
 Description=Sing-Box Service
 After=network.target nss-lookup.target network-online.target
@@ -132,12 +384,11 @@ LimitNOFILE=infinity
 [Install]
 WantedBy=multi-user.target
 EOF
-                systemctl daemon-reload
-            ".Replace("\r", "") : @"
-                BIN_PATH=$(command -v xray)
-                if [ -z ""$BIN_PATH"" ]; then BIN_PATH=""/usr/local/bin/xray""; fi
-                chmod +x $BIN_PATH
-                cat > /etc/systemd/system/xray.service <<EOF
+                    systemctl daemon-reload
+                ".Replace("\r", "") : @"
+                    BIN_PATH=$(command -v xray)
+                    if [ -z ""$BIN_PATH"" ]; then BIN_PATH=""/usr/local/bin/xray""; fi
+                    cat > /etc/systemd/system/xray.service <<EOF
 [Unit]
 Description=Xray Service
 After=network.target nss-lookup.target network-online.target
@@ -150,279 +401,38 @@ LimitNOFILE=infinity
 [Install]
 WantedBy=multi-user.target
 EOF
-                systemctl daemon-reload
-            ".Replace("\r", "");
-            await ssh.ExecuteCommandAsync(fixServiceCmd);
-
-            _logger.Log("DEPLOY-TRACE", "[3.3/7] Создание системных симлинков для совместимости путей...");
-            string symlinkCmd = @"
-                if command -v sing-box >/dev/null 2>&1; then 
-                    SB_P=$(command -v sing-box)
-                    if [ ""$SB_P"" != ""/usr/local/bin/sing-box"" ]; then ln -sf $SB_P /usr/local/bin/sing-box; fi
-                fi
-                if command -v xray >/dev/null 2>&1; then 
-                    XR_P=$(command -v xray)
-                    if [ ""$XR_P"" != ""/usr/local/bin/xray"" ]; then ln -sf $XR_P /usr/local/bin/xray; fi
-                fi
-            ".Replace("\r", "");
-            await ssh.ExecuteCommandAsync(symlinkCmd);
-
-            _logger.Log("DEPLOY-TRACE", "[4/7] Настройка Firewall и генерация криптографии для Inbounds...");
-
-            var existingInbounds = profile.Inbounds.ToList();
-            profile.Inbounds.Clear();
-            var processedTypes = new HashSet<string>();
-
-            foreach (var p in protocols)
-            {
-                _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Установка/Обновление {p.Builder.ProtocolType.ToUpper()} на порту {p.Port}...");
-                string fwCmd = $@"
-                    if command -v ufw >/dev/null 2>&1; then ufw allow {p.Port}/{p.Builder.TransportType} || true; fi
-                    if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --add-port={p.Port}/{p.Builder.TransportType} --permanent && firewall-cmd --reload || true; fi
-                    iptables -I INPUT 1 -p {p.Builder.TransportType} --dport {p.Port} -j ACCEPT || true
-                    iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+                    systemctl daemon-reload
                 ".Replace("\r", "");
-                await ssh.ExecuteCommandAsync(fwCmd);
+                await ssh.ExecuteCommandAsync(fixServiceCmd);
 
-                var existingDb = existingInbounds.FirstOrDefault(i => i.Protocol.ToLower() == p.Builder.ProtocolType.ToLower());
-                ServerInbound inboundDb;
-
-                if (existingDb != null)
+                // Валидация перед запуском
+                string checkCmd = coreType.ToLower() == "sing-box" ? $"sing-box check -c {configPath} 2>&1" : $"xray run -test -config {configPath} 2>&1";
+                string checkResult = await ssh.ExecuteCommandAsync(checkCmd);
+                if (checkResult.Contains("FATAL") || checkResult.Contains("error") || checkResult.Contains("failed"))
                 {
-                    _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Найдена рабочая конфигурация {p.Builder.ProtocolType.ToUpper()}! Ключи восстановлены из БД.");
-                    inboundDb = existingDb;
-                    inboundDb.Port = p.Port;
-                }
-                else
-                {
-                    _logger.Log("DEPLOY-TRACE", $"[PORT-CONFIG] Генерация НОВЫХ ключей для {p.Builder.ProtocolType.ToUpper()}...");
-                    inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
-                }
-
-                profile.Inbounds.Add(inboundDb);
-                processedTypes.Add(inboundDb.Protocol.ToLower());
-            }
-
-            foreach (var existing in existingInbounds)
-            {
-                if (!processedTypes.Contains(existing.Protocol.ToLower()))
-                {
-                    string transport = existing.Protocol.ToLower() == "vless" ? "tcp" : "udp";
-                    bool isPortStolen = profile.Inbounds.Any(newInbound =>
-                        newInbound.Port == existing.Port &&
-                        (newInbound.Protocol.ToLower() == "vless" ? "tcp" : "udp") == transport);
-
-                    if (isPortStolen)
-                    {
-                        _logger.Log("DEPLOY-TRACE", $"[REPLACE] Протокол {existing.Protocol.ToUpper()} УДАЛЕН! Порт {existing.Port} ({transport.ToUpper()}) передан новому протоколу.");
-                        continue;
-                    }
-
-                    _logger.Log("DEPLOY-TRACE", $"[PRESERVE] Сохранение нетронутого протокола {existing.Protocol.ToUpper()} на порту {existing.Port}...");
-                    string fwCmd = $@"
-                        if command -v ufw >/dev/null 2>&1; then ufw allow {existing.Port}/{transport} || true; fi
-                        if command -v firewall-cmd >/dev/null 2>&1; then firewall-cmd --add-port={existing.Port}/{transport} --permanent && firewall-cmd --reload || true; fi
-                        iptables -I INPUT 1 -p {transport} --dport {existing.Port} -j ACCEPT || true
-                        iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
-                    ".Replace("\r", "");
-                    await ssh.ExecuteCommandAsync(fwCmd);
-
-                    profile.Inbounds.Add(existing);
+                    throw new Exception($"Критическая ошибка синтаксиса JSON! Ядро отклонило конфиг:\n{checkResult.Trim()}");
                 }
             }
 
-            _logger.Log("DEPLOY-TRACE", "[5/7] Сборка и заливка базового JSON конфига...");
-            var inboundsArray = new JsonArray();
-
-            foreach (var inboundDb in profile.Inbounds)
-            {
-                var settings = JsonNode.Parse(inboundDb.SettingsJson);
-                string protocol = inboundDb.Protocol.ToLower();
-
-                if (isSingBox)
-                {
-                    if (protocol == "vless" && settings?["transport"]?["type"]?.ToString() != "quic")
-                    {
-                        inboundsArray.Add(new JsonObject
-                        {
-                            ["type"] = "vless",
-                            ["tag"] = inboundDb.Tag,
-                            ["listen"] = "0.0.0.0",
-                            ["listen_port"] = inboundDb.Port,
-                            ["users"] = new JsonArray(),
-                            ["tls"] = new JsonObject
-                            {
-                                ["enabled"] = true,
-                                ["server_name"] = settings?["sni"]?.ToString(),
-                                ["reality"] = new JsonObject
-                                {
-                                    ["enabled"] = true,
-                                    ["handshake"] = new JsonObject { ["server"] = settings?["sni"]?.ToString(), ["server_port"] = 443 },
-                                    ["private_key"] = settings?["privateKey"]?.ToString(),
-                                    ["short_id"] = new JsonArray { settings?["shortId"]?.ToString() }
-                                }
-                            }
-                        });
-                    }
-                    else if (protocol == "hysteria2")
-                    {
-                        inboundsArray.Add(new JsonObject
-                        {
-                            ["type"] = "hysteria2",
-                            ["tag"] = inboundDb.Tag,
-                            ["listen"] = "0.0.0.0",
-                            ["listen_port"] = inboundDb.Port,
-                            ["users"] = new JsonArray(),
-                            ["tls"] = new JsonObject
-                            {
-                                ["enabled"] = true,
-                                ["alpn"] = new JsonArray { "h3" },
-                                ["certificate_path"] = settings?["certPath"]?.ToString(),
-                                ["key_path"] = settings?["keyPath"]?.ToString()
-                            },
-                            ["obfs"] = new JsonObject { ["type"] = "salamander", ["password"] = settings?["obfsPassword"]?.ToString() }
-                        });
-                    }
-                    else if (protocol == "trusttunnel" || (protocol == "vless" && settings?["transport"]?["type"]?.ToString() == "quic"))
-                    {
-                        inboundsArray.Add(new JsonObject
-                        {
-                            ["type"] = "vless",
-                            ["tag"] = inboundDb.Tag,
-                            ["listen"] = "0.0.0.0",
-                            ["listen_port"] = inboundDb.Port,
-                            ["users"] = new JsonArray(),
-                            ["transport"] = new JsonObject { ["type"] = "quic" },
-                            ["tls"] = new JsonObject
-                            {
-                                ["enabled"] = true,
-                                ["server_name"] = settings?["sni"]?.ToString(),
-                                ["alpn"] = new JsonArray { "h3" },
-                                ["certificate_path"] = settings?["certPath"]?.ToString(),
-                                ["key_path"] = settings?["keyPath"]?.ToString()
-                            }
-                        });
-                    }
-                }
-                else
-                {
-                    if (protocol == "vless" && settings?["transport"]?["type"]?.ToString() != "quic")
-                    {
-                        inboundsArray.Add(new JsonObject
-                        {
-                            ["protocol"] = "vless",
-                            ["port"] = inboundDb.Port,
-                            ["listen"] = "0.0.0.0",
-                            ["settings"] = new JsonObject { ["clients"] = new JsonArray(), ["decryption"] = "none" },
-                            ["streamSettings"] = new JsonObject
-                            {
-                                ["network"] = "tcp",
-                                ["security"] = "reality",
-                                ["realitySettings"] = new JsonObject
-                                {
-                                    ["show"] = false,
-                                    ["dest"] = $"{settings?["sni"]}:443",
-                                    ["serverNames"] = new JsonArray { settings?["sni"]?.ToString() },
-                                    ["privateKey"] = settings?["privateKey"]?.ToString(),
-                                    ["shortIds"] = new JsonArray { settings?["shortId"]?.ToString() }
-                                }
-                            }
-                        });
-                    }
-                    // === ИСПРАВЛЕНИЕ: Новый синтаксис XHTTP для ядра Xray (замена удаленному QUIC) ===
-                    else if (protocol == "trusttunnel" || (protocol == "vless" && settings?["transport"]?["type"]?.ToString() == "quic"))
-                    {
-                        inboundsArray.Add(new JsonObject
-                        {
-                            ["protocol"] = "vless",
-                            ["port"] = inboundDb.Port,
-                            ["listen"] = "0.0.0.0",
-                            ["settings"] = new JsonObject { ["clients"] = new JsonArray(), ["decryption"] = "none" },
-                            ["streamSettings"] = new JsonObject
-                            {
-                                ["network"] = "xhttp",
-                                ["xhttpSettings"] = new JsonObject
-                                {
-                                    ["mode"] = "auto", // Ядро Xray само поднимет H3 (QUIC)
-                                    ["host"] = settings?["sni"]?.ToString(),
-                                    ["path"] = "/"
-                                },
-                                ["security"] = "tls",
-                                ["tlsSettings"] = new JsonObject
-                                {
-                                    ["serverName"] = settings?["sni"]?.ToString(),
-                                    ["alpn"] = new JsonArray { "h3" },
-                                    ["certificates"] = new JsonArray
-                                    {
-                                        new JsonObject
-                                        {
-                                            ["certificateFile"] = settings?["certPath"]?.ToString(),
-                                            ["keyFile"] = settings?["keyPath"]?.ToString()
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
-                }
-            }
-
-            var baseConfig = new JsonObject();
-            if (isSingBox)
-            {
-                baseConfig["log"] = new JsonObject { ["level"] = "info" };
-                baseConfig["inbounds"] = inboundsArray;
-                baseConfig["outbounds"] = new JsonArray { new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, new JsonObject { ["type"] = "block", ["tag"] = "block" } };
-                baseConfig["route"] = new JsonObject { ["rules"] = new JsonArray() };
-            }
-            else
-            {
-                baseConfig["log"] = new JsonObject { ["loglevel"] = "warning" };
-                baseConfig["inbounds"] = inboundsArray;
-                baseConfig["outbounds"] = new JsonArray { new JsonObject { ["protocol"] = "freedom", ["tag"] = "direct" }, new JsonObject { ["protocol"] = "blackhole", ["tag"] = "block" } };
-                baseConfig["routing"] = new JsonObject { ["rules"] = new JsonArray() };
-            }
-
-            string configStr = baseConfig.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-            string base64Config = Convert.ToBase64String(Encoding.UTF8.GetBytes(configStr));
-            string configPath = isSingBox ? "/etc/sing-box/config.json" : "/usr/local/etc/xray/config.json";
-
-            await ssh.ExecuteCommandAsync($"echo '{base64Config}' | base64 -d > {configPath}");
-
-            _logger.Log("DEPLOY-TRACE", "[5.5/7] Валидация сгенерированного конфига...");
-            string checkCmd = isSingBox ? $"sing-box check -c {configPath} 2>&1" : $"xray run -test -config {configPath} 2>&1";
-            string checkResult = await ssh.ExecuteCommandAsync(checkCmd);
-
-            if (checkResult.Contains("FATAL") || checkResult.Contains("error") || checkResult.Contains("failed"))
-            {
-                throw new Exception($"Критическая ошибка синтаксиса JSON! Ядро отклонило конфиг:\n{checkResult.Trim()}");
-            }
-
-            _logger.Log("DEPLOY-TRACE", "[6/7] Сохранение БД панели и перезапуск ядра...");
-            profile.CoreType = coreName;
+            _logger.Log("DEPLOY-TRACE", "[6/7] Сохранение БД панели и перезапуск службы...");
+            profile.CoreType = coreType.ToLower();
             _profileRepository.UpdateProfile(profile);
 
-            string preRestartCleanup = @"
-                systemctl stop sing-box xray 2>/dev/null || true
-                killall -9 sing-box xray 2>/dev/null || true
-            ".Replace("\r", "");
-            await ssh.ExecuteCommandAsync(preRestartCleanup);
-
-            string restartResult = await ssh.ExecuteCommandAsync($"systemctl enable {coreName} --now && systemctl restart {coreName}");
+            string restartResult = await ssh.ExecuteCommandAsync($"systemctl enable {coreType.ToLower()} --now && systemctl restart {coreType.ToLower()}");
 
             _logger.Log("DEPLOY-TRACE", "[7/7] Сбор расширенной сетевой диагностики после запуска...");
-            string diagCmd = @"
+            string diagCmd = $@"
                 sleep 2
                 echo '=== 1. ПРОВЕРКА ПРОСЛУШИВАНИЯ ПОРТОВ (SS) ==='
-                ss -tulpn | grep -E 'sing-box|xray|:443|:8443|:4443' || true
+                ss -tulpn | grep -E 'sing-box|xray|trusttunnel|:443|:8443|:4443' || true
                 echo '=== 2. СТАТУС СЛУЖБЫ ==='
-                systemctl status sing-box -l --no-pager || true
+                systemctl status {coreType.ToLower()} -l --no-pager || true
             ".Replace("\r", "");
             string diagLog = await ssh.ExecuteCommandAsync(diagCmd);
             _logger.Log("SERVER-DIAGNOSTIC", $"\n{diagLog}");
 
-            _logger.Log("DEPLOY-TRACE", $"[SUCCESS] Успешно развернуто! Ядро запущено.");
-            return (true, $"Успешно развернуто! Ядро: {coreName}.");
+            _logger.Log("DEPLOY-TRACE", $"[SUCCESS] Успешно развернуто! Ядро запущено: {coreType.ToUpper()}");
+            return (true, $"Успешно развернуто! Ядро: {coreType.ToUpper()}.");
         }
         catch (Exception ex)
         {
