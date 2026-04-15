@@ -38,10 +38,14 @@
                 </StackPanel>
                 <StackPanel Orientation="Horizontal"
                             VerticalAlignment="Bottom">
-                    <TextBlock Text="{Binding ActiveUsers}"
-                               Foreground="White"
-                               FontSize="26"
-                               FontWeight="Bold" />
+                    <Viewbox Stretch="Uniform"
+                             StretchDirection="DownOnly"
+                             HorizontalAlignment="Left">
+                        <TextBlock Text="{Binding ActiveUsers}"
+                                   Foreground="White"
+                                   FontSize="26"
+                                   FontWeight="Bold" />
+                    </Viewbox>
                     <TextBlock Text="{Binding TotalUsers, StringFormat=' / {0}'}"
                                Foreground="#6272a4"
                                FontSize="16"
@@ -76,10 +80,15 @@
                                VerticalAlignment="Center"
                                FontWeight="SemiBold" />
                 </StackPanel>
-                <TextBlock Text="{Binding TotalTraffic}"
-                           Foreground="White"
-                           FontSize="22"
-                           FontWeight="Bold" />
+                <Viewbox Stretch="Uniform"
+                         StretchDirection="DownOnly"
+                         HorizontalAlignment="Left"
+                         Margin="0,0,0,4">
+                    <TextBlock Text="{Binding TotalTraffic}"
+                               Foreground="White"
+                               FontSize="22"
+                               FontWeight="Bold" />
+                </Viewbox>
                 <TextBlock Text="{Binding NetworkSpeed}"
                            Foreground="#50fa7b"
                            FontSize="12"
@@ -112,10 +121,14 @@
                                VerticalAlignment="Center"
                                FontWeight="SemiBold" />
                 </StackPanel>
-                <TextBlock Text="{Binding RamUsage, StringFormat='{}{0}%'}"
-                           Foreground="White"
-                           FontSize="24"
-                           FontWeight="Bold" />
+                <Viewbox Stretch="Uniform"
+                         StretchDirection="DownOnly"
+                         HorizontalAlignment="Left">
+                    <TextBlock Text="{Binding RamUsage, StringFormat='{}{0}%'}"
+                               Foreground="White"
+                               FontSize="24"
+                               FontWeight="Bold" />
+                </Viewbox>
                 <ProgressBar Minimum="0"
                              Maximum="100"
                              Value="{Binding RamUsage}"
@@ -150,10 +163,14 @@
                                VerticalAlignment="Center"
                                FontWeight="SemiBold" />
                 </StackPanel>
-                <TextBlock Text="{Binding CpuUsage, StringFormat='{}{0}%'}"
-                           Foreground="White"
-                           FontSize="24"
-                           FontWeight="Bold" />
+                <Viewbox Stretch="Uniform"
+                         StretchDirection="DownOnly"
+                         HorizontalAlignment="Left">
+                    <TextBlock Text="{Binding CpuUsage, StringFormat='{}{0}%'}"
+                               Foreground="White"
+                               FontSize="24"
+                               FontWeight="Bold" />
+                </Viewbox>
                 <ProgressBar Minimum="0"
                              Maximum="100"
                              Value="{Binding CpuUsage}"
@@ -188,10 +205,14 @@
                                VerticalAlignment="Center"
                                FontWeight="SemiBold" />
                 </StackPanel>
-                <TextBlock Text="{Binding SsdUsage, StringFormat='{}{0}%'}"
-                           Foreground="White"
-                           FontSize="24"
-                           FontWeight="Bold" />
+                <Viewbox Stretch="Uniform"
+                         StretchDirection="DownOnly"
+                         HorizontalAlignment="Left">
+                    <TextBlock Text="{Binding SsdUsage, StringFormat='{}{0}%'}"
+                               Foreground="White"
+                               FontSize="24"
+                               FontWeight="Bold" />
+                </Viewbox>
                 <ProgressBar Minimum="0"
                              Maximum="100"
                              Value="{Binding SsdUsage}"
@@ -225,10 +246,14 @@
                                VerticalAlignment="Center"
                                FontWeight="SemiBold" />
                 </StackPanel>
-                <TextBlock Text="{Binding TcpConnections}"
-                           FontSize="32"
-                           FontWeight="Bold"
-                           Foreground="White" />
+                <Viewbox Stretch="Uniform"
+                         StretchDirection="DownOnly"
+                         HorizontalAlignment="Left">
+                    <TextBlock Text="{Binding TcpConnections}"
+                               FontSize="32"
+                               FontWeight="Bold"
+                               Foreground="White" />
+                </Viewbox>
                 <TextBlock Text="{Binding SynRecv, StringFormat='Аномалии (SYN): {0}'}"
                            Foreground="#ffb86c"
                            Margin="0,2,0,0" />

@@ -105,7 +105,6 @@ public class ServerMonitorService : IServerMonitorService
         var userIps = new Dictionary<string, HashSet<string>>();
         var lines = rawLogs.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
 
-        // ИСПРАВЛЕНИЕ: Словарь для склейки разорванных логов Sing-box по ID соединения!
         var connIdToIp = new Dictionary<string, string>();
 
         foreach (var line in lines)
@@ -189,25 +188,46 @@ public class ServerMonitorService : IServerMonitorService
         string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-Country.mmdb");
         if (!File.Exists(dbPath))
         {
-            var currentDir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
-            while (currentDir != null)
+            string fallbackPath = Path.Combine(Directory.GetCurrentDirectory(), "GeoLite2-Country.mmdb");
+            if (File.Exists(fallbackPath))
             {
-                string checkPath = Path.Combine(currentDir.FullName, "GeoLite2-Country.mmdb");
-                if (File.Exists(checkPath))
+                dbPath = fallbackPath;
+            }
+            else
+            {
+                var currentDir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+                while (currentDir != null)
                 {
-                    dbPath = checkPath;
-                    break;
+                    string checkPath = Path.Combine(currentDir.FullName, "GeoLite2-Country.mmdb");
+                    if (File.Exists(checkPath))
+                    {
+                        dbPath = checkPath;
+                        break;
+                    }
+                    currentDir = currentDir.Parent;
                 }
-                currentDir = currentDir.Parent;
             }
         }
 
         bool hasGeoDb = File.Exists(dbPath);
         DatabaseReader? geoReader = null;
+        string dbError = "";
+
         if (hasGeoDb)
         {
-            try { geoReader = new DatabaseReader(dbPath); }
-            catch { hasGeoDb = false; }
+            try
+            {
+                geoReader = new DatabaseReader(dbPath, MaxMind.Db.FileAccessMode.Memory);
+            }
+            catch (Exception)
+            {
+                hasGeoDb = false;
+                dbError = "DB Err";
+            }
+        }
+        else
+        {
+            dbError = "No DB";
         }
 
         try
@@ -215,7 +235,7 @@ public class ServerMonitorService : IServerMonitorService
             foreach (var kvp in userIps)
             {
                 string lastIp = kvp.Value.LastOrDefault()?.Trim() ?? "";
-                string country = "??";
+                string country = dbError != "" ? dbError : "??";
 
                 if (hasGeoDb && geoReader != null && !string.IsNullOrEmpty(lastIp))
                 {
@@ -235,7 +255,10 @@ public class ServerMonitorService : IServerMonitorService
                             }
                         }
                     }
-                    catch { }
+                    catch
+                    {
+                        country = "??";
+                    }
                 }
 
                 stats.Add(new UserOnlineInfo
@@ -243,7 +266,8 @@ public class ServerMonitorService : IServerMonitorService
                     Email = kvp.Key,
                     LastIp = lastIp,
                     ActiveSessions = kvp.Value.Count,
-                    Country = country == "??" ? "??" : $"🌍 {country}"
+                    // ИСПРАВЛЕНИЕ: Убрали хардкодный эмодзи планеты. Теперь тут только текст.
+                    Country = country
                 });
             }
         }

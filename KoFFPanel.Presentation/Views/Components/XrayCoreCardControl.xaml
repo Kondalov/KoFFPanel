@@ -259,7 +259,6 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0"
@@ -315,20 +314,6 @@
                                    HorizontalAlignment="Right" />
                     </Grid>
                 </Border>
-
-                <Grid Grid.Row="3"
-                      Grid.ColumnSpan="2">
-                    <TextBlock Text="Ошибка"
-                               Foreground="#B3FFFFFF"
-                               FontSize="14" />
-                    <TextBlock Text="{Binding XrayLastError}"
-                               Foreground="#ff4444"
-                               FontSize="14"
-                               FontWeight="SemiBold"
-                               HorizontalAlignment="Right"
-                               TextTrimming="CharacterEllipsis"
-                               ToolTip="{Binding XrayLastError}" />
-                </Grid>
             </Grid>
 
             <Grid Grid.Row="3">

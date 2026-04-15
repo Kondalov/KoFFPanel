@@ -174,7 +174,6 @@
                     </Trigger>
                 </Style.Triggers>
             </Style>
-
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -389,208 +388,280 @@
                     <Border Style="{StaticResource MetricCardStyle}">
                         <StackPanel HorizontalAlignment="Left"
                                     VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="Laptop24"
-                                               Foreground="#00f2ff"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="ЦП (CPU)"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding CpuUsage, StringFormat='{}{0}%'}"
-                                       Foreground="#ffffff"
-                                       FontSize="42"
-                                       FontWeight="Bold" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel HorizontalAlignment="Left"
-                                    VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="Server24"
-                                               Foreground="#ffaa00"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="ОЗУ (RAM)"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding RamUsage, StringFormat='{}{0}%'}"
-                                       Foreground="#ffffff"
-                                       FontSize="42"
-                                       FontWeight="Bold" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel HorizontalAlignment="Left"
-                                    VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="Folder24"
-                                               Foreground="#ff00aa"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="Диск (SSD)"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding SsdUsage, StringFormat='{}{0}%'}"
-                                       Foreground="#ffffff"
-                                       FontSize="42"
-                                       FontWeight="Bold" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel HorizontalAlignment="Left"
-                                    VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="Globe24"
-                                               Foreground="#00ff88"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="Ping"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal"
-                                        VerticalAlignment="Bottom">
-                                <TextBlock Text="{Binding PingMs}"
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Laptop24"
+                                                   Foreground="#00f2ff"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="ЦП (CPU)"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding CpuUsage, StringFormat='{}{0}%'}"
                                            Foreground="#ffffff"
                                            FontSize="42"
                                            FontWeight="Bold" />
-                                <TextBlock Text=" ms"
-                                           Foreground="#B3FFFFFF"
-                                           FontSize="22"
-                                           FontWeight="SemiBold"
-                                           Margin="4,0,0,8"
-                                           VerticalAlignment="Bottom" />
-                            </StackPanel>
+                            </Viewbox>
                         </StackPanel>
                     </Border>
 
                     <Border Style="{StaticResource MetricCardStyle}">
                         <StackPanel HorizontalAlignment="Left"
                                     VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="DataArea24"
-                                               Foreground="#7000ff"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="Load Average"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding LoadAverage}"
-                                       Foreground="#ffffff"
-                                       FontSize="42"
-                                       FontWeight="Bold" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel HorizontalAlignment="Left"
-                                    VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="Clock24"
-                                               Foreground="#00f2ff"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="Аптайм"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding Uptime}"
-                                       Foreground="#ffffff"
-                                       FontSize="30"
-                                       FontWeight="Bold"
-                                       Margin="0,4,0,0" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel HorizontalAlignment="Left"
-                                    VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="DataBarHorizontal24"
-                                               Foreground="#7000ff"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="Трафик"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding TotalTraffic}"
-                                       Foreground="#ffffff"
-                                       FontSize="42"
-                                       FontWeight="Bold" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel HorizontalAlignment="Left"
-                                    VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="Link24"
-                                               Foreground="#ffaa00"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="Сокеты"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding TcpConnections}"
-                                       Foreground="#ffffff"
-                                       FontSize="42"
-                                       FontWeight="Bold" />
-                        </StackPanel>
-                    </Border>
-
-                    <Border Style="{StaticResource MetricCardStyle}">
-                        <StackPanel HorizontalAlignment="Left"
-                                    VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,16">
-                                <ui:SymbolIcon Symbol="People24"
-                                               Foreground="#00ff88"
-                                               FontSize="20"
-                                               Margin="0,0,10,0" />
-                                <TextBlock Text="Клиенты"
-                                           Foreground="#B3FFFFFF"
-                                           FontWeight="SemiBold"
-                                           FontSize="16" />
-                            </StackPanel>
-                            <StackPanel Orientation="Horizontal"
-                                        VerticalAlignment="Bottom">
-                                <TextBlock Text="{Binding ActiveUsers}"
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Server24"
+                                                   Foreground="#ffaa00"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="ОЗУ (RAM)"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding RamUsage, StringFormat='{}{0}%'}"
                                            Foreground="#ffffff"
                                            FontSize="42"
                                            FontWeight="Bold" />
-                                <TextBlock Text="{Binding TotalUsers, StringFormat=' / {0}'}"
-                                           Foreground="#B3FFFFFF"
-                                           FontSize="22"
-                                           VerticalAlignment="Bottom"
-                                           Margin="4,0,0,8"
-                                           FontWeight="SemiBold" />
-                            </StackPanel>
+                            </Viewbox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Folder24"
+                                                   Foreground="#ff00aa"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="Диск (SSD)"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding SsdUsage, StringFormat='{}{0}%'}"
+                                           Foreground="#ffffff"
+                                           FontSize="42"
+                                           FontWeight="Bold" />
+                            </Viewbox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Globe24"
+                                                   Foreground="#00ff88"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="Ping"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <StackPanel Orientation="Horizontal"
+                                            VerticalAlignment="Bottom">
+                                    <TextBlock Text="{Binding PingMs}"
+                                               Foreground="#ffffff"
+                                               FontSize="42"
+                                               FontWeight="Bold" />
+                                    <TextBlock Text=" ms"
+                                               Foreground="#B3FFFFFF"
+                                               FontSize="22"
+                                               VerticalAlignment="Bottom"
+                                               Margin="4,0,0,8"
+                                               FontWeight="SemiBold" />
+                                </StackPanel>
+                            </Viewbox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="DataArea24"
+                                                   Foreground="#7000ff"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="Load Average"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding LoadAverage}"
+                                           Foreground="#ffffff"
+                                           FontSize="42"
+                                           FontWeight="Bold" />
+                            </Viewbox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Clock24"
+                                                   Foreground="#00f2ff"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="Аптайм"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding Uptime}"
+                                           Foreground="#ffffff"
+                                           FontSize="30"
+                                           FontWeight="Bold"
+                                           Margin="0,4,0,0" />
+                            </Viewbox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="DataBarHorizontal24"
+                                                   Foreground="#7000ff"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="Трафик"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding TotalTraffic}"
+                                           Foreground="#ffffff"
+                                           FontSize="42"
+                                           FontWeight="Bold" />
+                            </Viewbox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Link24"
+                                                   Foreground="#ffaa00"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="Сокеты"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding TcpConnections}"
+                                           Foreground="#ffffff"
+                                           FontSize="42"
+                                           FontWeight="Bold" />
+                            </Viewbox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource MetricCardStyle}">
+                        <StackPanel HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left"
+                                     Margin="0,0,0,16">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="People24"
+                                                   Foreground="#00ff88"
+                                                   FontSize="20"
+                                                   Margin="0,0,10,0" />
+                                    <TextBlock Text="Клиенты"
+                                               Foreground="#B3FFFFFF"
+                                               FontWeight="SemiBold"
+                                               FontSize="16" />
+                                </StackPanel>
+                            </Viewbox>
+                            <Viewbox Stretch="Uniform"
+                                     StretchDirection="DownOnly"
+                                     HorizontalAlignment="Left">
+                                <StackPanel Orientation="Horizontal"
+                                            VerticalAlignment="Bottom">
+                                    <TextBlock Text="{Binding ActiveUsers}"
+                                               Foreground="#ffffff"
+                                               FontSize="42"
+                                               FontWeight="Bold" />
+                                    <TextBlock Text="{Binding TotalUsers, StringFormat=' / {0}'}"
+                                               Foreground="#B3FFFFFF"
+                                               FontSize="22"
+                                               VerticalAlignment="Bottom"
+                                               Margin="4,0,0,8"
+                                               FontWeight="SemiBold" />
+                                </StackPanel>
+                            </Viewbox>
                         </StackPanel>
                     </Border>
 
