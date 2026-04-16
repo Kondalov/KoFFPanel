@@ -307,14 +307,325 @@
                                                FontSize="20"
                                                Foreground="#bd93f9" />
                             </TabItem.Header>
-                            <Grid Margin="0,10,0,0">
-                                <TextBlock Text="Сниппеты появятся в следующем обновлении"
-                                           Foreground="#a0aabf"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"
-                                           TextAlignment="Center"
-                                           TextWrapping="Wrap"
-                                           Padding="20" />
+                            <Grid Margin="0,0,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <Border Grid.Row="0"
+                                        Background="#1A000000"
+                                        BorderBrush="#1AFFFFFF"
+                                        BorderThickness="0,0,0,1">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Hidden"
+                                                  VerticalScrollBarVisibility="Disabled"
+                                                  PreviewMouseWheel="TabsScrollViewer_PreviewMouseWheel">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ListBox ItemsSource="{Binding SnippetCategories}"
+                                                     SelectedItem="{Binding SelectedSnippetCategory}"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                                <ListBox.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ListBox.ItemsPanel>
+                                                <ListBox.ItemContainerStyle>
+                                                    <Style TargetType="ListBoxItem">
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="ListBoxItem">
+                                                                    <Border x:Name="Bd"
+                                                                            Padding="12,8"
+                                                                            Background="Transparent"
+                                                                            BorderBrush="Transparent"
+                                                                            BorderThickness="0,0,0,2"
+                                                                            Cursor="Hand">
+                                                                        <Border.ContextMenu>
+                                                                            <ContextMenu Background="#1c1e27"
+                                                                                         Foreground="White"
+                                                                                         BorderBrush="#2a2d3d">
+                                                                                <MenuItem Header="Переименовать"
+                                                                                          Click="Category_Rename_Click"
+                                                                                          Foreground="White">
+                                                                                    <MenuItem.Icon>
+                                                                                        <ui:SymbolIcon Symbol="Rename24"
+                                                                                                       Foreground="#ffaa00" />
+                                                                                    </MenuItem.Icon>
+                                                                                </MenuItem>
+                                                                                <Separator Background="#2a2d3d" />
+                                                                                <MenuItem Header="Удалить"
+                                                                                          Click="Category_Delete_Click"
+                                                                                          Foreground="#ff4444">
+                                                                                    <MenuItem.Icon>
+                                                                                        <ui:SymbolIcon Symbol="Delete24"
+                                                                                                       Foreground="#ff4444" />
+                                                                                    </MenuItem.Icon>
+                                                                                </MenuItem>
+                                                                            </ContextMenu>
+                                                                        </Border.ContextMenu>
+                                                                        <TextBlock Text="{Binding Name}"
+                                                                                   Foreground="#a0aabf"
+                                                                                   FontSize="13"
+                                                                                   FontWeight="Bold" />
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsSelected"
+                                                                                 Value="True">
+                                                                            <Setter TargetName="Bd"
+                                                                                    Property="BorderBrush"
+                                                                                    Value="#00f2ff" />
+                                                                            <Setter TargetName="Bd"
+                                                                                    Property="Background"
+                                                                                    Value="#0DFFFFFF" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </ListBox.ItemContainerStyle>
+                                            </ListBox>
+                                            <Button Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Foreground="#a0aabf"
+                                                    FontSize="18"
+                                                    Padding="8,4"
+                                                    Click="AddSnippetCategory_Click"
+                                                    ToolTip="Добавить категорию">
+                                                <ui:SymbolIcon Symbol="Add24" />
+                                            </Button>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+
+                                <Border Grid.Row="1"
+                                        Background="#0A000000"
+                                        BorderBrush="#1AFFFFFF"
+                                        BorderThickness="0,0,0,1"
+                                        Padding="8,6">
+                                    <ScrollViewer HorizontalScrollBarVisibility="Hidden"
+                                                  VerticalScrollBarVisibility="Disabled"
+                                                  PreviewMouseWheel="TabsScrollViewer_PreviewMouseWheel">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ListBox ItemsSource="{Binding SelectedSnippetCategory.SubCategories}"
+                                                     SelectedItem="{Binding SelectedSnippetSubCategory}"
+                                                     Background="Transparent"
+                                                     BorderThickness="0"
+                                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                                <ListBox.ItemsPanel>
+                                                    <ItemsPanelTemplate>
+                                                        <StackPanel Orientation="Horizontal" />
+                                                    </ItemsPanelTemplate>
+                                                </ListBox.ItemsPanel>
+                                                <ListBox.ItemContainerStyle>
+                                                    <Style TargetType="ListBoxItem">
+                                                        <Setter Property="Template">
+                                                            <Setter.Value>
+                                                                <ControlTemplate TargetType="ListBoxItem">
+                                                                    <Border x:Name="Bd"
+                                                                            Padding="10,4"
+                                                                            Margin="0,0,6,0"
+                                                                            Background="#0DFFFFFF"
+                                                                            BorderBrush="Transparent"
+                                                                            BorderThickness="1"
+                                                                            CornerRadius="12"
+                                                                            Cursor="Hand">
+                                                                        <Border.ContextMenu>
+                                                                            <ContextMenu Background="#1c1e27"
+                                                                                         Foreground="White"
+                                                                                         BorderBrush="#2a2d3d">
+                                                                                <MenuItem Header="Переименовать"
+                                                                                          Click="SubCategory_Rename_Click"
+                                                                                          Foreground="White">
+                                                                                    <MenuItem.Icon>
+                                                                                        <ui:SymbolIcon Symbol="Rename24"
+                                                                                                       Foreground="#ffaa00" />
+                                                                                    </MenuItem.Icon>
+                                                                                </MenuItem>
+                                                                                <Separator Background="#2a2d3d" />
+                                                                                <MenuItem Header="Удалить"
+                                                                                          Click="SubCategory_Delete_Click"
+                                                                                          Foreground="#ff4444">
+                                                                                    <MenuItem.Icon>
+                                                                                        <ui:SymbolIcon Symbol="Delete24"
+                                                                                                       Foreground="#ff4444" />
+                                                                                    </MenuItem.Icon>
+                                                                                </MenuItem>
+                                                                            </ContextMenu>
+                                                                        </Border.ContextMenu>
+                                                                        <TextBlock Text="{Binding Name}"
+                                                                                   Foreground="#a0aabf"
+                                                                                   FontSize="11" />
+                                                                    </Border>
+                                                                    <ControlTemplate.Triggers>
+                                                                        <Trigger Property="IsSelected"
+                                                                                 Value="True">
+                                                                            <Setter TargetName="Bd"
+                                                                                    Property="Background"
+                                                                                    Value="#1A00f2ff" />
+                                                                            <Setter TargetName="Bd"
+                                                                                    Property="BorderBrush"
+                                                                                    Value="#4D00f2ff" />
+                                                                        </Trigger>
+                                                                    </ControlTemplate.Triggers>
+                                                                </ControlTemplate>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </Style>
+                                                </ListBox.ItemContainerStyle>
+                                            </ListBox>
+                                            <Button Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Foreground="#a0aabf"
+                                                    Padding="4"
+                                                    Click="AddSnippetSubCategory_Click"
+                                                    ToolTip="Добавить подкатегорию">
+                                                <ui:SymbolIcon Symbol="Add16" />
+                                            </Button>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+
+                                <ListView Grid.Row="2"
+                                          ItemsSource="{Binding SelectedSnippetSubCategory.Snippets}"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          Padding="8"
+                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListView.ItemContainerStyle>
+                                        <Style TargetType="ListViewItem">
+                                            <Setter Property="Padding"
+                                                    Value="0" />
+                                            <Setter Property="Margin"
+                                                    Value="0,0,0,8" />
+                                            <Setter Property="HorizontalContentAlignment"
+                                                    Value="Stretch" />
+                                            <Setter Property="Background"
+                                                    Value="Transparent" />
+                                            <Setter Property="BorderThickness"
+                                                    Value="0" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="ListViewItem">
+                                                        <Border x:Name="CardBorder"
+                                                                Background="#33000000"
+                                                                BorderBrush="#1AFFFFFF"
+                                                                BorderThickness="1"
+                                                                CornerRadius="10"
+                                                                Padding="12"
+                                                                Cursor="Hand">
+                                                            <Border.InputBindings>
+                                                                <MouseBinding Gesture="LeftClick"
+                                                                              Command="{Binding DataContext.InsertSnippetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                              CommandParameter="{Binding}" />
+                                                            </Border.InputBindings>
+                                                            <Grid>
+                                                                <Grid.RowDefinitions>
+                                                                    <RowDefinition Height="Auto" />
+                                                                    <RowDefinition Height="Auto" />
+                                                                </Grid.RowDefinitions>
+                                                                <Grid Grid.Row="0"
+                                                                      Margin="0,0,0,4">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*" />
+                                                                        <ColumnDefinition Width="Auto" />
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Column="0"
+                                                                               Text="{Binding Description}"
+                                                                               Foreground="#5c6173"
+                                                                               FontSize="11"
+                                                                               FontWeight="Bold" />
+                                                                    <Button x:Name="DelBtn"
+                                                                            Grid.Column="1"
+                                                                            Background="Transparent"
+                                                                            BorderThickness="0"
+                                                                            Padding="0"
+                                                                            Opacity="0"
+                                                                            ToolTip="Удалить сниппет"
+                                                                            Command="{Binding DataContext.DeleteSnippetCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                            CommandParameter="{Binding}">
+                                                                        <ui:SymbolIcon Symbol="Delete20"
+                                                                                       Foreground="#ff4444"
+                                                                                       Opacity="0.8" />
+                                                                    </Button>
+                                                                </Grid>
+                                                                <TextBlock Grid.Row="1"
+                                                                           Text="{Binding Command}"
+                                                                           Foreground="#39ff14"
+                                                                           FontFamily="Consolas"
+                                                                           FontSize="13"
+                                                                           TextWrapping="Wrap" />
+                                                            </Grid>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver"
+                                                                     Value="True">
+                                                                <Setter TargetName="CardBorder"
+                                                                        Property="BorderBrush"
+                                                                        Value="#4D00f2ff" />
+                                                                <Setter TargetName="CardBorder"
+                                                                        Property="Background"
+                                                                        Value="#0A00f2ff" />
+                                                                <Setter TargetName="DelBtn"
+                                                                        Property="Opacity"
+                                                                        Value="1" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListView.ItemContainerStyle>
+                                </ListView>
+
+                                <Border Grid.Row="3"
+                                        Background="#26000000"
+                                        BorderBrush="#1AFFFFFF"
+                                        BorderThickness="0,1,0,0"
+                                        Padding="12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="1.5*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <ui:TextBox x:Name="NewSnippetDesc"
+                                                    Grid.Column="0"
+                                                    Margin="0,0,6,0"
+                                                    Background="#0DFFFFFF"
+                                                    BorderBrush="#1AFFFFFF"
+                                                    Foreground="White"
+                                                    PlaceholderText="Описание"
+                                                    FontSize="12" />
+                                        <ui:TextBox x:Name="NewSnippetCmd"
+                                                    Grid.Column="1"
+                                                    Margin="0,0,6,0"
+                                                    Background="#0DFFFFFF"
+                                                    BorderBrush="#1AFFFFFF"
+                                                    Foreground="#39ff14"
+                                                    FontFamily="Consolas"
+                                                    PlaceholderText="Команда"
+                                                    FontSize="12"
+                                                    KeyDown="NewSnippetCmd_KeyDown" />
+                                        <ui:Button Grid.Column="2"
+                                                   Background="#2962ff"
+                                                   BorderThickness="0"
+                                                   Width="32"
+                                                   Height="32"
+                                                   Padding="0"
+                                                   CornerRadius="8"
+                                                   Click="AddSnippet_Click"
+                                                   Cursor="Hand">
+                                            <ui:SymbolIcon Symbol="Add24"
+                                                           Foreground="White" />
+                                        </ui:Button>
+                                    </Grid>
+                                </Border>
                             </Grid>
                         </TabItem>
                     </TabControl>

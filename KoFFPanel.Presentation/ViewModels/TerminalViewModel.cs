@@ -20,6 +20,7 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
     private readonly IServerMonitorService _monitorService;
     private System.Timers.Timer? _monitoringTimer;
     public event Action<string, string>? OnFileReadyForEdit;
+    private string GetSnippetsFilePath() => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Snippets", "snippets.json");
     public IAppLogger Logger => _logger;
     
     private WebView2? _webView;
@@ -40,7 +41,17 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _ramUsage = 0;
     [ObservableProperty] private int _ssdUsage = 0;
     [ObservableProperty] private string _commandInput = "";
+    [ObservableProperty] private ObservableCollection<SnippetCategory> _snippetCategories = new();
+    [ObservableProperty] private SnippetCategory? _selectedSnippetCategory;
+    [ObservableProperty] private SnippetSubCategory? _selectedSnippetSubCategory;
 
+    partial void OnSelectedSnippetCategoryChanged(SnippetCategory? value)
+    {
+        if (value != null && value.SubCategories.Any())
+            SelectedSnippetSubCategory = value.SubCategories.First();
+        else
+            SelectedSnippetSubCategory = null;
+    }
     public VpnProfile? CurrentProfile { get; private set; }
 
     public TerminalViewModel(ISshService sshService, IAppLogger logger, IServerMonitorService monitorService)
@@ -56,6 +67,126 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
         WindowTitle = $"Терминал — {profile.Name} ({profile.IpAddress})";
         ConnectionInfo = $"Подключение к {profile.Username}@{profile.IpAddress}...";
         _logger.Log("TERM-INIT", $"Инициализация профиля: {profile.IpAddress}");
+
+        LoadSnippets();
+    }
+
+    public void LoadSnippets()
+    {
+        try
+        {
+            string filePath = GetSnippetsFilePath();
+
+            if (File.Exists(filePath))
+            {
+                string json = File.ReadAllText(filePath);
+                var data = System.Text.Json.JsonSerializer.Deserialize<ObservableCollection<SnippetCategory>>(json);
+                if (data != null)
+                {
+                    SnippetCategories = data;
+                }
+                _logger.Log("TERM-SNIP", "Сниппеты успешно загружены из папки Snippets.");
+            }
+            else
+            {
+                // Если файла еще нет, создаем структуру по умолчанию
+                var cat = new SnippetCategory { Name = "Server" };
+                var sub = new SnippetSubCategory { Name = "Общие" };
+                sub.Snippets.Add(new SnippetItem { Description = "Обновление системы", Command = "apt update && apt upgrade -y" });
+                cat.SubCategories.Add(sub);
+                SnippetCategories.Add(cat);
+
+                // Сразу сохраняем, чтобы создалась папка и файл
+                SaveSnippets();
+            }
+
+            if (SnippetCategories.Any()) SelectedSnippetCategory = SnippetCategories.First();
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TERM-SNIP-ERR", $"Ошибка загрузки: {ex.Message}");
+        }
+    }
+
+    public void SaveSnippets()
+    {
+        try
+        {
+            string filePath = GetSnippetsFilePath();
+            string? directory = Path.GetDirectoryName(filePath);
+
+            // Проверяем наличие папки Snippets и создаем её, если нужно
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            string json = System.Text.Json.JsonSerializer.Serialize(SnippetCategories, options);
+
+            File.WriteAllText(filePath, json);
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TERM-SNIP-ERR", $"Ошибка сохранения: {ex.Message}");
+        }
+    }
+
+    // === КОМАНДЫ ДЛЯ XAML ===
+    [RelayCommand]
+    private void InsertSnippet(SnippetItem item)
+    {
+        if (item != null) CommandInput = item.Command; // Вставляет команду в нижнее окно ввода
+    }
+
+    [RelayCommand]
+    private void DeleteSnippet(SnippetItem item)
+    {
+        if (SelectedSnippetSubCategory != null && item != null)
+        {
+            SelectedSnippetSubCategory.Snippets.Remove(item);
+            SaveSnippets();
+        }
+    }
+
+    [RelayCommand]
+    private void DeleteCategory(SnippetCategory cat)
+    {
+        if (cat != null)
+        {
+            SnippetCategories.Remove(cat);
+            if (SelectedSnippetCategory == cat) SelectedSnippetCategory = SnippetCategories.FirstOrDefault();
+            SaveSnippets();
+        }
+    }
+
+    public void AddSnippetCategory(string name)
+    {
+        var cat = new SnippetCategory { Name = name };
+        cat.SubCategories.Add(new SnippetSubCategory { Name = "Main" });
+        SnippetCategories.Add(cat);
+        SelectedSnippetCategory = cat;
+        SaveSnippets();
+    }
+
+    public void AddSnippetSubCategory(string name)
+    {
+        if (SelectedSnippetCategory != null)
+        {
+            var sub = new SnippetSubCategory { Name = name };
+            SelectedSnippetCategory.SubCategories.Add(sub);
+            SelectedSnippetSubCategory = sub;
+            SaveSnippets();
+        }
+    }
+
+    public void AddSnippet(string desc, string cmd)
+    {
+        if (SelectedSnippetSubCategory != null && !string.IsNullOrWhiteSpace(cmd))
+        {
+            SelectedSnippetSubCategory.Snippets.Add(new SnippetItem { Description = string.IsNullOrWhiteSpace(desc) ? "Без описания" : desc, Command = cmd });
+            SaveSnippets();
+        }
     }
 
     public void InitializeWebView(WebView2 webView)
@@ -479,5 +610,23 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
     </script>
 </body>
 </html>";
+    }
+
+    public partial class SnippetItem : ObservableObject
+    {
+        [ObservableProperty] private string _description = "";
+        [ObservableProperty] private string _command = "";
+    }
+
+    public partial class SnippetSubCategory : ObservableObject
+    {
+        [ObservableProperty] private string _name = "";
+        [ObservableProperty] private ObservableCollection<SnippetItem> _snippets = new();
+    }
+
+    public partial class SnippetCategory : ObservableObject
+    {
+        [ObservableProperty] private string _name = "";
+        [ObservableProperty] private ObservableCollection<SnippetSubCategory> _subCategories = new();
     }
 }

@@ -4,6 +4,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using static KoFFPanel.Presentation.ViewModels.TerminalViewModel;
 
 namespace KoFFPanel.Presentation.Views;
 
@@ -154,5 +155,121 @@ public partial class TerminalWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel.Dispose();
         TerminalWebView.Dispose();
         base.OnClosed(e);
+    }
+
+    // === ОБРАБОТЧИКИ СНИППЕТОВ ===
+    private void AddSnippetCategory_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Extras.InputTextDialog(this, "Новая категория", "Введите название (например: Docker):");
+        if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.InputText))
+        {
+            _viewModel.AddSnippetCategory(dialog.InputText.Trim());
+        }
+    }
+
+    private void AddSnippetSubCategory_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Extras.InputTextDialog(this, "Новая подкатегория", "Введите название (например: Логи):");
+        if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.InputText))
+        {
+            _viewModel.AddSnippetSubCategory(dialog.InputText.Trim());
+        }
+    }
+
+    private void AddSnippet_Click(object sender, RoutedEventArgs e)
+    {
+        SaveNewSnippet();
+    }
+
+    private void NewSnippetCmd_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            SaveNewSnippet();
+        }
+    }
+
+    private void SaveNewSnippet()
+    {
+        if (!string.IsNullOrWhiteSpace(NewSnippetCmd.Text))
+        {
+            _viewModel.AddSnippet(NewSnippetDesc.Text, NewSnippetCmd.Text);
+            NewSnippetDesc.Text = "";
+            NewSnippetCmd.Text = "";
+        }
+    }
+
+    // === УМНЫЙ НЕВИДИМЫЙ СКРОЛЛ ДЛЯ ВКЛАДОК ===
+    private void TabsScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is ScrollViewer scroller)
+        {
+            // Перехватываем вертикальную прокрутку колесика и превращаем её в горизонтальную
+            if (e.Delta > 0)
+                scroller.LineLeft();
+            else
+                scroller.LineRight();
+
+            e.Handled = true; // Отключаем стандартное поведение, чтобы не дергалось всё окно
+        }
+    }
+
+    // === КОНТЕКСТНОЕ МЕНЮ ДЛЯ ГЛАВНЫХ КАТЕГОРИЙ ===
+    private void Category_Rename_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem && menuItem.DataContext is SnippetCategory cat)
+        {
+            var dialog = new Extras.InputTextDialog(this, "Переименовать", "Новое название категории:", cat.Name);
+            if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.InputText))
+            {
+                cat.Name = dialog.InputText.Trim();
+                _viewModel.SaveSnippets();
+            }
+        }
+    }
+
+    private void Category_Delete_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem && menuItem.DataContext is SnippetCategory cat)
+        {
+            var result = MessageBox.Show(this, $"Удалить категорию '{cat.Name}' и все её сниппеты?", "Удаление", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result == MessageBoxResult.Yes)
+            {
+                _viewModel.DeleteCategoryCommand.Execute(cat);
+            }
+        }
+    }
+
+    // === КОНТЕКСТНОЕ МЕНЮ ДЛЯ ПОДКАТЕГОРИЙ ===
+    private void SubCategory_Rename_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem && menuItem.DataContext is SnippetSubCategory sub)
+        {
+            var dialog = new Extras.InputTextDialog(this, "Переименовать", "Новое название подкатегории:", sub.Name);
+            if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.InputText))
+            {
+                sub.Name = dialog.InputText.Trim();
+                _viewModel.SaveSnippets();
+            }
+        }
+    }
+
+    private void SubCategory_Delete_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem menuItem && menuItem.DataContext is SnippetSubCategory sub)
+        {
+            var result = MessageBox.Show(this, $"Удалить подкатегорию '{sub.Name}' и её сниппеты?", "Удаление", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (result == MessageBoxResult.Yes)
+            {
+                if (_viewModel.SelectedSnippetCategory != null)
+                {
+                    _viewModel.SelectedSnippetCategory.SubCategories.Remove(sub);
+                    if (_viewModel.SelectedSnippetSubCategory == sub)
+                        _viewModel.SelectedSnippetSubCategory = _viewModel.SelectedSnippetCategory.SubCategories.FirstOrDefault();
+
+                    _viewModel.SaveSnippets();
+                }
+            }
+        }
     }
 }
