@@ -14,11 +14,22 @@ public partial class EditorWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel = viewModel;
         DataContext = _viewModel;
 
-        // Передаем WebView2 во ViewModel для настройки Monaco Editor
         _viewModel.InitializeWebView(EditorWebView);
 
-        // Обработка закрытия (проверка несохраненных изменений)
+        // ИСПРАВЛЕНИЕ: Подписка на запрос "Сохранить как" от ViewModel
+        _viewModel.OnSaveAsRequested += ViewModel_OnSaveAsRequested;
+
         this.Closing += EditorWindow_Closing;
+    }
+
+    private void ViewModel_OnSaveAsRequested(string currentName)
+    {
+        // Вызываем наше кастомное окно ввода
+        var dialog = new Extras.InputTextDialog(this, "Сохранить как", "Введите новое имя файла:", currentName);
+        if (dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(dialog.InputText))
+        {
+            _viewModel.PerformSaveAs(dialog.InputText.Trim());
+        }
     }
 
     private void EditorWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)

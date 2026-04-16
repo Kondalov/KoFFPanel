@@ -2,6 +2,7 @@
 using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
+using KoFFPanel.Infrastructure.Services;
 using Microsoft.Web.WebView2.Wpf;
 using System;
 using System.Collections.ObjectModel;
@@ -16,6 +17,7 @@ namespace KoFFPanel.Presentation.ViewModels;
 public partial class TerminalViewModel : ObservableObject, IDisposable
 {
     private readonly ISshService _sshService;
+    public ISshService SshService => _sshService;
     private readonly IAppLogger _logger;
     private readonly IServerMonitorService _monitorService;
     private System.Timers.Timer? _monitoringTimer;
@@ -431,10 +433,29 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
                 await Task.Run(() => _sshService.UploadFile(fileStream, remotePath));
             }
             _logger.Log("TERM-SFTP", $"Файл {remotePath} успешно сохранен!");
+
+            // === УМНЫЙ АЛГОРИТМ: АВТООБНОВЛЕНИЕ ПРОВОДНИКА ===
+            // Получаем директорию, куда был сохранен файл, и меняем Windows-слэши на Linux-слэши
+            string fileDir = Path.GetDirectoryName(remotePath)?.Replace("\\", "/") ?? "/";
+
+            // Нормализуем пути, чтобы избежать проблем со слешами на конце (например /root и /root/)
+            string currentDirNorm = CurrentDirectory.TrimEnd('/');
+            string fileDirNorm = fileDir.TrimEnd('/');
+            if (string.IsNullOrEmpty(currentDirNorm)) currentDirNorm = "/";
+            if (string.IsNullOrEmpty(fileDirNorm)) fileDirNorm = "/";
+
+            // Если папка сохраненного файла совпадает с открытой сейчас папкой
+            if (currentDirNorm == fileDirNorm)
+            {
+                // Тихо обновляем список файлов. Новый бэкап появится мгновенно!
+                await LoadFilesAsync();
+            }
         }
         catch (Exception ex)
         {
             _logger.Log("TERM-SFTP-ERR", $"Ошибка выгрузки: {ex.Message}");
+            // Пробрасываем ошибку дальше, чтобы умный статус-бар в редакторе поймал её и показал красный крестик
+            throw;
         }
     }
 

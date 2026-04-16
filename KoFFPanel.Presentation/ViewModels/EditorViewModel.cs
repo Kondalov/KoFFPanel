@@ -12,24 +12,38 @@ namespace KoFFPanel.Presentation.ViewModels;
 public partial class EditorViewModel : ObservableObject, IDisposable
 {
     private readonly IAppLogger _logger;
+    private readonly ISshService _sshService; // Добавлено для верификации
     private WebView2? _webView;
 
-    // Пути для работы с файлом
     private string _localFilePath = "";
     public string RemoteFilePath { get; private set; } = "";
 
     [ObservableProperty] private string _windowTitle = "Редактор";
-    [ObservableProperty] private string _saveStatus = "";
-    [ObservableProperty] private string _statusColor = "#a0aabf";
+
+    // Статус в тулбаре
+    [ObservableProperty] private string _fileStateStatus = "";
+    [ObservableProperty] private string _fileStateColor = "#cccccc";
+
+    // Статус-бар (Внизу)
+    [ObservableProperty] private string _cursorPosition = "Стр 1, Стб 1";
+    [ObservableProperty] private string _editorLanguage = "plaintext";
+    [ObservableProperty] private bool _isSaving = false;
+    [ObservableProperty] private bool _isSaveComplete = false;
+    [ObservableProperty] private string _verifyMessage = "";
+    [ObservableProperty] private string _verifyIcon = "Checkmark24";
 
     public bool HasUnsavedChanges { get; private set; } = false;
 
-    // Делегат для уведомления главного окна о необходимости загрузить файл обратно на сервер
-    public Action<string, string>? OnSaveRequested;
+    // Делегат сохранения (теперь возвращает Task, чтобы мы могли дождаться загрузки)
+    public Func<string, string, Task<bool>>? OnSaveRequested;
 
-    public EditorViewModel(IAppLogger logger)
+    // Делегат для UI "Сохранить как"
+    public Action<string>? OnSaveAsRequested;
+
+    public EditorViewModel(IAppLogger logger, ISshService sshService)
     {
         _logger = logger;
+        _sshService = sshService;
     }
 
     public void Initialize(string localFilePath, string remoteFilePath)
@@ -58,31 +72,31 @@ public partial class EditorViewModel : ObservableObject, IDisposable
     {
         try
         {
-            string json = e.WebMessageAsJson;
-            using var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(e.WebMessageAsJson);
             var root = doc.RootElement;
 
             if (root.TryGetProperty("type", out var typeProp))
             {
                 string type = typeProp.GetString() ?? "";
 
-                if (type == "ready")
-                {
-                    // Редактор загрузился, отправляем ему содержимое файла
-                    LoadFileContentIntoEditor();
-                }
+                if (type == "ready") LoadFileContentIntoEditor();
                 else if (type == "content_changed")
                 {
-                    // Пользователь что-то напечатал
                     HasUnsavedChanges = true;
-                    SaveStatus = "Не сохранено *";
-                    StatusColor = "#ffaa00";
+                    FileStateStatus = "Не сохранено *";
+                    FileStateColor = "#ffaa00";
+                    IsSaveComplete = false; // Скрываем галочку сохранения
                 }
                 else if (type == "save_request")
                 {
-                    // Нажата кнопка Ctrl+S внутри редактора
-                    string content = root.GetProperty("content").GetString() ?? "";
-                    PerformSave(content);
+                    _ = PerformSmartSaveAsync(root.GetProperty("content").GetString() ?? "", RemoteFilePath);
+                }
+                else if (type == "cursor_moved")
+                {
+                    // Обновляем позицию курсора в статус-баре
+                    int line = root.GetProperty("line").GetInt32();
+                    int col = root.GetProperty("column").GetInt32();
+                    CursorPosition = $"Стр {line}, Стб {col}";
                 }
             }
         }
@@ -98,68 +112,123 @@ public partial class EditorViewModel : ObservableObject, IDisposable
                 string content = File.ReadAllText(_localFilePath);
                 string extension = Path.GetExtension(_localFilePath).ToLower();
 
-                // Простая эвристика для определения языка
-                string language = "plaintext";
-                if (extension == ".json") language = "json";
-                else if (extension == ".sh" || extension == ".bash") language = "shell";
-                else if (extension == ".yaml" || extension == ".yml") language = "yaml";
-                else if (extension == ".xml") language = "xml";
-                else if (extension == ".js") language = "javascript";
+                EditorLanguage = extension switch
+                {
+                    ".json" => "json",
+                    ".sh" or ".bash" => "shell",
+                    ".yaml" or ".yml" => "yaml",
+                    ".xml" => "xml",
+                    ".js" => "javascript",
+                    _ => "plaintext"
+                };
 
                 string safeContent = JsonSerializer.Serialize(content);
-
                 _webView?.ExecuteScriptAsync($@"
                     window.editor.setValue({safeContent});
-                    monaco.editor.setModelLanguage(window.editor.getModel(), '{language}');
+                    monaco.editor.setModelLanguage(window.editor.getModel(), '{EditorLanguage}');
                 ");
             }
         }
-        catch (Exception ex) { _logger.Log("EDITOR-ERR", $"Ошибка чтения файла: {ex.Message}"); }
+        catch { }
     }
 
-    [RelayCommand]
-    private void Save()
+    [RelayCommand] private void Save() => RequestContentFromEditor();
+    [RelayCommand] private void Undo() => _webView?.ExecuteScriptAsync("window.editor.trigger('keyboard', 'undo', null);");
+    [RelayCommand] private void Redo() => _webView?.ExecuteScriptAsync("window.editor.trigger('keyboard', 'redo', null);");
+
+    // ИСПРАВЛЕНИЕ: Вызов встроенного поиска Monaco (Ctrl+F)
+    [RelayCommand] private void Search() => _webView?.ExecuteScriptAsync("window.editor.getAction('actions.find').run();");
+
+    // ИСПРАВЛЕНИЕ: Кнопка Сохранить Как
+    [RelayCommand] private void SaveAs() => OnSaveAsRequested?.Invoke(Path.GetFileName(RemoteFilePath));
+
+    private void RequestContentFromEditor()
     {
-        // Просим JS прислать нам текущий текст
-        _webView?.ExecuteScriptAsync(@"
-            window.chrome.webview.postMessage({ 
-                type: 'save_request', 
-                content: window.editor.getValue() 
-            });
-        ");
+        _webView?.ExecuteScriptAsync("window.chrome.webview.postMessage({ type: 'save_request', content: window.editor.getValue() });");
     }
 
-    [RelayCommand]
-    private void Undo() => _webView?.ExecuteScriptAsync("window.editor.trigger('keyboard', 'undo', null);");
+    // Вызывается из View, когда пользователь ввел новое имя в диалоге "Сохранить как"
+    public void PerformSaveAs(string newFileName)
+    {
+        string directory = Path.GetDirectoryName(RemoteFilePath)?.Replace("\\", "/") ?? "/root";
+        if (!directory.EndsWith("/")) directory += "/";
 
-    [RelayCommand]
-    private void Redo() => _webView?.ExecuteScriptAsync("window.editor.trigger('keyboard', 'redo', null);");
+        string newRemotePath = directory + newFileName;
+        RemoteFilePath = newRemotePath; // Обновляем путь
+        WindowTitle = $"Редактирование: {newFileName}";
 
-    private void PerformSave(string content)
+        RequestContentFromEditor(); // Запускаем цикл сохранения
+    }
+
+    // === УМНЫЙ АЛГОРИТМ СОХРАНЕНИЯ И ПРОВЕРКИ ===
+    private async Task PerformSmartSaveAsync(string content, string targetRemotePath)
     {
         try
         {
-            // Сохраняем локально
+            // 1. UI: Показываем лоадер
+            IsSaving = true;
+            IsSaveComplete = false;
+
+            // 2. Валидация JSON (Защита от дурака)
+            if (EditorLanguage == "json")
+            {
+                try { JsonDocument.Parse(content); }
+                catch (JsonException)
+                {
+                    SetVerifyResult(false, "Ошибка: Невалидный JSON! Сервер может не запуститься.");
+                    return;
+                }
+            }
+
+            // 3. Сохраняем локально
             File.WriteAllText(_localFilePath, content);
             HasUnsavedChanges = false;
+            FileStateStatus = ""; // Очищаем звездочку вверху
 
-            SaveStatus = "Сохранено ✓";
-            StatusColor = "#00ff88";
+            // 4. Отправляем главному окну запрос на загрузку (SFTP)
+            if (OnSaveRequested != null)
+            {
+                bool uploadSuccess = await OnSaveRequested.Invoke(_localFilePath, targetRemotePath);
 
-            // Сообщаем главному окну, что пора отправлять файл по SFTP
-            OnSaveRequested?.Invoke(_localFilePath, RemoteFilePath);
+                if (uploadSuccess)
+                {
+                    // 5. ВЕРИФИКАЦИЯ: Сверяем размер файла локально и на сервере
+                    long localSize = new FileInfo(_localFilePath).Length;
+                    string remoteSizeStr = await _sshService.ExecuteCommandAsync($"stat -c %s '{targetRemotePath}'");
+
+                    if (long.TryParse(remoteSizeStr.Trim(), out long remoteSize) && localSize == remoteSize)
+                    {
+                        SetVerifyResult(true, $"✓ Успешно сохранено и проверено ({DateTime.Now:HH:mm:ss})");
+                    }
+                    else
+                    {
+                        SetVerifyResult(false, "Внимание! Размер файла на сервере не совпадает. Сохранение прервано.");
+                    }
+                }
+                else
+                {
+                    SetVerifyResult(false, "Ошибка SFTP: Не удалось загрузить файл.");
+                }
+            }
         }
         catch (Exception ex)
         {
-            SaveStatus = "Ошибка сохранения!";
-            StatusColor = "#ff4444";
-            _logger.Log("EDITOR-ERR", $"Ошибка записи: {ex.Message}");
+            SetVerifyResult(false, $"Системная ошибка: {ex.Message}");
+            _logger.Log("EDITOR-ERR", $"Ошибка умного сохранения: {ex.Message}");
         }
+    }
+
+    private void SetVerifyResult(bool isSuccess, string message)
+    {
+        IsSaving = false;
+        IsSaveComplete = true;
+        VerifyIcon = isSuccess ? "Checkmark24" : "Warning24";
+        VerifyMessage = message;
+        if (!isSuccess) FileStateStatus = "Ошибка сохранения!";
     }
 
     public void Dispose() { }
 
-    // Вшитый HTML-шаблон Monaco Editor (загружается через CDN)
     private string GetMonacoHtml()
     {
         return @"
@@ -178,7 +247,6 @@ public partial class EditorViewModel : ObservableObject, IDisposable
         require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.39.0/min/vs' }});
         require(['vs/editor/editor.main'], function() {
             
-            // Настраиваем темную тему, похожую на VS Code
             window.editor = monaco.editor.create(document.getElementById('container'), {
                 value: 'Загрузка...',
                 language: 'plaintext',
@@ -191,12 +259,19 @@ public partial class EditorViewModel : ObservableObject, IDisposable
                 wordWrap: 'on'
             });
 
-            // Отслеживаем изменения
             window.editor.onDidChangeModelContent(() => {
                 window.chrome.webview.postMessage({ type: 'content_changed' });
             });
 
-            // Биндим Ctrl+S
+            // ИСПРАВЛЕНИЕ: Отслеживание позиции курсора
+            window.editor.onDidChangeCursorPosition((e) => {
+                window.chrome.webview.postMessage({ 
+                    type: 'cursor_moved', 
+                    line: e.position.lineNumber,
+                    column: e.position.column
+                });
+            });
+
             window.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function() {
                 window.chrome.webview.postMessage({ 
                     type: 'save_request', 
@@ -204,7 +279,6 @@ public partial class EditorViewModel : ObservableObject, IDisposable
                 });
             });
 
-            // Сообщаем C#, что мы готовы принять текст
             window.chrome.webview.postMessage({ type: 'ready' });
         });
     </script>

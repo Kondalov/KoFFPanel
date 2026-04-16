@@ -30,22 +30,25 @@ public partial class TerminalWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ViewModel_OnFileReadyForEdit(string localPath, string remotePath)
     {
-        // Создаем ViewModel для редактора и передаем ей пути
-        var editorVm = new EditorViewModel(_viewModel.Logger);
+        // ИСПРАВЛЕНИЕ: Передаем _sshService в редактор для умной проверки
+        var editorVm = new EditorViewModel(_viewModel.Logger, _viewModel.SshService); // Тебе нужно будет открыть SshService в TerminalViewModel (сделать его public)
         editorVm.Initialize(localPath, remotePath);
 
-        // Когда в редакторе нажимают "Сохранить", мы просим терминал загрузить файл на сервер
-        editorVm.OnSaveRequested += async (local, remote) =>
+        // ИСПРАВЛЕНИЕ: Делегат теперь возвращает Task<bool>
+        editorVm.OnSaveRequested = async (local, remote) =>
         {
-            await _viewModel.UploadEditedFileAsync(local, remote);
+            try
+            {
+                await _viewModel.UploadEditedFileAsync(local, remote);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         };
 
-        // Открываем окно редактора поверх терминала
-        var editorWindow = new EditorWindow(editorVm)
-        {
-            Owner = this
-        };
-
+        var editorWindow = new EditorWindow(editorVm) { Owner = this };
         editorWindow.Show();
     }
 
