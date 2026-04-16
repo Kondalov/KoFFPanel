@@ -275,4 +275,18 @@ public partial class TerminalWindow : Wpf.Ui.Controls.FluentWindow
             }
         }
     }
+
+    // === ОЧИСТКА ТЕРМИНАЛА (ВЕНИК) ===
+    private void ClearTerminal_Click(object sender, MouseButtonEventArgs e)
+    {
+        // Временно сохраняем текст, который ты возможно уже начал вводить
+        string currentText = _viewModel.CommandInput;
+
+        // Подменяем текст на clear и отправляем на сервер
+        _viewModel.CommandInput = "clear";
+        _viewModel.SendManualCommand();
+
+        // Возвращаем твой недописанный текст обратно в поле
+        _viewModel.CommandInput = currentText;
+    }
 }
