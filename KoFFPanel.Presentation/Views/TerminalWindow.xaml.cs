@@ -10,6 +10,7 @@ namespace KoFFPanel.Presentation.Views;
 public partial class TerminalWindow : Wpf.Ui.Controls.FluentWindow
 {
     private readonly TerminalViewModel _viewModel;
+    private readonly Wpf.Ui.SnackbarService _snackbarService;
 
     public TerminalWindow(TerminalViewModel viewModel)
     {
@@ -17,11 +18,12 @@ public partial class TerminalWindow : Wpf.Ui.Controls.FluentWindow
         _viewModel = viewModel;
         DataContext = _viewModel;
 
+        // Инициализация сервиса всплывающих подсказок (Снекбар)
+        _snackbarService = new Wpf.Ui.SnackbarService();
+        _snackbarService.SetSnackbarPresenter(TerminalSnackbarPresenter);
+
         _viewModel.InitializeWebView(TerminalWebView);
-
-        // Подписка на событие готовности файла к редактированию
         _viewModel.OnFileReadyForEdit += ViewModel_OnFileReadyForEdit;
-
         this.Loaded += TerminalWindow_Loaded;
     }
 
@@ -58,13 +60,28 @@ public partial class TerminalWindow : Wpf.Ui.Controls.FluentWindow
             _viewModel.NavigateCommand.Execute(remoteFile);
         }
     }
-
-    private void CommandTextBox_KeyDown(object sender, KeyEventArgs e)
+    private async void CurrentDirectory_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (e.Key == Key.Enter)
+        if (e.ClickCount == 2 && !string.IsNullOrEmpty(_viewModel.CurrentDirectory))
         {
-            _viewModel.SendManualCommand();
+            Clipboard.SetText(_viewModel.CurrentDirectory);
+
+            // Открываем всплывающую подсказку у курсора мыши
+            CopyPopup.IsOpen = true;
+
+            // Ждем 1.5 секунды и скрываем её
+            await System.Threading.Tasks.Task.Delay(1500);
+            CopyPopup.IsOpen = false;
+        }
+    }
+    private void CommandTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // Если нажат Enter БЕЗ Shift
+        if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift)
+        {
             e.Handled = true;
+
+            _viewModel.SendManualCommand();
         }
     }
 

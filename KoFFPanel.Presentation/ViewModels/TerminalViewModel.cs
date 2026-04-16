@@ -17,9 +17,11 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
 {
     private readonly ISshService _sshService;
     private readonly IAppLogger _logger;
+    private readonly IServerMonitorService _monitorService;
+    private System.Timers.Timer? _monitoringTimer;
     public event Action<string, string>? OnFileReadyForEdit;
     public IAppLogger Logger => _logger;
-
+    
     private WebView2? _webView;
     private Renci.SshNet.ShellStream? _shellStream;
     private CancellationTokenSource? _readCts;
@@ -34,15 +36,18 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] private string _currentDirectory = "/root";
     [ObservableProperty] private ObservableCollection<RemoteFileItem> _files = new();
-
+    [ObservableProperty] private int _cpuUsage = 0;
+    [ObservableProperty] private int _ramUsage = 0;
+    [ObservableProperty] private int _ssdUsage = 0;
     [ObservableProperty] private string _commandInput = "";
 
     public VpnProfile? CurrentProfile { get; private set; }
 
-    public TerminalViewModel(ISshService sshService, IAppLogger logger)
+    public TerminalViewModel(ISshService sshService, IAppLogger logger, IServerMonitorService monitorService)
     {
         _sshService = sshService;
         _logger = logger;
+        _monitorService = monitorService;
     }
 
     public void Initialize(VpnProfile profile, string command)
@@ -95,6 +100,8 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
         ConnectionInfo = $"ПОДКЛЮЧЕНО: {CurrentProfile.Username}@{CurrentProfile.IpAddress}";
 
         await LoadFilesAsync();
+
+        StartMonitoring();
 
         try
         {
@@ -207,8 +214,18 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 Files.Clear();
-                if (CurrentDirectory != "/") Files.Add(new RemoteFileItem { Name = "..", IsDirectory = true });
-                foreach (var file in remoteFiles) Files.Add(new RemoteFileItem { Name = file.Name, IsDirectory = file.IsDir });
+
+                // Добавляем "Назад" ТОЛЬКО если мы не в корне
+                if (CurrentDirectory != "/")
+                {
+                    Files.Add(new RemoteFileItem { Name = "..", IsDirectory = true });
+                }
+
+                // ИСПРАВЛЕНИЕ: Игнорируем системные папки . и .. от самого сервера, чтобы не было дублей!
+                foreach (var file in remoteFiles.Where(f => f.Name != "." && f.Name != ".."))
+                {
+                    Files.Add(new RemoteFileItem { Name = file.Name, IsDirectory = file.IsDir });
+                }
             });
         }
         catch { }
@@ -349,9 +366,53 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
+        _monitoringTimer?.Stop();
+        _monitoringTimer?.Dispose();
         _readCts?.Cancel();
         _readCts?.Dispose();
         _shellStream?.Dispose();
+    }
+
+    private void StartMonitoring()
+    {
+        _monitoringTimer?.Stop();
+        _monitoringTimer?.Dispose();
+
+        _monitoringTimer = new System.Timers.Timer(5000); // Раз в 5 секунд
+        _monitoringTimer.Elapsed += async (s, e) => await UpdateServerStatsAsync();
+        _monitoringTimer.Start();
+
+        // Дергаем первый раз сразу, не дожидаясь 5 секунд
+        _ = UpdateServerStatsAsync();
+    }
+
+    private async Task UpdateServerStatsAsync()
+    {
+        if (_sshService == null || !_sshService.IsConnected || CurrentProfile == null) return;
+
+        try
+        {
+            // Получаем пинг
+            var pingResult = await _monitorService.PingServerAsync(CurrentProfile.IpAddress);
+            if (pingResult.Success)
+            {
+                PingMs = pingResult.RoundtripTime;
+            }
+
+            // Получаем ресурсы. Используем 'sing-box' как дефолт, т.к. мы просто запрашиваем CPU/RAM
+            var stats = await _monitorService.GetResourcesAsync(_sshService, "sing-box");
+
+            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+            {
+                CpuUsage = stats.Cpu;
+                RamUsage = stats.Ram;
+                SsdUsage = stats.Ssd;
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("TERM-MONITOR-ERR", $"Ошибка обновления статистики: {ex.Message}");
+        }
     }
 
     private string GetTerminalHtml()
@@ -367,7 +428,8 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: linear-gradient(320deg, #13151b, #2a0845, #6441A5); background-size: 400% 400%; animation: aurora 15s ease infinite; height: 100vh; width: 100vw; }
         @keyframes aurora { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-        #terminal { height: 100%; width: 100%; padding: 15px; box-sizing: border-box; background: rgba(19, 21, 27, 0.85); }
+        /* ИСПРАВЛЕНИЕ: Убрали гигантский padding 15px, чтобы убрать рамку */
+        #terminal { height: 100%; width: 100%; padding: 4px 8px; box-sizing: border-box; background: rgba(19, 21, 27, 0.85); }
         .xterm-viewport::-webkit-scrollbar { display: none; width: 0px; background: transparent; }
         .xterm-viewport { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
