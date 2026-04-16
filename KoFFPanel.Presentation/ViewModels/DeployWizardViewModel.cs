@@ -7,7 +7,9 @@ using KoFFPanel.Application.Services;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Services;
 using KoFFPanel.Presentation.Messages;
+using KoFFPanel.Presentation.Services; // НОВЫЙ USING ДЛЯ СЕРВИСА ОКОН
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -37,6 +39,8 @@ public partial class DeployWizardViewModel : ObservableObject
     private readonly ISmartPortValidator _portValidator;
     private readonly IAppLogger _logger;
     private readonly ICoreDeploymentService _deploymentService;
+    private readonly IProfileRepository _profileRepository;
+    private readonly IServerSelectionService _serverSelectionService; // НОВЫЙ СЕРВИС ДЛЯ ЧИСТОЙ АРХИТЕКТУРЫ
     private VpnProfile _server = null!;
 
     public Action? CloseAction { get; set; }
@@ -44,7 +48,7 @@ public partial class DeployWizardViewModel : ObservableObject
 
     [ObservableProperty] private bool _isXraySelected = true;
     [ObservableProperty] private bool _isSingBoxSelected;
-    [ObservableProperty] private bool _isTrustTunnelSelected; // ИСПРАВЛЕНИЕ: Добавлено ядро TrustTunnel
+    [ObservableProperty] private bool _isTrustTunnelSelected;
     [ObservableProperty] private bool _isCustomSelected;
 
     [ObservableProperty] private bool _isNotInstalling = true;
@@ -57,13 +61,17 @@ public partial class DeployWizardViewModel : ObservableObject
         ProtocolFactory protocolFactory,
         ISmartPortValidator portValidator,
         IAppLogger logger,
-        ICoreDeploymentService deploymentService)
+        ICoreDeploymentService deploymentService,
+        IProfileRepository profileRepository,
+        IServerSelectionService serverSelectionService) // ИНЪЕКЦИЯ НОВОГО СЕРВИСА
     {
         _ssh = ssh;
         _protocolFactory = protocolFactory;
         _portValidator = portValidator;
         _logger = logger;
         _deploymentService = deploymentService;
+        _profileRepository = profileRepository;
+        _serverSelectionService = serverSelectionService;
     }
 
     public async Task InitializeAsync(VpnProfile server)
@@ -239,12 +247,41 @@ public partial class DeployWizardViewModel : ObservableObject
             return;
         }
 
+        // === ИСПРАВЛЕНИЕ: Умный алгоритм выбора сервера перед установкой ===
+        var allServers = _profileRepository.LoadProfiles();
+
+        if (allServers.Count == 0)
+        {
+            StatusMessage = "ОШИБКА: Нет доступных серверов для установки!";
+            return;
+        }
+        else if (allServers.Count > 1)
+        {
+            // Используем новый сервис вместо прямого создания окна (Соблюдаем Clean Architecture)
+            var targetServer = _serverSelectionService.SelectServer(allServers, _server);
+
+            if (targetServer != null)
+            {
+                // Если пользователь выбрал другой сервер, переподключаем SSH и проверяем порты заново
+                if (_server.Id != targetServer.Id)
+                {
+                    bool revalidationPassed = await SwitchServerAndRevalidateAsync(targetServer, selectedItems);
+                    if (!revalidationPassed) return; // Защита от дурака сработала, порты заняты, прерываем деплой
+                }
+            }
+            else
+            {
+                StatusMessage = "Установка отменена пользователем.";
+                return;
+            }
+        }
+        // ====================================================================
+
         StatusMessage = "🚀 Развертывание ядра и портов... (Подождите)";
         IsNotInstalling = false;
 
         var protocolsToInstall = selectedItems.Select(p => (p.Builder, int.Parse(p.PortText))).ToList();
 
-        // ИСПРАВЛЕНИЕ: Передаем строковый идентификатор ядра вместо bool isSingBox
         var (success, log) = await _deploymentService.DeployFullStackAsync(_ssh, _server, GetSelectedCoreType(), protocolsToInstall);
 
         if (success)
@@ -263,5 +300,52 @@ public partial class DeployWizardViewModel : ObservableObject
             _logger.Log("WIZARD-ERROR", $"[DEPLOY-FAIL] {log}");
             IsNotInstalling = true;
         }
+    }
+
+    // === УМНЫЙ АЛГОРИТМ ПОВТОРНОЙ ВАЛИДАЦИИ (ЗАЩИТА ОТ ДУРАКА) ===
+    private async Task<bool> SwitchServerAndRevalidateAsync(VpnProfile targetServer, List<ProtocolSetupItem> selectedItems)
+    {
+        StatusMessage = $"Подключение к {targetServer.IpAddress}...";
+        _logger.Log("WIZARD-TRACE", $"[INFO] Изменен целевой сервер. Переподключение к {targetServer.IpAddress}");
+
+        _ssh.Disconnect();
+        var connectResult = await _ssh.ConnectAsync(targetServer.IpAddress!, targetServer.Port, targetServer.Username!, targetServer.Password!, targetServer.KeyPath ?? string.Empty);
+
+        if (connectResult != "SUCCESS")
+        {
+            StatusMessage = $"Ошибка подключения к выбранному серверу: {connectResult}";
+            return false;
+        }
+
+        _server = targetServer; // Жестко привязываем новый сервер к процессу установки
+
+        StatusMessage = "Повторная проверка портов на новом сервере...";
+        bool hasConflicts = false;
+
+        // Прогоняем каждый выбранный протокол через валидатор уже на новом SSH соединении
+        foreach (var item in selectedItems)
+        {
+            item.ValidationMessage = "Проверка на новом сервере...";
+            int port = int.Parse(item.PortText);
+
+            var (isValid, msg) = await _portValidator.ValidatePortAsync(_ssh, _server.Id, port, item.Builder.ProtocolType);
+
+            item.IsValid = isValid;
+            item.ValidationMessage = msg;
+
+            if (!isValid)
+            {
+                hasConflicts = true;
+            }
+        }
+
+        if (hasConflicts)
+        {
+            StatusMessage = "ОШИБКА: На выбранном сервере есть конфликты портов!";
+            _logger.Log("WIZARD-WARN", "[WARN] Обнаружены конфликты портов после смены сервера. Установка прервана.");
+            return false;
+        }
+
+        return true;
     }
 }

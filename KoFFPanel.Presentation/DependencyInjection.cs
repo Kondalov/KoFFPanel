@@ -38,6 +38,7 @@ public static class DependencyInjection
         services.AddTransient<ITrustTunnelUserManagerService, TrustTunnelUserManagerService>(); // ИСПРАВЛЕНИЕ: Добавлен сервис TT
         services.AddTransient<KoFFPanel.Presentation.ViewModels.ClientProtocolsViewModel>();
         services.AddTransient<KoFFPanel.Presentation.Views.ClientProtocolsWindow>();
+        services.AddTransient<IServerSelectionService, ServerSelectionService>();
 
         // РЕГИСТРАЦИЯ МОЗГА
         services.AddTransient<ISmartPortValidator, SmartPortValidator>();
