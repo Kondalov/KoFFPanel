@@ -186,19 +186,20 @@
                                 </Grid.RowDefinitions>
 
                                 <Border Grid.Row="0"
-                                        Background="#1A000000"
-                                        BorderBrush="#1AFFFFFF"
-                                        BorderThickness="0,0,0,1"
-                                        Padding="16,12">
+                                        Background="Transparent"
+                                        Padding="16,8">
                                     <StackPanel Orientation="Horizontal">
-                                        <ui:SymbolIcon Symbol="Folder24"
-                                                       Foreground="#ffb86c"
-                                                       Margin="0,0,8,0" />
+                                        <ui:SymbolIcon Symbol="FolderOpen24"
+                                                       Filled="True"
+                                                       Foreground="#ffaa00"
+                                                       Margin="0,0,10,0"
+                                                       FontSize="18" />
                                         <TextBlock Text="{Binding CurrentDirectory}"
-                                                   Foreground="#00f2ff"
+                                                   Foreground="#39ff14"
                                                    VerticalAlignment="Center"
                                                    FontFamily="Consolas"
-                                                   FontWeight="SemiBold"
+                                                   FontWeight="Bold"
+                                                   FontSize="14"
                                                    Cursor="Hand"
                                                    ToolTip="Двойной клик - Копировать путь"
                                                    MouseLeftButtonDown="CurrentDirectory_MouseDoubleClick" />
@@ -209,7 +210,7 @@
                                           ItemsSource="{Binding Files}"
                                           Background="Transparent"
                                           BorderThickness="0"
-                                          Margin="0,8,0,0">
+                                          Margin="0,4,0,0">
                                     <ListView.ItemContainerStyle>
                                         <Style TargetType="ListViewItem">
                                             <Setter Property="Padding"
@@ -226,7 +227,7 @@
                                     <ListView.ItemTemplate>
                                         <DataTemplate>
                                             <Border Background="Transparent"
-                                                    Padding="16,10">
+                                                    Padding="16,6">
                                                 <Border.ContextMenu>
                                                     <ContextMenu Background="#1c1e27"
                                                                  Foreground="White"
@@ -260,9 +261,10 @@
                                                 </Border.ContextMenu>
                                                 <StackPanel Orientation="Horizontal">
                                                     <ui:SymbolIcon Symbol="{Binding Icon}"
+                                                                   Filled="True"
                                                                    Foreground="{Binding IconColor}"
                                                                    FontSize="18"
-                                                                   Margin="0,0,10,0" />
+                                                                   Margin="0,0,12,0" />
                                                     <TextBlock Text="{Binding Name}"
                                                                Foreground="White"
                                                                FontSize="13"
@@ -320,93 +322,120 @@
             </Border>
 
             <Border Grid.Column="2"
-                    Background="#08FFFFFF"
-                    BorderBrush="#1AFFFFFF"
-                    BorderThickness="1"
                     CornerRadius="16"
-                    ClipToBounds="True">
+                    ClipToBounds="True"
+                    BorderBrush="#1AFFFFFF"
+                    BorderThickness="1">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <wv2:WebView2 Grid.Row="0"
-                                  x:Name="TerminalWebView"
-                                  DefaultBackgroundColor="Transparent"
-                                  Margin="0" />
-
-                    <Border Grid.Row="1"
-                            Background="#1A000000"
-                            BorderBrush="#1AFFFFFF"
-                            BorderThickness="0,1,0,0"
-                            Padding="16,16">
-
-                        <Border BorderBrush="#2a2d3d"
-                                BorderThickness="1"
-                                Background="#0a0c10"
-                                CornerRadius="24"
-                                Padding="4">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <ui:SymbolIcon Grid.Column="0"
-                                               Symbol="Star24"
-                                               Foreground="#5c6173"
-                                               FontSize="20"
-                                               VerticalAlignment="Top"
-                                               Margin="12,10,8,0" />
-
-                                <ui:TextBox x:Name="CommandTextBox"
-                                            Grid.Column="1"
-                                            Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}"
-                                            Background="Transparent"
-                                            Foreground="#00f2ff"
-                                            BorderThickness="0"
-                                            FontSize="14"
-                                            FontFamily="Consolas"
-                                            Padding="0,10,0,10"
-                                            PlaceholderText="Введите команду и нажмите Enter..."
-                                            TextWrapping="Wrap"
-                                            AcceptsReturn="True"
-                                            MinHeight="40"
-                                            MaxHeight="120"
-                                            VerticalScrollBarVisibility="Auto"
-                                            VerticalContentAlignment="Top"
-                                            PreviewKeyDown="CommandTextBox_PreviewKeyDown"
-                                            CaretBrush="#00f2ff" />
-
-                                <ui:Button Grid.Column="2"
-                                           Click="SendCommand_Click"
-                                           BorderThickness="0"
-                                           Padding="0"
-                                           Width="36"
-                                           Height="36"
-                                           VerticalAlignment="Bottom"
-                                           Margin="8,2,2,2"
-                                           Background="#2962ff"
-                                           Cursor="Hand">
-                                    <ui:Button.Template>
-                                        <ControlTemplate TargetType="ui:Button">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="18">
-                                                <ui:SymbolIcon Symbol="Send24"
-                                                               Foreground="White"
-                                                               FontSize="16"
-                                                               HorizontalAlignment="Center"
-                                                               VerticalAlignment="Center"
-                                                               Margin="2,2,0,0" />
-                                            </Border>
-                                        </ControlTemplate>
-                                    </ui:Button.Template>
-                                </ui:Button>
-                            </Grid>
-                        </Border>
+                    <Border Background="#0b0f19" />
+                    <Border>
+                        <Border.Background>
+                            <RadialGradientBrush GradientOrigin="0,0"
+                                                 Center="0,0"
+                                                 RadiusX="1"
+                                                 RadiusY="1">
+                                <GradientStop Color="#CC1A2364"
+                                              Offset="0" />
+                                <GradientStop Color="#001A2364"
+                                              Offset="0.8" />
+                            </RadialGradientBrush>
+                        </Border.Background>
                     </Border>
+                    <Border>
+                        <Border.Background>
+                            <RadialGradientBrush GradientOrigin="1,1"
+                                                 Center="1,1"
+                                                 RadiusX="1"
+                                                 RadiusY="1">
+                                <GradientStop Color="#B30F3C23"
+                                              Offset="0" />
+                                <GradientStop Color="#000F3C23"
+                                              Offset="0.8" />
+                            </RadialGradientBrush>
+                        </Border.Background>
+                    </Border>
+
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <wv2:WebView2 Grid.Row="0"
+                                      x:Name="TerminalWebView"
+                                      DefaultBackgroundColor="Transparent"
+                                      Margin="0" />
+
+                        <Border Grid.Row="1"
+                                Background="Transparent"
+                                Padding="16,0,16,16">
+
+                            <Border BorderBrush="#14FFFFFF"
+                                    BorderThickness="1"
+                                    Background="#08FFFFFF"
+                                    CornerRadius="24"
+                                    Padding="4">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <ui:SymbolIcon Grid.Column="0"
+                                                   Symbol="Star24"
+                                                   Foreground="#5c6173"
+                                                   FontSize="20"
+                                                   VerticalAlignment="Top"
+                                                   Margin="12,10,8,0" />
+
+                                    <ui:TextBox x:Name="CommandTextBox"
+                                                Grid.Column="1"
+                                                Text="{Binding CommandInput, UpdateSourceTrigger=PropertyChanged}"
+                                                Background="Transparent"
+                                                Foreground="#39ff14"
+                                                BorderThickness="0"
+                                                FontSize="14"
+                                                FontFamily="Consolas"
+                                                Padding="0,10,0,10"
+                                                PlaceholderText="Введите команду и нажмите Enter..."
+                                                TextWrapping="Wrap"
+                                                AcceptsReturn="True"
+                                                MinHeight="40"
+                                                MaxHeight="120"
+                                                VerticalScrollBarVisibility="Auto"
+                                                VerticalContentAlignment="Top"
+                                                PreviewKeyDown="CommandTextBox_PreviewKeyDown"
+                                                CaretBrush="#39ff14" />
+
+                                    <ui:Button Grid.Column="2"
+                                               Click="SendCommand_Click"
+                                               BorderThickness="0"
+                                               Padding="0"
+                                               Width="36"
+                                               Height="36"
+                                               VerticalAlignment="Bottom"
+                                               Margin="8,2,2,2"
+                                               Background="#2962ff"
+                                               Cursor="Hand">
+                                        <ui:Button.Template>
+                                            <ControlTemplate TargetType="ui:Button">
+                                                <Border Background="{TemplateBinding Background}"
+                                                        CornerRadius="18">
+                                                    <ui:SymbolIcon Symbol="Send24"
+                                                                   Foreground="White"
+                                                                   FontSize="16"
+                                                                   HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Margin="2,2,0,0" />
+                                                </Border>
+                                            </ControlTemplate>
+                                        </ui:Button.Template>
+                                    </ui:Button>
+                                </Grid>
+                            </Border>
+                        </Border>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>
@@ -416,6 +445,7 @@
                               HorizontalAlignment="Right"
                               VerticalAlignment="Bottom"
                               Margin="0,0,20,40" />
+
         <Popup x:Name="CopyPopup"
                Placement="Mouse"
                StaysOpen="False"

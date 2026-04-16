@@ -426,11 +426,24 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
     <script src=""https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js""></script>
     <script src=""https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js""></script>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: linear-gradient(320deg, #13151b, #2a0845, #6441A5); background-size: 400% 400%; animation: aurora 15s ease infinite; height: 100vh; width: 100vw; }
-        @keyframes aurora { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
-        /* ИСПРАВЛЕНИЕ: Убрали гигантский padding 15px, чтобы убрать рамку */
-        #terminal { height: 100%; width: 100%; padding: 4px 8px; box-sizing: border-box; background: rgba(19, 21, 27, 0.85); }
-        .xterm-viewport::-webkit-scrollbar { display: none; width: 0px; background: transparent; }
+        /* Делаем HTML и Body абсолютно прозрачными, чтобы просвечивал градиент из WPF */
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            background-color: transparent !important; 
+            overflow: hidden; 
+        }
+        
+        #terminal { 
+            height: 100%; width: 100%; padding: 12px 12px 0 12px; 
+            box-sizing: border-box; background: transparent !important; 
+        }
+        
+        /* Жесткое подавление черного фона во всех слоях xterm.js */
+        .xterm, .xterm-viewport, .xterm-screen, .xterm-text-layer, .xterm-canvas-layer { 
+            background-color: transparent !important; 
+        }
+        
+        .xterm-viewport::-webkit-scrollbar { display: none; }
         .xterm-viewport { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
 </head>
@@ -438,7 +451,13 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
     <div id=""terminal""></div>
     <script>
         const term = new Terminal({
-            theme: { background: 'transparent', foreground: '#d4d4d4', cursor: '#569cd6', selectionBackground: 'rgba(38, 79, 120, 0.5)' },
+            allowTransparency: true, /* ИСПРАВЛЕНИЕ: Жизненно важно для прозрачности канваса */
+            theme: { 
+                background: '#00000000', /* ИСПРАВЛЕНИЕ: Строгий HEX с нулем альфа-канала */
+                foreground: '#d4d4d4', 
+                cursor: '#569cd6', 
+                selectionBackground: 'rgba(38, 79, 120, 0.5)' 
+            },
             cursorBlink: true, fontSize: 15, fontFamily: ""'Cascadia Code', Consolas, 'Courier New', monospace"", scrollback: 5000
         });
 
