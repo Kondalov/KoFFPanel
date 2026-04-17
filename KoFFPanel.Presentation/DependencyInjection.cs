@@ -31,11 +31,11 @@ public static class DependencyInjection
         services.AddTransient<Views.TerminalWindow>();
         services.AddTransient<IDatabaseBackupService, DatabaseBackupService>();
         services.AddTransient<ISubscriptionService, SubscriptionService>();
-        services.AddTransient<ClientConfigViewModel>();
-        services.AddTransient<ClientConfigWindow>();
+
+        // ИСПРАВЛЕНИЕ: Вычистили ClientConfigViewModel и ClientConfigWindow
         services.AddTransient<ISingBoxConfiguratorService, SingBoxConfiguratorService>();
         services.AddTransient<ISingBoxUserManagerService, SingBoxUserManagerService>();
-        services.AddTransient<ITrustTunnelUserManagerService, TrustTunnelUserManagerService>(); // ИСПРАВЛЕНИЕ: Добавлен сервис TT
+        services.AddTransient<ITrustTunnelUserManagerService, TrustTunnelUserManagerService>();
         services.AddTransient<KoFFPanel.Presentation.ViewModels.ClientProtocolsViewModel>();
         services.AddTransient<KoFFPanel.Presentation.Views.ClientProtocolsWindow>();
         services.AddTransient<IServerSelectionService, ServerSelectionService>();
@@ -67,7 +67,7 @@ public static class DependencyInjection
         services.AddTransient<AddServerWindow>();
         services.AddTransient<CustomConfigWindow>();
 
-        // 5. Pages (НАШИ НОВЫЕ СТРАНИЦЫ НАВИГАЦИИ)
+        // 5. Pages
         services.AddTransient<DashboardView>();
         services.AddTransient<ClientsView>();
 

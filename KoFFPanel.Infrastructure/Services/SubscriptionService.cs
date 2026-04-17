@@ -1,5 +1,7 @@
 ﻿using KoFFPanel.Application.Interfaces;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace KoFFPanel.Infrastructure.Services;
@@ -21,7 +23,7 @@ public class SubscriptionService : ISubscriptionService
             _logger.Log("SUB", "Настройка Nginx для Hiddify-совместимых подписок...");
             await ssh.ExecuteCommandAsync("apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y nginx");
 
-            // ИСПРАВЛЕНИЕ: Добавляем строгую кодировку utf-8, которую требует Hiddify
+            // Настройка Nginx. Убрали强制 text/plain, так как отдаем Base64
             string nginxConfig = @"
 server {
     listen 8080;
@@ -30,7 +32,6 @@ server {
     
     location / {
         try_files $uri $uri/ =404;
-        default_type text/plain;
         add_header Content-Type ""text/plain; charset=utf-8"";
     }
 }";
@@ -50,20 +51,29 @@ server {
         }
     }
 
-    public async Task<bool> UpdateUserSubscriptionAsync(ISshService ssh, string uuid, string vlessLink)
+    public async Task<bool> UpdateUserSubscriptionAsync(ISshService ssh, string uuid, IEnumerable<string> links)
     {
-        if (!ssh.IsConnected || string.IsNullOrEmpty(vlessLink) || string.IsNullOrEmpty(uuid)) return false;
+        if (!ssh.IsConnected || links == null || !links.Any() || string.IsNullOrEmpty(uuid)) return false;
         try
         {
-            // ИСПРАВЛЕНИЕ ДЛЯ HIDDIFY: Отдаем RAW текст без Base64!
-            // Экранируем ссылку через Base64 локально, чтобы bash echo не сломался от спецсимволов (&, =, #),
-            // а на сервере декодируем обратно в сырой vless:// текст и сохраняем под именем UUID.
-            string safeBase64Link = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(vlessLink));
-            await ssh.ExecuteCommandAsync($"echo '{safeBase64Link}' | base64 -d > /var/www/xray-sub/{uuid}");
+            // ИСПРАВЛЕНИЕ АРХИТЕКТУРЫ ПОДПИСОК (Hiddify / v2rayNG Standard)
+            // 1. Отбрасываем пустые ссылки (например, если протокол выключен в БД)
+            var validLinks = links.Where(l => !string.IsNullOrWhiteSpace(l));
+
+            // 2. Склеиваем все ссылки, каждая с новой строки
+            string combinedLinks = string.Join("\n", validLinks);
+
+            // 3. Кодируем ВЕСЬ текстовый блок в Base64. 
+            // Это мировой стандарт для VPN-подписок. Hiddify сам скачает Base64 файл и раскодирует его.
+            string finalBase64Payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(combinedLinks));
+
+            // 4. Пишем готовый Base64 прямо в файл (без расшифровки на сервере)
+            await ssh.ExecuteCommandAsync($"echo '{finalBase64Payload}' > /var/www/xray-sub/{uuid}");
             return true;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.Log("SUB-ERROR", $"Ошибка обновления подписки: {ex.Message}");
             return false;
         }
     }
@@ -84,7 +94,6 @@ server {
 
     public string GetSubscriptionUrl(string serverIp, string uuid)
     {
-        // Теперь ссылка выглядит круто и безопасно: http://IP:8080/b9b3e1a0-5b5c...
         return $"http://{serverIp}:8080/{uuid}";
     }
 }

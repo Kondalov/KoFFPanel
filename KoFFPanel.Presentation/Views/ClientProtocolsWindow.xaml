@@ -4,7 +4,7 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:converters="clr-namespace:KoFFPanel.Presentation.Converters"
                  Title="{Binding WindowTitle}"
-                 Height="680"
+                 Height="720"
                  Width="600"
                  WindowStartupLocation="CenterOwner"
                  WindowBackdropType="None"
@@ -14,6 +14,41 @@
 
     <ui:FluentWindow.Resources>
         <converters:BooleanToVisibilityInvertibleConverter x:Key="BooleanToVisibilityConverter" />
+
+        <Style x:Key="NeonCopyBtnStyle"
+               TargetType="ui:Button"
+               BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Background"
+                    Value="#0AFFFFFF" />
+            <Setter Property="BorderThickness"
+                    Value="1" />
+            <Setter Property="Padding"
+                    Value="8" />
+            <Setter Property="Cursor"
+                    Value="Hand" />
+            <Setter Property="CornerRadius"
+                    Value="8" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+                    <Setter Property="Background"
+                            Value="#1AFFFFFF" />
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="-2" />
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+                <Trigger Property="IsPressed"
+                         Value="True">
+                    <Setter Property="RenderTransform">
+                        <Setter.Value>
+                            <TranslateTransform Y="1" />
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </ui:FluentWindow.Resources>
 
     <Border BorderThickness="0,3,0,0">
@@ -72,6 +107,77 @@
             <StackPanel Grid.Row="1">
 
                 <StackPanel Visibility="{Binding IsTrustTunnelMode, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverted}">
+
+                    <Border Background="#1A00f2ff"
+                            BorderBrush="#4D00f2ff"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="16"
+                            Margin="0,0,0,16">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,12"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="🌐"
+                                           FontSize="16"
+                                           Margin="0,0,8,0" />
+                                <TextBlock Text="HTTP ПОДПИСКА (Hiddify / v2rayNG)"
+                                           Foreground="#00f2ff"
+                                           FontSize="16"
+                                           FontWeight="Bold" />
+                            </StackPanel>
+                            <TextBlock Text="Главная ссылка для автоматического обновления всех протоколов."
+                                       Foreground="#B3FFFFFF"
+                                       FontSize="12"
+                                       Margin="0,0,0,12" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="10" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ui:TextBox Text="{Binding HttpLink}"
+                                            IsReadOnly="True"
+                                            Foreground="White"
+                                            FontWeight="Bold"
+                                            Background="#0AFFFFFF"
+                                            BorderThickness="1"
+                                            BorderBrush="#1AFFFFFF"
+                                            Height="36" />
+                                <ui:Button Grid.Column="2"
+                                           Command="{Binding CopyHttpCommand}"
+                                           Height="36"
+                                           Background="#1A00f2ff"
+                                           BorderThickness="1"
+                                           BorderBrush="#3300f2ff"
+                                           Cursor="Hand"
+                                           Style="{StaticResource NeonCopyBtnStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Copy24"
+                                                       Foreground="#00f2ff"
+                                                       Margin="0,0,6,0" />
+                                        <TextBlock Foreground="#00f2ff"
+                                                   FontWeight="Bold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text"
+                                                            Value="Копировать" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsHttpCopied}"
+                                                                     Value="True">
+                                                            <Setter Property="Text"
+                                                                    Value="Скопировано" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </ui:Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <Border Background="#0DFFFFFF"
                             BorderBrush="#1AFFFFFF"
                             BorderThickness="1"
@@ -89,15 +195,14 @@
                                     <TextBlock Text="⚡"
                                                FontSize="16"
                                                Margin="0,0,8,0" />
-                                    <TextBlock Text="VLESS (Reality)"
+                                    <TextBlock Text="VLESS (Reality) — Прямая ссылка"
                                                Foreground="White"
-                                               FontSize="16"
+                                               FontSize="14"
                                                FontWeight="Bold" />
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="1"
                                                  IsChecked="{Binding IsVlessEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                 VerticalAlignment="Center"
-                                                 ToolTip="Включить или отключить доступ к VLESS (Reality). При отключении клиент будет удален из конфигурации этого протокола на сервере." />
+                                                 VerticalAlignment="Center" />
                             </Grid>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -116,15 +221,16 @@
                                 <ui:Button Grid.Column="2"
                                            Command="{Binding CopyVlessCommand}"
                                            Height="36"
-                                           Background="#1A00f2ff"
+                                           Background="#1AFFFFFF"
                                            BorderThickness="1"
-                                           BorderBrush="#3300f2ff"
-                                           Cursor="Hand">
+                                           BorderBrush="#33FFFFFF"
+                                           Cursor="Hand"
+                                           Style="{StaticResource NeonCopyBtnStyle}">
                                     <StackPanel Orientation="Horizontal">
                                         <ui:SymbolIcon Symbol="Copy24"
-                                                       Foreground="#00f2ff"
+                                                       Foreground="White"
                                                        Margin="0,0,6,0" />
-                                        <TextBlock Foreground="#00f2ff"
+                                        <TextBlock Foreground="White"
                                                    FontWeight="Bold">
                                             <TextBlock.Style>
                                                 <Style TargetType="TextBlock">
@@ -163,9 +269,9 @@
                                     <TextBlock Text="🚀"
                                                FontSize="16"
                                                Margin="0,0,8,0" />
-                                    <TextBlock Text="Hysteria 2"
+                                    <TextBlock Text="Hysteria 2 — Прямая ссылка"
                                                Foreground="White"
-                                               FontSize="16"
+                                               FontSize="14"
                                                FontWeight="Bold" />
                                     <Border Background="#1Aff00aa"
                                             CornerRadius="4"
@@ -179,8 +285,7 @@
                                 </StackPanel>
                                 <ui:ToggleSwitch Grid.Column="1"
                                                  IsChecked="{Binding IsHysteria2Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                 VerticalAlignment="Center"
-                                                 ToolTip="Включить или отключить доступ к Hysteria 2." />
+                                                 VerticalAlignment="Center" />
                             </Grid>
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -202,7 +307,8 @@
                                            Background="#1Abd93f9"
                                            BorderThickness="1"
                                            BorderBrush="#33bd93f9"
-                                           Cursor="Hand">
+                                           Cursor="Hand"
+                                           Style="{StaticResource NeonCopyBtnStyle}">
                                     <StackPanel Orientation="Horizontal">
                                         <ui:SymbolIcon Symbol="Copy24"
                                                        Foreground="#bd93f9"
@@ -257,7 +363,7 @@
                                                FontWeight="Bold" />
                                 </Border>
                             </StackPanel>
-                            <TextBlock Text="Скопируйте этот конфиг и вставьте его в официальное приложение TrustTunnel на Windows или Android."
+                            <TextBlock Text="Скопируйте этот конфиг и вставьте его в официальное приложение TrustTunnel."
                                        Foreground="#B3FFFFFF"
                                        FontSize="12"
                                        TextWrapping="Wrap"
@@ -285,7 +391,8 @@
                                            Background="#1A50fa7b"
                                            BorderThickness="1"
                                            BorderBrush="#3350fa7b"
-                                           Cursor="Hand">
+                                           Cursor="Hand"
+                                           Style="{StaticResource NeonCopyBtnStyle}">
                                     <StackPanel Orientation="Vertical"
                                                 VerticalAlignment="Center">
                                         <ui:SymbolIcon Symbol="Copy24"

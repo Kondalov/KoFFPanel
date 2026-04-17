@@ -30,7 +30,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
     private readonly ISubscriptionService _subscriptionService;
     private readonly IClientAnalyticsService _analyticsService;
     private readonly ISingBoxUserManagerService _singBoxUserManager;
-    private readonly ITrustTunnelUserManagerService _trustTunnelUserManager; // ИСПРАВЛЕНИЕ: Инжектируем новый менеджер
+    private readonly ITrustTunnelUserManagerService _trustTunnelUserManager;
     private readonly IAppLogger _logger;
 
     private readonly Dictionary<string, long> _previousTrafficStats = new();
@@ -121,21 +121,21 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = $"Синхронизация БД с {activeCoreName}...");
 
         var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
-        var dbUsers = dbContext.Clients.ToList();
+        string ip = SelectedServer.IpAddress ?? "";
+
+        var dbUsers = dbContext.Clients.Where(c => c.ServerIp == ip).ToList();
 
         System.Windows.Application.Current.Dispatcher.Invoke(() => {
             Clients.Clear();
             foreach (var u in dbUsers) Clients.Add(u);
         });
 
-        _logger.Log("USER-SYNC", $"[INFO] Найдено клиентов в локальной БД (SQLite): {Clients.Count}.");
+        _logger.Log("USER-SYNC", $"[INFO] Найдено клиентов для сервера {ip} в локальной БД (SQLite): {Clients.Count}.");
 
-        string ip = SelectedServer.IpAddress ?? "";
         var vlessInbound = SelectedServer.Inbounds.FirstOrDefault(i => i.Protocol == "vless");
 
         try
         {
-            // ИСПРАВЛЕНИЕ: Трехуровневая маршрутизация
             bool syncSuccess = false;
             if (isSingBox)
                 syncSuccess = await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients);
@@ -154,7 +154,8 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
                     if (isTrustTunnel)
                     {
-                        await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, client.TrustTunnelLink);
+                        // ИСПРАВЛЕНИЕ: Обернули в массив, чтобы соответствовать новому контракту ISubscriptionService
+                        await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, new[] { client.TrustTunnelLink });
                     }
                     else if (vlessInbound != null)
                     {
@@ -166,7 +167,16 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
                             string shortId = settings.GetProperty("shortId").GetString() ?? "";
 
                             client.VlessLink = $"vless://{uuid}@{ip}:{vlessInbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel-{client.Email}";
-                            await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, client.VlessLink);
+
+                            // ИСПРАВЛЕНИЕ: Умная мульти-подписка. Собираем активные протоколы клиента
+                            var activeLinks = new List<string>();
+                            if (client.IsVlessEnabled && !string.IsNullOrEmpty(client.VlessLink))
+                                activeLinks.Add(client.VlessLink);
+
+                            if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link))
+                                activeLinks.Add(client.Hysteria2Link);
+
+                            await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, activeLinks);
                         }
                         catch { }
                     }
@@ -315,11 +325,13 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
             try
             {
+                string currentIp = value.IpAddress ?? "";
                 var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
-                var dbUsers = dbContext.Clients.ToList();
+
+                var dbUsers = dbContext.Clients.Where(c => c.ServerIp == currentIp).ToList();
                 foreach (var u in dbUsers) Clients.Add(u);
 
-                _logger.Log("DB-LOAD", $"Успешно загружено {Clients.Count} клиентов из базы данных SQLite.");
+                _logger.Log("DB-LOAD", $"Успешно загружено {Clients.Count} клиентов для сервера {currentIp} из базы данных SQLite.");
             }
             catch (Exception ex)
             {

@@ -778,15 +778,6 @@
                                                                FontSize="18" />
                                             </ui:Button>
 
-                                            <ui:Button Command="{Binding DataContext.CopyClientLinkCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                                       CommandParameter="{Binding}"
-                                                       ToolTip="Копировать ссылку"
-                                                       Style="{StaticResource BtnCopy}">
-                                                <ui:SymbolIcon Symbol="Link24"
-                                                               Foreground="#8be9fd"
-                                                               FontSize="18" />
-                                            </ui:Button>
-
                                             <ui:Button Command="{Binding DataContext.ToggleClientAccessCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                        CommandParameter="{Binding}"
                                                        ToolTip="Бан / Разбан"

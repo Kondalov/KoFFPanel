@@ -39,7 +39,7 @@ public partial class CabinetViewModel
             if (success)
             {
                 string uuid = vlessLink.Substring(8, 36);
-                await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, vlessLink);
+                await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, new[] { vlessLink });
                 ServerStatus = $"Онлайн (Клиент {vm.ClientName} добавлен!)";
                 await LoadUsersAsync();
             }
@@ -97,56 +97,7 @@ public partial class CabinetViewModel
         else ServerStatus = $"ОШИБКА: {msg}";
     }
 
-    [RelayCommand]
-    private void CopyClientLink(VpnClient? client)
-    {
-        var server = SelectedServer;
-        if (client == null || server == null) return;
-
-        string sni = server.Sni ?? "www.microsoft.com";
-        string pubKey = server.PublicKey ?? "";
-        string shortId = server.ShortId ?? "";
-        string email = client.Email ?? "Unknown";
-        string uuid = client.Uuid ?? "";
-        string ip = server.IpAddress ?? "";
-        int port = server.VpnPort > 0 ? server.VpnPort : 443;
-
-        string clientJson = "";
-
-        if (IsSingBoxActive())
-        {
-            clientJson = KoFFPanel.Application.Templates.SingBoxRealityConfigTemplate.GenerateClientConfig(ip, port, uuid, sni, pubKey, shortId);
-        }
-        else
-        {
-            clientJson = $$"""
-            {
-              "streamSettings": {
-                "network": "tcp",
-                "security": "reality",
-                "realitySettings": {
-                  "fingerprint": "chrome",
-                  "serverName": "{{sni}}",
-                  "publicKey": "{{pubKey}}",
-                  "shortId": "{{shortId}}",
-                  "spiderX": "/"
-                }
-              }
-            }
-            """;
-        }
-
-        var window = _serviceProvider.GetRequiredService<Views.ClientConfigWindow>();
-        if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
-
-        if (window.DataContext is ClientConfigViewModel vm)
-        {
-            string httpLink = _subscriptionService.GetSubscriptionUrl(ip, uuid) ?? "";
-            vm.Initialize(email, client.VlessLink ?? "", clientJson, httpLink);
-        }
-
-        window.ShowDialog();
-    }
+    // ВНИМАНИЕ: Метод CopyClientLink ПОЛНОСТЬЮ УДАЛЕН. Вызовы старого окна больше не нужны.
 
     [RelayCommand]
     private async Task EditClientAsync(VpnClient? client)
@@ -222,24 +173,45 @@ public partial class CabinetViewModel
 
         if (window.DataContext is ClientProtocolsViewModel vm)
         {
-            vm.Initialize(client);
+            // Генерируем HTTP-подписку и передаем ее в новое окно
+            string ip = server.IpAddress ?? "";
+            string httpLink = _subscriptionService.GetSubscriptionUrl(ip, client.Uuid ?? "") ?? "";
 
-            // ИСПРАВЛЕНИЕ: Делаем Callback асинхронным, чтобы дождаться ответа ядра
+            vm.Initialize(client, httpLink);
+
             vm.SaveCallback = async (updatedClient) =>
             {
-                string ip = server.IpAddress ?? "";
-
-                // 1. Сохраняем текущее состояние трафика
                 await _userManager.SaveTrafficToDbAsync(ip, Clients);
 
-                // 2. Отправляем новые тумблеры в ядро (Ядро проверит и сбросит их в БД при ошибке)
                 if (IsSingBoxActive())
                 {
                     await _singBoxUserManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients);
                 }
 
-                // 3. БРОНЕБОЙНЫЙ ФИКС UI: Мгновенно перезагружаем клиентов из БД!
-                // Если ядро отменило Hysteria 2, UI вытянет из БД "false" и обновит таблицу в памяти.
+                // === ИСПРАВЛЕНИЕ: Умное обновление файла HTTP-подписки ===
+                var activeLinks = new System.Collections.Generic.List<string>();
+
+                if (updatedClient.IsVlessEnabled && !string.IsNullOrEmpty(updatedClient.VlessLink))
+                {
+                    activeLinks.Add(updatedClient.VlessLink);
+                }
+
+                if (updatedClient.IsHysteria2Enabled && !string.IsNullOrEmpty(updatedClient.Hysteria2Link))
+                {
+                    activeLinks.Add(updatedClient.Hysteria2Link);
+                }
+
+                if (updatedClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(updatedClient.TrustTunnelLink))
+                {
+                    activeLinks.Add(updatedClient.TrustTunnelLink);
+                }
+
+                if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
+                {
+                    await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, updatedClient.Uuid ?? "", activeLinks);
+                }
+                // =========================================================
+
                 await LoadUsersAsync();
 
                 ServerStatus = $"Онлайн (Протоколы для {updatedClient.Email} сохранены)";
@@ -247,8 +219,4 @@ public partial class CabinetViewModel
         }
         window.ShowDialog();
     }
-
-    [RelayCommand] private void CopyXrayLogs() { if (!string.IsNullOrEmpty(XrayLogs)) System.Windows.Clipboard.SetText(XrayLogs); }
-    [RelayCommand] private async Task RestartXrayAsync() { var ssh = _currentMonitoringSsh; if (ssh != null && ssh.IsConnected) await _xrayService.RestartCoreAsync(ssh); }
-    [RelayCommand] private async Task RebootServerAsync() { var ssh = _currentMonitoringSsh; if (ssh != null && ssh.IsConnected) await _xrayService.RebootServerAsync(ssh); }
 }

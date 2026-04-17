@@ -19,6 +19,10 @@ public partial class ClientProtocolsViewModel : ObservableObject
 
     [ObservableProperty] private bool _isTrustTunnelMode = false;
 
+    // === HTTP ПОДПИСКА ===
+    [ObservableProperty] private string _httpLink = "";
+    [ObservableProperty] private bool _isHttpCopied;
+
     // === VLESS ===
     [ObservableProperty] private bool _isVlessEnabled;
     [ObservableProperty] private string _vlessLink = "";
@@ -37,20 +41,20 @@ public partial class ClientProtocolsViewModel : ObservableObject
     public Action<VpnClient>? SaveCallback { get; set; }
     public Action? CloseAction { get; set; }
 
-    // ИСПРАВЛЕНИЕ: Внедряем репозиторий через конструктор (DI-контейнер сделает это автоматически)
     public ClientProtocolsViewModel(IProfileRepository profileRepository)
     {
         _profileRepository = profileRepository;
     }
 
-    // ИСПРАВЛЕНИЕ: Вернули старую сигнатуру метода, чтобы не ломать вызов из других окон!
-    public void Initialize(VpnClient client)
+    // ИСПРАВЛЕНИЕ: Добавлен параметр httpLink из CabinetViewModel
+    public void Initialize(VpnClient client, string httpLink)
     {
         _originalClient = client;
         Email = client.Email;
         WindowTitle = $"Протоколы: {client.Email}";
 
-        // Умное определение ядра: ищем профиль сервера по IP клиента
+        HttpLink = httpLink;
+
         var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == client.ServerIp);
         IsTrustTunnelMode = (profile?.CoreType?.ToLower() == "trusttunnel");
 
@@ -70,8 +74,6 @@ public partial class ClientProtocolsViewModel : ObservableObject
         {
             try
             {
-                // ИСПРАВЛЕНИЕ: Явное указание System.Windows.Application
-                // Это решает ошибку конфликта с пространством имен KoFFPanel.Application
                 System.Windows.Application.Current.Dispatcher.Invoke(() => Clipboard.SetText(text));
                 return;
             }
@@ -80,6 +82,16 @@ public partial class ClientProtocolsViewModel : ObservableObject
                 await Task.Delay(20);
             }
         }
+    }
+
+    [RelayCommand]
+    private async Task CopyHttpAsync()
+    {
+        if (string.IsNullOrWhiteSpace(HttpLink)) return;
+        await SafeCopyToClipboardAsync(HttpLink);
+        IsHttpCopied = true;
+        await Task.Delay(2000);
+        IsHttpCopied = false;
     }
 
     [RelayCommand]
