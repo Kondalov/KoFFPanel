@@ -283,6 +283,19 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         CurrentView = view;
     }
 
+    [RelayCommand]
+    private void NavigateToBot()
+    {
+        ActiveMenu = "Bot";
+        var view = _serviceProvider.GetRequiredService<Views.Pages.BotView>();
+
+        // ИСПРАВЛЕНИЕ: Мы привязываем к странице ЕЕ СОБСТВЕННЫЙ "мозг" (BotViewModel), 
+        // а не "this" (CabinetViewModel), как было раньше!
+        view.DataContext = _serviceProvider.GetRequiredService<BotViewModel>();
+
+        CurrentView = view;
+    }
+
     private string FormatBytes(long bytes)
     {
         if (bytes == 0) return "0 B";

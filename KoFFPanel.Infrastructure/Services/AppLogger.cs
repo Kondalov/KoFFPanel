@@ -9,6 +9,7 @@ public class AppLogger : IAppLogger
     private readonly string _logDir;
     private readonly string _logFile;
     private readonly string _terminalLogFile;
+    private readonly string _botLogFile; // Добавили переменную для файла бота
 
     public AppLogger()
     {
@@ -19,9 +20,10 @@ public class AppLogger : IAppLogger
         }
 
         _logFile = Path.Combine(_logDir, "app_analytics.log");
-
-        // ИСПРАВЛЕНИЕ: Создаем выделенный лог для терминала!
         _terminalLogFile = Path.Combine(_logDir, "terminal.log");
+
+        // ИСПРАВЛЕНИЕ: Создаем выделенный лог для Telegram Бота
+        _botLogFile = Path.Combine(_logDir, "BOT.log");
 
         Log("SESSION", "\n====================== СТАРТ СЕССИИ ======================");
     }
@@ -32,10 +34,14 @@ public class AppLogger : IAppLogger
         {
             string logEntry = $"[{DateTime.Now:HH:mm:ss.fff}] [{module}] {message}\n";
 
-            // ИСПРАВЛЕНИЕ: Умная маршрутизация логов
+            // Умная маршрутизация логов
             if (module.StartsWith("TERM") || module.StartsWith("SSH"))
             {
                 File.AppendAllText(_terminalLogFile, logEntry);
+            }
+            else if (module.StartsWith("BOT")) // Все логи интеграции летят сюда
+            {
+                File.AppendAllText(_botLogFile, logEntry);
             }
             else
             {

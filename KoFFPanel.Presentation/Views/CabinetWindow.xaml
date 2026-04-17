@@ -185,21 +185,37 @@
                                 </StackPanel>
                             </ui:Button>
 
-                            <ui:Button IsEnabled="False"
-                                       ToolTip="В разработке"
+                            <ui:Button Command="{Binding NavigateToBotCommand}"
                                        HorizontalAlignment="Stretch"
-                                       Background="Transparent"
-                                       Foreground="#666666"
                                        BorderThickness="0"
                                        Padding="18,14"
+                                       Cursor="Hand"
                                        Margin="16,0,16,8">
+                                <ui:Button.Style>
+                                    <Style TargetType="ui:Button"
+                                           BasedOn="{StaticResource {x:Type ui:Button}}">
+                                        <Setter Property="Background"
+                                                Value="Transparent" />
+                                        <Setter Property="Foreground"
+                                                Value="#B3FFFFFF" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ActiveMenu}"
+                                                         Value="Bot">
+                                                <Setter Property="Background"
+                                                        Value="#1A00f2ff" />
+                                                <Setter Property="Foreground"
+                                                        Value="#00f2ff" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
                                 <StackPanel Orientation="Horizontal"
                                             HorizontalAlignment="Left"
                                             Width="200">
-                                    <ui:SymbolIcon Symbol="Settings24"
+                                    <ui:SymbolIcon Symbol="Bot24"
                                                    FontSize="20"
                                                    Margin="0,0,12,0" />
-                                    <TextBlock Text="Настройки"
+                                    <TextBlock Text="Telegram Bot"
                                                FontSize="16"
                                                FontWeight="SemiBold"
                                                VerticalAlignment="Center" />

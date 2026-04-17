@@ -60,6 +60,8 @@ public static class DependencyInjection
         services.AddTransient<TerminalViewModel>();
         services.AddTransient<AddServerViewModel>();
         services.AddTransient<CustomConfigViewModel>();
+        services.AddTransient<BotViewModel>();
+        services.AddSingleton<BotViewModel>();
 
         // 4. Views (Окна)
         services.AddTransient<CabinetWindow>();
@@ -70,6 +72,7 @@ public static class DependencyInjection
         // 5. Pages
         services.AddTransient<DashboardView>();
         services.AddTransient<ClientsView>();
+        services.AddTransient<Views.Pages.BotView>();
 
         return services;
     }
