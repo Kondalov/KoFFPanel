@@ -195,8 +195,7 @@
             </Border>
 
             <UniformGrid Grid.Column="1"
-                         Columns="2"
-                         Rows="2">
+                         Columns="2">
 
                 <Border Style="{StaticResource MetricCardStyle}">
                     <Grid>
@@ -269,6 +268,37 @@
                                        Foreground="#ffaa00"
                                        BorderBrush="#4Dffaa00"
                                        ToolTip="Забрать новых клиентов в ядро" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource MetricCardStyle}">
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,0,0,15">
+                            <ui:SymbolIcon Symbol="Key24"
+                                           Foreground="#bd93f9"
+                                           FontSize="20"
+                                           Margin="0,0,10,0" />
+                            <TextBlock Text="Резервный Пул"
+                                       Foreground="#B3FFFFFF"
+                                       FontWeight="SemiBold"
+                                       FontSize="16" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding ReserveKeysCount}"
+                                       Foreground="White"
+                                       FontSize="48"
+                                       FontWeight="Bold"
+                                       Margin="0,0,10,0" />
+                            <ui:Button Command="{Binding RefillReservePoolCommand}"
+                                       Content="ПОПОЛНИТЬ РЕЗЕРВ"
+                                       Margin="20,0,0,0"
+                                       Padding="15,8"
+                                       Background="#1Abd93f9"
+                                       Foreground="#bd93f9"
+                                       BorderBrush="#4Dbd93f9"
+                                       ToolTip="Создать ключи для мгновенной выдачи ботом" />
                         </StackPanel>
                     </StackPanel>
                 </Border>

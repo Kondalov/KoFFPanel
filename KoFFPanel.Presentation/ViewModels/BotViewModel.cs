@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using System.Windows.Threading;
+using CommunityToolkit.Mvvm.Messaging;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
@@ -24,6 +25,7 @@ public partial class BotViewModel : ObservableObject
     [ObservableProperty] private string _botIpAddress = "127.0.0.1";
     [ObservableProperty] private string _botPort = "5000";
     [ObservableProperty] private string _apiSecret = "";
+    [ObservableProperty] private int _reserveKeysCount = 0;
 
     [ObservableProperty] private string _botStatus = "Ожидание проверки...";
     [ObservableProperty] private bool _isBotOnline = false;
@@ -104,7 +106,7 @@ public partial class BotViewModel : ObservableObject
         catch { }
     }
 
-    // === УМНЫЙ ПУЛЬС (Автоматическое поддержание статуса) ===
+    // === УМНЫЙ ПУЛЬС (Автоматическое поддержание статуса + Глубокие логи) ===
     private async Task HeartbeatCheckAsync()
     {
         if (string.IsNullOrWhiteSpace(ApiSecret)) return;
@@ -114,10 +116,40 @@ public partial class BotViewModel : ObservableObject
             request.Headers.Add("X-API-KEY", ApiSecret);
             var response = await _httpClient.SendAsync(request);
 
+            // СБОР ЛОГОВ: Читаем сырой ответ бота как текст, чтобы поймать ошибку!
+            string rawPendingContent = await response.Content.ReadAsStringAsync();
+            _logger.Log("API-DIAGNOSTIC", $"[PULSE] Ответ /sync/pending. Статус: {response.StatusCode}. Тело: '{rawPendingContent}'");
+
             if (response.IsSuccessStatusCode)
             {
-                var pendingUsers = await response.Content.ReadFromJsonAsync<List<PendingUserDto>>();
-                PendingUsersCount = pendingUsers?.Count ?? 0;
+                // Пытаемся безопасно распарсить
+                try
+                {
+                    var pendingUsers = JsonSerializer.Deserialize<List<PendingUserDto>>(rawPendingContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    PendingUsersCount = pendingUsers?.Count ?? 0;
+                }
+                catch (Exception jsonEx)
+                {
+                    _logger.Log("API-DIAGNOSTIC", $"[КРИТИЧЕСКАЯ ОШИБКА ПАРСИНГА] {jsonEx.Message}");
+                    throw; // Пробрасываем ошибку в UI, чтобы ты ее увидел
+                }
+
+                var poolReq = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/sync/pool/count"));
+                poolReq.Headers.Add("X-API-KEY", ApiSecret);
+                var poolRes = await _httpClient.SendAsync(poolReq);
+
+                string rawPoolContent = await poolRes.Content.ReadAsStringAsync();
+                _logger.Log("API-DIAGNOSTIC", $"[PULSE] Ответ /sync/pool/count. Статус: {poolRes.StatusCode}. Тело: '{rawPoolContent}'");
+
+                if (poolRes.IsSuccessStatusCode)
+                {
+                    try
+                    {
+                        var poolData = JsonSerializer.Deserialize<ReserveCountDto>(rawPoolContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        ReserveKeysCount = poolData?.ReserveCount ?? 0;
+                    }
+                    catch { } // Игнорируем ошибку счетчика, чтобы не ломать интерфейс
+                }
 
                 if (!IsBotOnline || BotStatus != "ОНЛАЙН")
                 {
@@ -128,13 +160,16 @@ public partial class BotViewModel : ObservableObject
             else
             {
                 IsBotOnline = false;
-                BotStatus = "ОШИБКА АВТОРИЗАЦИИ";
+                BotStatus = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    ? "ОШИБКА АВТОРИЗАЦИИ"
+                    : $"ОШИБКА API: {(int)response.StatusCode}";
             }
         }
-        catch
+        catch (Exception ex)
         {
             IsBotOnline = false;
             BotStatus = "ОФФЛАЙН (Недоступен)";
+            _logger.Log("API-DIAGNOSTIC", $"[СЕРЬЕЗНЫЙ СБОЙ СОЕДИНЕНИЯ] {ex.Message}");
         }
     }
 
@@ -170,14 +205,31 @@ public partial class BotViewModel : ObservableObject
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                var stats = await response.Content.ReadFromJsonAsync<BotStatsDto>();
-                if (stats != null)
+                var pendingUsers = await response.Content.ReadFromJsonAsync<List<PendingUserDto>>();
+                PendingUsersCount = pendingUsers?.Count ?? 0;
+
+                var poolReq = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/sync/pool/count"));
+                poolReq.Headers.Add("X-API-KEY", ApiSecret);
+                var poolRes = await _httpClient.SendAsync(poolReq);
+                if (poolRes.IsSuccessStatusCode)
                 {
-                    TotalBotUsers = stats.TotalUsers;
-                    _lastNightSyncDate = now.Date;
-                    LastNightlySyncText = $"Обновлено: {now:dd.MM.yy HH:mm}";
-                    _logger.Log("BOT-STATS", $"Статистика обновлена: {TotalBotUsers} юзеров.");
+                    var poolData = await poolRes.Content.ReadFromJsonAsync<ReserveCountDto>();
+                    ReserveKeysCount = poolData?.ReserveCount ?? 0;
                 }
+
+                if (!IsBotOnline || BotStatus != "ОНЛАЙН")
+                {
+                    IsBotOnline = true;
+                    BotStatus = "ОНЛАЙН";
+                }
+            }
+            else
+            {
+                IsBotOnline = false;
+                // ИСПРАВЛЕНИЕ: Теперь панель покажет реальную ошибку, если это не 401!
+                BotStatus = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    ? "ОШИБКА АВТОРИЗАЦИИ"
+                    : $"ОШИБКА API: {(int)response.StatusCode}";
             }
         }
         catch (Exception ex)
@@ -213,24 +265,51 @@ public partial class BotViewModel : ObservableObject
             var cabinetVm = _serviceProvider.GetRequiredService<CabinetViewModel>();
             var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
             var syncedUuids = new List<string>();
+            bool needsDeployment = false;
 
             foreach (var pUser in pendingUsers)
             {
-                var newClient = new VpnClient
-                {
-                    Uuid = pUser.Uuid,
-                    Email = pUser.Email,
-                    ServerIp = pUser.ServerIp,
-                    TrafficLimit = pUser.TrafficLimitBytes,
-                    IsActive = pUser.IsActive,
-                    Protocol = "Offline"
-                };
-                dbContext.Clients.Add(newClient);
-                syncedUuids.Add(pUser.Uuid);
+                var existingClient = dbContext.Clients.FirstOrDefault(c => c.Uuid == pUser.Uuid);
 
-                if (cabinetVm.SelectedServer?.IpAddress == pUser.ServerIp)
-                    System.Windows.Application.Current.Dispatcher.Invoke(() => cabinetVm.Clients.Add(newClient));
+                if (existingClient != null)
+                {
+                    existingClient.Email = pUser.Email;
+                    existingClient.TrafficLimit = pUser.TrafficLimitBytes;
+                    existingClient.ExpiryDate = DateTime.Now.AddDays(30);
+
+                    var uiClient = cabinetVm.Clients.FirstOrDefault(c => c.Uuid == pUser.Uuid);
+                    if (uiClient != null)
+                    {
+                        uiClient.Email = pUser.Email;
+                        uiClient.TrafficLimit = pUser.TrafficLimitBytes;
+                    }
+                }
+                else
+                {
+                    var newClient = new VpnClient
+                    {
+                        Uuid = pUser.Uuid,
+                        Email = pUser.Email,
+                        ServerIp = pUser.ServerIp,
+                        TrafficLimit = pUser.TrafficLimitBytes,
+                        IsActive = pUser.IsActive,
+                        Protocol = "VLESS",
+                        IsVlessEnabled = true,
+                        IsP2PBlocked = true,
+                        ExpiryDate = DateTime.Now.AddDays(30)
+                    };
+                    dbContext.Clients.Add(newClient);
+
+                    if (cabinetVm.SelectedServer?.IpAddress == pUser.ServerIp)
+                    {
+                        System.Windows.Application.Current.Dispatcher.Invoke(() => cabinetVm.Clients.Add(newClient));
+                    }
+                }
+
+                syncedUuids.Add(pUser.Uuid);
+                needsDeployment = true;
             }
+
             await dbContext.SaveChangesAsync();
 
             var commitReq = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/sync/commit"));
@@ -238,13 +317,96 @@ public partial class BotViewModel : ObservableObject
             commitReq.Content = JsonContent.Create(new CommitRequestDto { Uuids = syncedUuids });
             await _httpClient.SendAsync(commitReq);
 
-            if (cabinetVm.SelectedServer != null)
-                cabinetVm.Receive(new Messages.CoreDeployedMessage(cabinetVm.SelectedServer));
+            // ИСПРАВЛЕНО: Отправляем глобальный сигнал настоящему окну!
+            if (needsDeployment && cabinetVm.SelectedServer != null)
+            {
+                WeakReferenceMessenger.Default.Send(new KoFFPanel.Presentation.Messages.CoreDeployedMessage(cabinetVm.SelectedServer));
+            }
 
             _logger.Log("BOT-SYNC", $"Синхронизировано {syncedUuids.Count} юзеров.");
             PendingUsersCount = 0;
         }
-        finally { IsSyncing = false; BotStatus = oldStatus; }
+        finally
+        {
+            IsSyncing = false;
+            BotStatus = oldStatus;
+            await HeartbeatCheckAsync();
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefillReservePoolAsync()
+    {
+        if (!IsBotOnline) return;
+
+        var cabinetVm = _serviceProvider.GetRequiredService<CabinetViewModel>();
+        var server = cabinetVm.SelectedServer;
+
+        if (server == null || cabinetVm.ServerStatus == "Ожидание...")
+        {
+            MessageBox.Show("Сначала выберите сервер во вкладке 'Сервер' и дождитесь подключения мониторинга!", "Внимание", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        int keysNeeded = 5 - ReserveKeysCount; // Держим неснижаемый запас в 5 ключей
+        if (keysNeeded <= 0) return;
+
+        IsSyncing = true;
+        string oldStatus = BotStatus;
+        BotStatus = $"Создаем {keysNeeded} резервных ключей...";
+
+        try
+        {
+            var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+            var keysToPush = new List<ReserveKeyDto>();
+
+            for (int i = 0; i < keysNeeded; i++)
+            {
+                string newUuid = Guid.NewGuid().ToString();
+                string tempEmail = $"res_{newUuid.Substring(0, 5)}"; // res = reserve
+                long tempLimit = 1024L * 1024 * 1024; // 1 ГБ (лимит для гостя)
+
+                // 1. Создаем локально в БД панели
+                var newClient = new VpnClient
+                {
+                    Uuid = newUuid,
+                    Email = tempEmail,
+                    ServerIp = server.IpAddress,
+                    TrafficLimit = tempLimit,
+                    IsActive = true,
+                    Protocol = "VLESS",
+                    ExpiryDate = DateTime.Now.AddDays(3),
+                    IsVlessEnabled = true,
+                    IsP2PBlocked = true
+                };
+
+                dbContext.Clients.Add(newClient);
+                keysToPush.Add(new ReserveKeyDto { Uuid = newUuid, ServerIp = server.IpAddress, TrafficLimitBytes = tempLimit });
+
+                System.Windows.Application.Current.Dispatcher.Invoke(() => cabinetVm.Clients.Add(newClient));
+            }
+
+            await dbContext.SaveChangesAsync();
+
+            // 2. Загружаем пул ключей в Бота
+            var req = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/sync/pool"));
+            req.Headers.Add("X-API-KEY", ApiSecret);
+            req.Content = JsonContent.Create(keysToPush);
+            await _httpClient.SendAsync(req);
+
+            // 3. МАГИЯ АРХИТЕКТУРЫ (ИСПРАВЛЕНО): 
+            // Отправляем глобальный сигнал НАСТОЯЩЕМУ окну кабинета, у которого есть доступ к SSH!
+            WeakReferenceMessenger.Default.Send(new KoFFPanel.Presentation.Messages.CoreDeployedMessage(server));
+
+            ReserveKeysCount += keysNeeded;
+            _logger.Log("BOT-POOL", $"Успешно добавлено {keysNeeded} ключей в резерв.");
+        }
+        finally
+        {
+            IsSyncing = false;
+            BotStatus = oldStatus;
+            await HeartbeatCheckAsync();
+        }
     }
 
     [RelayCommand]
@@ -308,7 +470,13 @@ public partial class BotViewModel : ObservableObject
     }
 }
 
+// ... (выше заканчивается код класса BotViewModel)
+
 public class CommitRequestDto { public List<string> Uuids { get; set; } = new(); }
 public class PendingUserDto { public string Uuid { get; set; } = ""; public string Email { get; set; } = ""; public string ServerIp { get; set; } = ""; public long TrafficLimitBytes { get; set; } public bool IsActive { get; set; } }
 public class LegacyUserDto { public string Uuid { get; set; } = ""; public string Email { get; set; } = ""; public string ServerIp { get; set; } = ""; public long TrafficLimitBytes { get; set; } public DateTime? ExpiryDate { get; set; } }
 public class BotStatsDto { public int TotalUsers { get; set; } }
+
+// === ДОБАВЛЯЕМ НОВЫЕ КЛАССЫ СЮДА (В САМЫЙ КОНЕЦ ФАЙЛА) ===
+public class ReserveCountDto { public int ReserveCount { get; set; } }
+public class ReserveKeyDto { public string Uuid { get; set; } = ""; public string ServerIp { get; set; } = ""; public long TrafficLimitBytes { get; set; } }

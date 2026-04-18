@@ -53,22 +53,33 @@ server {
 
     public async Task<bool> UpdateUserSubscriptionAsync(ISshService ssh, string uuid, IEnumerable<string> links)
     {
-        if (!ssh.IsConnected || links == null || !links.Any() || string.IsNullOrEmpty(uuid)) return false;
+        if (!ssh.IsConnected || string.IsNullOrEmpty(uuid)) return false;
         try
         {
-            // ИСПРАВЛЕНИЕ АРХИТЕКТУРЫ ПОДПИСОК (Hiddify / v2rayNG Standard)
-            // 1. Отбрасываем пустые ссылки (например, если протокол выключен в БД)
-            var validLinks = links.Where(l => !string.IsNullOrWhiteSpace(l));
+            // Безопасная очистка списка
+            var validLinks = links != null ? links.Where(l => !string.IsNullOrWhiteSpace(l)).ToList() : new List<string>();
+            string combinedLinks;
 
-            // 2. Склеиваем все ссылки, каждая с новой строки
-            string combinedLinks = string.Join("\n", validLinks);
+            if (!validLinks.Any())
+            {
+                // Если ссылок нет (ожидает синхронизации), создаем файл-заглушку
+                // Это предотвратит ошибку 404 Not Found в Hiddify
+                _logger.Log("SUB-WARN", $"Внимание: для {uuid} нет рабочих ссылок. Создаем заглушку.");
+                combinedLinks = "# Профиль ожидает финальной настройки ядром...";
+            }
+            else
+            {
+                combinedLinks = string.Join("\n", validLinks);
+            }
 
-            // 3. Кодируем ВЕСЬ текстовый блок в Base64. 
-            // Это мировой стандарт для VPN-подписок. Hiddify сам скачает Base64 файл и раскодирует его.
             string finalBase64Payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(combinedLinks));
+            _logger.Log("DEEP-TRACE", $"Base64 Payload сгенерирован. Длина: {finalBase64Payload.Length}");
 
-            // 4. Пишем готовый Base64 прямо в файл (без расшифровки на сервере)
-            await ssh.ExecuteCommandAsync($"echo '{finalBase64Payload}' > /var/www/xray-sub/{uuid}");
+            var cmdResult = await ssh.ExecuteCommandAsync($"echo '{finalBase64Payload}' > /var/www/xray-sub/{uuid}.tmp && mv /var/www/xray-sub/{uuid}.tmp /var/www/xray-sub/{uuid}");
+            _logger.Log("DEEP-TRACE", $"Результат SSH записи файла {uuid}: '{cmdResult}'");
+
+            // Атомарная запись (.tmp -> mv). Гарантирует, что Nginx не отдаст битый файл в момент перезаписи
+            await ssh.ExecuteCommandAsync($"echo '{finalBase64Payload}' > /var/www/xray-sub/{uuid}.tmp && mv /var/www/xray-sub/{uuid}.tmp /var/www/xray-sub/{uuid}");
             return true;
         }
         catch (Exception ex)

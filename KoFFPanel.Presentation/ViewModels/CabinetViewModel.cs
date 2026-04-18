@@ -1,7 +1,10 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
+using KoFFPanel.Presentation.Messages;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
@@ -11,10 +14,8 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Media.Imaging;
 using System.Windows.Media;
-using CommunityToolkit.Mvvm.Messaging;
-using KoFFPanel.Presentation.Messages;
+using System.Windows.Media.Imaging;
 
 namespace KoFFPanel.Presentation.ViewModels;
 
@@ -106,11 +107,21 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
     public async void Receive(CoreDeployedMessage message)
     {
+        _logger.Log("USER-SYNC", "Сигнал синхронизации получен!");
+
         if (SelectedServer == null || message.Server == null || message.Server.Id != SelectedServer.Id)
+        {
+            _logger.Log("USER-SYNC", "ОТМЕНА: Несовпадение серверов или сервер не выбран.");
             return;
+        }
 
         var ssh = _currentMonitoringSsh;
-        if (ssh == null || !ssh.IsConnected) return;
+        if (ssh == null || !ssh.IsConnected)
+        {
+            _logger.Log("USER-SYNC", "КРИТИЧЕСКАЯ ОТМЕНА: Нет активного SSH! (Сервер не на мониторинге)");
+            System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = "Ошибка: Нет SSH подключения");
+            return;
+        }
 
         _logger.Log("USER-SYNC", $"[START] Синхронизация БД с ядром для {SelectedServer.IpAddress}");
 
@@ -130,13 +141,10 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
             foreach (var u in dbUsers) Clients.Add(u);
         });
 
-        _logger.Log("USER-SYNC", $"[INFO] Найдено клиентов для сервера {ip} в локальной БД (SQLite): {Clients.Count}.");
-
-        var vlessInbound = SelectedServer.Inbounds.FirstOrDefault(i => i.Protocol == "vless");
-
         try
         {
             bool syncSuccess = false;
+
             if (isSingBox)
                 syncSuccess = await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients);
             else if (isTrustTunnel)
@@ -146,44 +154,32 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
             if (syncSuccess)
             {
-                _logger.Log("USER-SYNC", $"[SUCCESS] Клиенты успешно вшиты в {activeCoreName}!");
+                _logger.Log("USER-SYNC", $"[SUCCESS] Клиенты вшиты в {activeCoreName}. Собираем подписки...");
 
-                foreach (var client in Clients)
+                var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                var updatedUsers = freshContext.Clients.AsNoTracking().Where(c => c.ServerIp == ip).ToList();
+
+                foreach (var client in updatedUsers)
                 {
                     string uuid = client.Uuid ?? "";
+                    var activeLinks = new List<string>();
 
-                    if (isTrustTunnel)
-                    {
-                        // ИСПРАВЛЕНИЕ: Обернули в массив, чтобы соответствовать новому контракту ISubscriptionService
-                        await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, new[] { client.TrustTunnelLink });
-                    }
-                    else if (vlessInbound != null)
-                    {
-                        try
-                        {
-                            var settings = System.Text.Json.JsonDocument.Parse(vlessInbound.SettingsJson).RootElement;
-                            string pubKey = settings.GetProperty("publicKey").GetString() ?? "";
-                            string sni = settings.GetProperty("sni").GetString() ?? "www.microsoft.com";
-                            string shortId = settings.GetProperty("shortId").GetString() ?? "";
+                    if (client.IsTrustTunnelEnabled && !string.IsNullOrEmpty(client.TrustTunnelLink) && !client.TrustTunnelLink.Contains("не установлен"))
+                        activeLinks.Add(client.TrustTunnelLink);
 
-                            client.VlessLink = $"vless://{uuid}@{ip}:{vlessInbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel-{client.Email}";
+                    if (client.IsVlessEnabled && !string.IsNullOrEmpty(client.VlessLink) && !client.VlessLink.Contains("не установлен"))
+                        activeLinks.Add(client.VlessLink);
 
-                            // ИСПРАВЛЕНИЕ: Умная мульти-подписка. Собираем активные протоколы клиента
-                            var activeLinks = new List<string>();
-                            if (client.IsVlessEnabled && !string.IsNullOrEmpty(client.VlessLink))
-                                activeLinks.Add(client.VlessLink);
+                    if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link) && !client.Hysteria2Link.Contains("не установлен"))
+                        activeLinks.Add(client.Hysteria2Link);
 
-                            if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link))
-                                activeLinks.Add(client.Hysteria2Link);
-
-                            await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, activeLinks);
-                        }
-                        catch { }
-                    }
+                    await _subscriptionService.UpdateUserSubscriptionAsync(ssh, uuid, activeLinks);
                 }
 
                 System.Windows.Application.Current.Dispatcher.Invoke(() => {
-                    ServerStatus = $"Онлайн (Все {Clients.Count} клиентов синхронизированы с {activeCoreName})";
+                    Clients.Clear();
+                    foreach (var u in updatedUsers) Clients.Add(u);
+                    ServerStatus = $"Онлайн (Все {Clients.Count} клиентов синхронизированы)";
                 });
             }
             else
@@ -193,7 +189,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         }
         catch (Exception ex)
         {
-            _logger.Log("USER-SYNC", $"[CRITICAL ERROR] Исключение: {ex.Message}\n{ex.StackTrace}");
+            _logger.Log("USER-SYNC", $"[CRITICAL ERROR] Исключение: {ex.Message}");
             System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = "Критическая ошибка синхронизации.");
         }
     }
