@@ -4,11 +4,8 @@
              xmlns:components="clr-namespace:KoFFPanel.Presentation.Views.Components"
              Background="Transparent">
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                  HorizontalScrollBarVisibility="Disabled">
-        <Grid Margin="0,0,20,20">
-            <components:ClientTableControl />
-        </Grid>
-    </ScrollViewer>
+    <Grid Margin="0,0,20,20">
+        <components:ClientTableControl />
+    </Grid>
 
 </UserControl>

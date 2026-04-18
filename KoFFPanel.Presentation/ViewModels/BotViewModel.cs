@@ -205,17 +205,12 @@ public partial class BotViewModel : ObservableObject
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                var pendingUsers = await response.Content.ReadFromJsonAsync<List<PendingUserDto>>();
-                PendingUsersCount = pendingUsers?.Count ?? 0;
+                // ИСПРАВЛЕНИЕ: Читаем правильный DTO (BotStatsDto, а не список PendingUsers)
+                var stats = await response.Content.ReadFromJsonAsync<BotStatsDto>();
 
-                var poolReq = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/sync/pool/count"));
-                poolReq.Headers.Add("X-API-KEY", ApiSecret);
-                var poolRes = await _httpClient.SendAsync(poolReq);
-                if (poolRes.IsSuccessStatusCode)
-                {
-                    var poolData = await poolRes.Content.ReadFromJsonAsync<ReserveCountDto>();
-                    ReserveKeysCount = poolData?.ReserveCount ?? 0;
-                }
+                TotalBotUsers = stats?.TotalUsers ?? 0;
+                _lastNightSyncDate = now.Date;
+                LastNightlySyncText = $"Обновлено: {now:dd.MM.yy HH:mm}";
 
                 if (!IsBotOnline || BotStatus != "ОНЛАЙН")
                 {
@@ -226,7 +221,6 @@ public partial class BotViewModel : ObservableObject
             else
             {
                 IsBotOnline = false;
-                // ИСПРАВЛЕНИЕ: Теперь панель покажет реальную ошибку, если это не 401!
                 BotStatus = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
                     ? "ОШИБКА АВТОРИЗАЦИИ"
                     : $"ОШИБКА API: {(int)response.StatusCode}";

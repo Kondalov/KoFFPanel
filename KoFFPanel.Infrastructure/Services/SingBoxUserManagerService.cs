@@ -230,7 +230,9 @@ public class SingBoxUserManagerService : ISingBoxUserManagerService
                     string name = c?["name"]?.ToString().Trim() ?? "Unknown";
                     string uuid = c?["uuid"]?.ToString().Trim() ?? "";
 
-                    if (!dbUsers.Any(u => u.Email == name))
+                    // ИСПРАВЛЕНИЕ АРХИТЕКТУРЫ: Сверяем ТОЛЬКО по UUID!
+                    // Если Email изменился (бот переименовал резерв), мы не создаем дубликат!
+                    if (!dbUsers.Any(u => u.Uuid == uuid))
                     {
                         var newUser = new VpnClient
                         {
