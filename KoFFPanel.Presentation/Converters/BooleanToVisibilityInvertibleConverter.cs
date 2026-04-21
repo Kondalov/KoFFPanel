@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
@@ -11,7 +11,7 @@ public class BooleanToVisibilityInvertibleConverter : IValueConverter
     {
         bool isTrue = (value is bool booleanValue) && booleanValue;
 
-        // Если передан параметр Inverted, меняем логику на противоположную
+        // ???? ??????? ???????? Inverted, ?????? ?????? ?? ???????????????
         if (parameter?.ToString()?.Equals("Inverted", StringComparison.OrdinalIgnoreCase) == true)
         {
             isTrue = !isTrue;

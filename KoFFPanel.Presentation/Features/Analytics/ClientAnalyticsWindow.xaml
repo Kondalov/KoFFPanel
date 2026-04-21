@@ -1,0 +1,352 @@
+﻿<ui:FluentWindow x:Class="KoFFPanel.Presentation.Features.Analytics.ClientAnalyticsWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="{Binding Title}"
+                 Height="600"
+                 Width="850"
+                 WindowStartupLocation="CenterOwner"
+                 Background="#0a0a0a"
+                 ExtendsContentIntoTitleBar="True">
+
+    <ui:FluentWindow.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/KoFFPanel.Presentation;component/Styles/CabinetWindowResources.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                BorderThickness="0,0,0,1"
+                BorderBrush="#1affffff">
+            <StackPanel>
+                <Border Height="3">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0"
+                                             EndPoint="1,0">
+                            <GradientStop Color="#00f2ff"
+                                          Offset="0" />
+                            <GradientStop Color="#7000ff"
+                                          Offset="0.5" />
+                            <GradientStop Color="#ff00aa"
+                                          Offset="1" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+                <ui:TitleBar Title="{Binding Title}"
+                             Background="Transparent"
+                             Foreground="White"
+                             Padding="15,10" />
+            </StackPanel>
+        </Border>
+
+        <TabControl Grid.Row="1"
+                    Margin="20"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Foreground="White">
+
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal"
+                                Margin="5">
+                        <TextBlock Text="🌐 Журнал IP адресов"
+                                   Margin="0,0,10,0" />
+                        <Border Background="#1a00f2ff"
+                                CornerRadius="8"
+                                Padding="6,2">
+                            <TextBlock Text="{Binding IpCount}"
+                                       Foreground="#00f2ff"
+                                       FontSize="11"
+                                       FontWeight="Bold" />
+                        </Border>
+                    </StackPanel>
+                </TabItem.Header>
+                <Border Background="#1c1e27"
+                        CornerRadius="12"
+                        Padding="15"
+                        Margin="0,15,0,0">
+                    <DataGrid ItemsSource="{Binding ConnectionLogs}"
+                              AutoGenerateColumns="False"
+                              HeadersVisibility="Column"
+                              Background="Transparent"
+                              RowBackground="Transparent"
+                              BorderThickness="0"
+                              GridLinesVisibility="None"
+                              IsReadOnly="True"
+                              Foreground="White"
+                              ColumnHeaderStyle="{StaticResource StandardDataGridHeader}"
+                              CellStyle="{StaticResource StandardDataGridCell}">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="IP АДРЕС"
+                                                    Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal"
+                                                    Margin="10,5">
+                                            <Border Background="#1a00f2ff"
+                                                    BorderBrush="#3300f2ff"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6"
+                                                    Width="28"
+                                                    Height="28"
+                                                    Margin="0,0,10,0">
+                                                <TextBlock Text="🌐"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="14" />
+                                            </Border>
+                                            <TextBlock Text="{Binding IpAddress}"
+                                                       FontFamily="Courier New"
+                                                       FontWeight="Bold"
+                                                       Foreground="#00f2ff"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="СТРАНА"
+                                                    Width="100">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Country}"
+                                                   Foreground="#b3ffffff"
+                                                   FontFamily="Courier New"
+                                                   FontWeight="Bold"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="ПЕРВОЕ ПОДКЛЮЧЕНИЕ"
+                                                    Width="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding FirstSeenStr}"
+                                                   Foreground="#b3ffffff"
+                                                   FontFamily="Courier New"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="ПОСЛЕДНЯЯ АКТИВНОСТЬ"
+                                                    Width="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding LastSeenStr}"
+                                                   Foreground="#b3ffffff"
+                                                   FontFamily="Courier New"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </TabItem>
+
+            <TabItem>
+                <TabItem.Header>
+                    <TextBlock Text="📈 Расход трафика (По дням)"
+                               Margin="5" />
+                </TabItem.Header>
+                <Border Background="#1c1e27"
+                        CornerRadius="12"
+                        Padding="15"
+                        Margin="0,15,0,0">
+                    <DataGrid ItemsSource="{Binding TrafficLogs}"
+                              AutoGenerateColumns="False"
+                              HeadersVisibility="Column"
+                              Background="Transparent"
+                              RowBackground="Transparent"
+                              BorderThickness="0"
+                              GridLinesVisibility="None"
+                              IsReadOnly="True"
+                              Foreground="White"
+                              ColumnHeaderStyle="{StaticResource StandardDataGridHeader}"
+                              CellStyle="{StaticResource StandardDataGridCell}">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="ДАТА"
+                                                    Width="150">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DateStr}"
+                                                   Foreground="#b3ffffff"
+                                                   FontFamily="Courier New"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="СКАЧАНО ТРАФИКА"
+                                                    Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal"
+                                                    Margin="10,5">
+                                            <TextBlock Text="{Binding TrafficUsedStr}"
+                                                       FontFamily="Courier New"
+                                                       FontWeight="Bold"
+                                                       FontSize="14"
+                                                       VerticalAlignment="Center"
+                                                       Width="90" />
+                                            <Border Background="#1affffff"
+                                                    Height="6"
+                                                    Width="150"
+                                                    CornerRadius="3"
+                                                    VerticalAlignment="Center"
+                                                    Margin="10,0">
+                                                <Border HorizontalAlignment="Left"
+                                                        Width="{Binding BarWidth}"
+                                                        CornerRadius="3">
+                                                    <Border.Background>
+                                                        <LinearGradientBrush StartPoint="0,0"
+                                                                             EndPoint="1,0">
+                                                            <GradientStop Color="{Binding GradientStart}"
+                                                                          Offset="0.0" />
+                                                            <GradientStop Color="{Binding GradientEnd}"
+                                                                          Offset="1.0" />
+                                                        </LinearGradientBrush>
+                                                    </Border.Background>
+                                                </Border>
+                                            </Border>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="СТАТУС"
+                                                    Width="160">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding StatusColor}"
+                                                Padding="10,4"
+                                                CornerRadius="8"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Margin="10,0">
+                                            <TextBlock Text="{Binding StatusText}"
+                                                       Foreground="{Binding GradientEnd}"
+                                                       FontSize="11"
+                                                       FontWeight="Bold" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </TabItem>
+
+            <TabItem>
+                <TabItem.Header>
+                    <StackPanel Orientation="Horizontal"
+                                Margin="5">
+                        <TextBlock Text="⚠️ Нарушения (DMCA)"
+                                   Margin="0,0,10,0" />
+                        <Border Background="#1aff4444"
+                                CornerRadius="8"
+                                Padding="6,2">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility"
+                                            Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ViolationsCount}"
+                                                     Value="0">
+                                            <Setter Property="Visibility"
+                                                    Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="{Binding ViolationsCount}"
+                                       Foreground="#ff4444"
+                                       FontSize="11"
+                                       FontWeight="Bold" />
+                        </Border>
+                    </StackPanel>
+                </TabItem.Header>
+                <Border Background="#1c1e27"
+                        CornerRadius="12"
+                        Padding="15"
+                        Margin="0,15,0,0">
+                    <DataGrid ItemsSource="{Binding ViolationLogs}"
+                              AutoGenerateColumns="False"
+                              HeadersVisibility="Column"
+                              Background="Transparent"
+                              RowBackground="Transparent"
+                              BorderThickness="0"
+                              GridLinesVisibility="None"
+                              IsReadOnly="True"
+                              Foreground="#ff4444"
+                              ColumnHeaderStyle="{StaticResource StandardDataGridHeader}"
+                              CellStyle="{StaticResource StandardDataGridCell}">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="ДАТА И ВРЕМЯ"
+                                                    Width="180">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DateStr}"
+                                                   Foreground="#ff4444"
+                                                   FontFamily="Courier New"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Margin="10,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTemplateColumn Header="ТИП НАРУШЕНИЯ (ЗАБЛОКИРОВАНО)"
+                                                    Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal"
+                                                    Margin="10,5">
+                                            <Border Background="#1aff4444"
+                                                    BorderBrush="#33ff4444"
+                                                    BorderThickness="1"
+                                                    CornerRadius="6"
+                                                    Width="28"
+                                                    Height="28"
+                                                    Margin="0,0,10,0">
+                                                <TextBlock Text="🚫"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="12" />
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding ViolationText}"
+                                                           FontWeight="Bold" />
+                                                <TextBlock Text="Connection blocked automatically"
+                                                           FontSize="10"
+                                                           Foreground="#80ff4444"
+                                                           Margin="0,2,0,0" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</ui:FluentWindow>

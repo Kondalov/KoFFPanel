@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using Microsoft.Win32;
 
 namespace KoFFPanel.Presentation.Services;
@@ -9,8 +9,8 @@ public class FilePickerService : IFilePickerService
     {
         var dialog = new OpenFileDialog
         {
-            Title = "Выберите приватный SSH-ключ",
-            Filter = "SSH Ключи (*.pem;*.ppk;*.key;id_rsa)|*.pem;*.ppk;*.key;id_rsa|Все файлы (*.*)|*.*",
+            Title = "???????? ????????? SSH-????",
+            Filter = "SSH ????? (*.pem;*.ppk;*.key;id_rsa)|*.pem;*.ppk;*.key;id_rsa|??? ????? (*.*)|*.*",
             CheckFileExists = true
         };
 

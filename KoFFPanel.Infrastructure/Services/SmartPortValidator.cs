@@ -6,12 +6,6 @@ using System.Threading.Tasks;
 
 namespace KoFFPanel.Infrastructure.Services;
 
-public interface ISmartPortValidator
-{
-    Task<(bool IsValid, string ErrorMessage)> ValidatePortAsync(ISshService ssh, string serverId, int port, string protocolType);
-    Task<int> SuggestBestPortAsync(ISshService ssh, string serverId, string protocolType);
-}
-
 public class SmartPortValidator : ISmartPortValidator
 {
     private readonly IProfileRepository _profileRepository;

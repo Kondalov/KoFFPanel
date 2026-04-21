@@ -1,16 +1,10 @@
-﻿using KoFFPanel.Application.Interfaces.ProtocolBuilders;
+﻿using KoFFPanel.Application.Constants;
+using KoFFPanel.Application.Interfaces.ProtocolBuilders;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace KoFFPanel.Application.Services;
-
-public static class CoreTypes
-{
-    public const string Xray = "xray";
-    public const string SingBox = "sing-box";
-    public const string TrustTunnel = "trusttunnel";
-}
 
 public sealed class ProtocolFactory
 {

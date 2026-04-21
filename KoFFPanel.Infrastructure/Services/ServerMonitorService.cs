@@ -12,9 +12,9 @@ namespace KoFFPanel.Infrastructure.Services;
 
 public class ServerMonitorService : IServerMonitorService
 {
-    public async Task<(int Cpu, int Ram, int Ssd, string Uptime, string LoadAvg, string NetworkSpeed, int XrayProcesses, int TcpConnections, int SynRecv, int ErrorRate)> GetResourcesAsync(ISshService sshService, string coreType)
+    public async Task<ServerResources> GetResourcesAsync(ISshService sshService, string coreType)
     {
-        if (!sshService.IsConnected) return (0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
+        if (!sshService.IsConnected) return new ServerResources(0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
 
         string cmdText = $@"
             export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
@@ -56,7 +56,7 @@ public class ServerMonitorService : IServerMonitorService
             SYN_RECV=$(ss -Ht state syn-recv 2>/dev/null | wc -l)
 
             echo ""${{CPU:-0}}|${{RAM:-0}}|${{DISK:-0}}|${{UPTIME:-N/A}}|${{LOADAVG:-0}}|↓${{RX_MBPS}} ↑${{TX_MBPS}} Mbps|${{CORE_PROC:-0}}|${{TCP_CONN:-0}}|${{SYN_RECV:-0}}|${{ERR_TOTAL:-0}}""
-        ".Replace("\r", ""); // ИСПРАВЛЕНИЕ: ЖЕСТКО ВЫРЕЗАЕМ \r ДЛЯ LINUX BASH!
+        ".Replace("\r", "");
 
         try
         {
@@ -73,12 +73,12 @@ public class ServerMonitorService : IServerMonitorService
                 int.TryParse(parts[8], out int synRecv);
                 int.TryParse(parts[9], out int errorRate);
 
-                return (cpu, ram, ssd, parts[3], parts[4], parts[5], coreProc, tcpConn, synRecv, errorRate);
+                return new ServerResources(cpu, ram, ssd, parts[3], parts[4], parts[5], coreProc, tcpConn, synRecv, errorRate);
             }
         }
         catch { }
 
-        return (0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
+        return new ServerResources(0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
     }
 
     public async Task<List<UserOnlineInfo>> GetUserOnlineStatsAsync(ISshService sshService, string coreType)
