@@ -31,6 +31,16 @@ public static class DependencyInjection
         services.AddTransient<Views.TerminalWindow>();
         services.AddTransient<IDatabaseBackupService, DatabaseBackupService>();
         services.AddTransient<ISubscriptionService, SubscriptionService>();
+        // 1. Инфраструктура
+        services.AddSingleton<IAppLogger, AppLogger>();
+        services.AddSingleton<IProfileRepository, ProfileRepository>();
+
+        // === ИСПРАВЛЕНИЕ: Регистрация именованного HttpClient с базовым таймаутом ===
+        services.AddHttpClient("BotApiClient", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+            // Здесь в идеале добавляется политика Polly: .AddTransientHttpErrorPolicy(p => p.WaitAndRetryAsync(3, _ => TimeSpan.FromSeconds(2)))
+        });
 
         // ИСПРАВЛЕНИЕ: Вычистили ClientConfigViewModel и ClientConfigWindow
         services.AddTransient<ISingBoxConfiguratorService, SingBoxConfiguratorService>();

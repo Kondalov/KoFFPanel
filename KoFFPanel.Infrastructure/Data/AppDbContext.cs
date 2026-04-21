@@ -50,18 +50,37 @@ public class AppDbContext : DbContext
                 CREATE INDEX IF NOT EXISTS ""IX_ViolationLogs_ServerIp_Email"" ON ""ViolationLogs"" (""ServerIp"", ""Email"");
             ");
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // === ИСПРАВЛЕНИЕ: Исключения больше не проглатываются (Никаких пустых catch) ===
+            System.Diagnostics.Debug.WriteLine($"[DB INIT ERROR] Ошибка создания таблиц логов: {ex.Message}");
+        }
 
         // === ИСПРАВЛЕНИЕ: БЕЗОПАСНАЯ НЕЗАВИСИМАЯ МИГРАЦИЯ ===
-        // Теперь ошибка добавления одной колонки не отменяет создание других!
-        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsP2PBlocked\" INTEGER NOT NULL DEFAULT 1;"); } catch { }
-        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsVlessEnabled\" INTEGER NOT NULL DEFAULT 1;"); } catch { }
-        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsHysteria2Enabled\" INTEGER NOT NULL DEFAULT 0;"); } catch { }
-        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"Hysteria2Link\" TEXT NOT NULL DEFAULT '';"); } catch { }
+        SafeExecuteSql("ALTER TABLE \"Clients\" ADD COLUMN \"IsP2PBlocked\" INTEGER NOT NULL DEFAULT 1;");
+        SafeExecuteSql("ALTER TABLE \"Clients\" ADD COLUMN \"IsVlessEnabled\" INTEGER NOT NULL DEFAULT 1;");
+        SafeExecuteSql("ALTER TABLE \"Clients\" ADD COLUMN \"IsHysteria2Enabled\" INTEGER NOT NULL DEFAULT 0;");
+        SafeExecuteSql("ALTER TABLE \"Clients\" ADD COLUMN \"Hysteria2Link\" TEXT NOT NULL DEFAULT '';");
+        SafeExecuteSql("ALTER TABLE \"Clients\" ADD COLUMN \"IsTrustTunnelEnabled\" INTEGER NOT NULL DEFAULT 0;");
+        SafeExecuteSql("ALTER TABLE \"Clients\" ADD COLUMN \"TrustTunnelLink\" TEXT NOT NULL DEFAULT '';");
+    }
 
-        // Новые колонки TrustTunnel
-        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"IsTrustTunnelEnabled\" INTEGER NOT NULL DEFAULT 0;"); } catch { }
-        try { Database.ExecuteSqlRaw("ALTER TABLE \"Clients\" ADD COLUMN \"TrustTunnelLink\" TEXT NOT NULL DEFAULT '';"); } catch { }
+    // === НОВЫЙ МЕТОД: Обработка SQL-ошибок с логированием ===
+    private void SafeExecuteSql(string sql)
+    {
+        try
+        {
+            Database.ExecuteSqlRaw(sql);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 1)
+        {
+            // Ошибка 1 (SQLITE_ERROR) означает "duplicate column name", что нормально при повторном запуске.
+            // Игнорируем осознанно, но не проглатываем другие фатальные ошибки, чтобы база не сломалась тихо.
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[DB MIGRATION ERROR] Не удалось выполнить {sql}: {ex.Message}");
+        }
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)

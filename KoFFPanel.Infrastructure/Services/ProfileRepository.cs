@@ -1,4 +1,5 @@
 ﻿using KoFFPanel.Application.Interfaces;
+using System.Security.Cryptography;
 using KoFFPanel.Domain.Entities;
 using System;
 using System.Collections.Generic;
@@ -19,22 +20,65 @@ public class ProfileRepository : IProfileRepository
         _dbFilePath = Path.Combine(_appDataFolder, "ProfilesDB.json");
     }
 
+    // === ZERO TRUST: Расшифровка паролей при загрузке ===
     public List<VpnProfile> LoadProfiles()
     {
         if (!File.Exists(_dbFilePath)) return new List<VpnProfile>();
         try
         {
             string json = File.ReadAllText(_dbFilePath);
-            return JsonSerializer.Deserialize<List<VpnProfile>>(json) ?? new List<VpnProfile>();
+            var profiles = JsonSerializer.Deserialize<List<VpnProfile>>(json) ?? new List<VpnProfile>();
+
+            foreach (var p in profiles)
+            {
+                if (!string.IsNullOrEmpty(p.Password) && p.Password.StartsWith("DPAPI:"))
+                {
+                    try
+                    {
+                        string b64 = p.Password.Substring(6);
+                        byte[] encryptedBytes = Convert.FromBase64String(b64);
+                        byte[] decryptedBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
+                        p.Password = System.Text.Encoding.UTF8.GetString(decryptedBytes);
+                    }
+                    catch
+                    {
+                        // Если файл перенесли на другой ПК или под другого пользователя Windows
+                        p.Password = "";
+                    }
+                }
+            }
+            return profiles;
         }
         catch { return new List<VpnProfile>(); }
     }
 
+    // === ZERO TRUST: Шифрование паролей перед записью на диск ===
     public void SaveProfiles(List<VpnProfile> profiles)
     {
         Directory.CreateDirectory(_appDataFolder);
-        string json = JsonSerializer.Serialize(profiles, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(_dbFilePath, json);
+
+        // УМНЫЙ АЛГОРИТМ: Создаем глубокую копию списка (Клон).
+        // Если мы зашифруем пароли напрямую в profiles, они зашифруются в оперативной памяти UI, 
+        // и юзер увидит в текстовом поле абракадабру "DPAPI:...".
+        var jsonCopy = JsonSerializer.Serialize(profiles);
+        var safeProfiles = JsonSerializer.Deserialize<List<VpnProfile>>(jsonCopy) ?? new List<VpnProfile>();
+
+        foreach (var p in safeProfiles)
+        {
+            if (!string.IsNullOrEmpty(p.Password) && !p.Password.StartsWith("DPAPI:"))
+            {
+                try
+                {
+                    byte[] plainBytes = System.Text.Encoding.UTF8.GetBytes(p.Password);
+                    byte[] encryptedBytes = ProtectedData.Protect(plainBytes, null, DataProtectionScope.CurrentUser);
+                    p.Password = "DPAPI:" + Convert.ToBase64String(encryptedBytes);
+                }
+                catch { }
+            }
+        }
+
+        string finalJson = JsonSerializer.Serialize(safeProfiles, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(_dbFilePath, finalJson);
     }
 
     public void AddProfile(VpnProfile profile)

@@ -240,7 +240,8 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
         {
             _shellStream = _sshService.CreateShellStream("xterm-256color", 120, 40, 1200, 600, 1024);
             _readCts = new CancellationTokenSource();
-            _ = ReadShellOutputAsync(_readCts.Token);
+            // === ИСПРАВЛЕНИЕ: Безопасный вызов фоновой задачи вместо "выстрелил и забыл" ===
+            SafeFireAndForget(() => ReadShellOutputAsync(_readCts.Token));
         }
         catch (Exception ex)
         {
@@ -531,11 +532,12 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
         _monitoringTimer?.Dispose();
 
         _monitoringTimer = new System.Timers.Timer(5000); // Раз в 5 секунд
-        _monitoringTimer.Elapsed += async (s, e) => await UpdateServerStatsAsync();
+        // === ИСПРАВЛЕНИЕ: Отказ от 'async void' антипаттерна ===
+        _monitoringTimer.Elapsed += (s, e) => SafeFireAndForget(() => UpdateServerStatsAsync());
         _monitoringTimer.Start();
 
         // Дергаем первый раз сразу, не дожидаясь 5 секунд
-        _ = UpdateServerStatsAsync();
+        SafeFireAndForget(() => UpdateServerStatsAsync());
     }
 
     private async Task UpdateServerStatsAsync()
@@ -564,6 +566,20 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             _logger.Log("TERM-MONITOR-ERR", $"Ошибка обновления статистики: {ex.Message}");
+        }
+    }
+
+    // === НОВЫЙ МЕТОД: Глобальная защита таймеров и фоновых задач терминала ===
+    private async void SafeFireAndForget(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            // Теперь ошибка пинга или разрыва сети просто запишется в лог, а не убьет приложение
+            _logger?.Log("TERM-CRASH-PREVENTED", $"Предотвращено падение приложения в фоне: {ex.Message}");
         }
     }
 

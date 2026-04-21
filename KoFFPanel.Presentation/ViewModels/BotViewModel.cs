@@ -21,7 +21,8 @@ public partial class BotViewModel : ObservableObject
 {
     private readonly IAppLogger _logger;
     private readonly IServiceProvider _serviceProvider;
-    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(5) };
+    // === ZERO TRUST: Отказ от статического HttpClient в пользу Factory ===
+    private readonly IHttpClientFactory _httpClientFactory;
 
     [ObservableProperty] private string _botIpAddress = "127.0.0.1";
     [ObservableProperty] private string _botPort = "5000";
@@ -45,27 +46,30 @@ public partial class BotViewModel : ObservableObject
 
     private readonly string _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bot_config.json");
 
-    public BotViewModel(IAppLogger logger, IServiceProvider serviceProvider)
+    // === ИСПРАВЛЕНИЕ: Внедрение IHttpClientFactory ===
+    public BotViewModel(IAppLogger logger, IServiceProvider serviceProvider, IHttpClientFactory httpClientFactory)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
+        _httpClientFactory = httpClientFactory;
 
         _nightlyTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(30) };
-        _nightlyTimer.Tick += async (s, e) => await SmartNightlyRoutineAsync(false);
+        // === ИСПРАВЛЕНИЕ: Безопасный вызов async void (Fire and Forget) ===
+        _nightlyTimer.Tick += (s, e) => SafeFireAndForget(() => SmartNightlyRoutineAsync(false));
 
         _autoSyncTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(2) };
-        _autoSyncTimer.Tick += async (s, e) => await SilentAutoSyncAsync();
+        _autoSyncTimer.Tick += (s, e) => SafeFireAndForget(() => SilentAutoSyncAsync());
 
         _heartbeatTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
-        _heartbeatTimer.Tick += async (s, e) => await HeartbeatCheckAsync();
+        _heartbeatTimer.Tick += (s, e) => SafeFireAndForget(() => HeartbeatCheckAsync());
 
         LoadSettings();
 
         _nightlyTimer.Start();
         _heartbeatTimer.Start();
 
-        _ = CheckBotStatusAsync();
-        _ = SmartNightlyRoutineAsync(true);
+        SafeFireAndForget(() => CheckBotStatusAsync());
+        SafeFireAndForget(() => SmartNightlyRoutineAsync(true));
     }
 
     partial void OnIsAutoSyncEnabledChanged(bool value)
@@ -77,14 +81,40 @@ public partial class BotViewModel : ObservableObject
 
     private string GetApiUrl(string endpoint) => $"http://{BotIpAddress}:{BotPort}/api{endpoint}";
 
+    // === ZERO TRUST: Получение преднастроенного клиента с таймаутами ===
+    private HttpClient GetClient()
+    {
+        var client = _httpClientFactory.CreateClient("BotApiClient");
+        // Fallback на случай, если политика не настроена в DI
+        if (client.Timeout == System.Threading.Timeout.InfiniteTimeSpan)
+        {
+            client.Timeout = TimeSpan.FromSeconds(10);
+        }
+        return client;
+    }
+
     private void SaveSettings()
     {
         try
         {
-            var config = new { BotIp = BotIpAddress, BotPort = BotPort, BotApiSecret = ApiSecret, AutoSync = IsAutoSyncEnabled };
+            // === ZERO TRUST: Шифрование секрета через DPAPI перед сохранением ===
+            string encryptedSecret = "";
+            if (!string.IsNullOrWhiteSpace(ApiSecret))
+            {
+                var secretBytes = System.Text.Encoding.UTF8.GetBytes(ApiSecret);
+                // Шифруем данные с привязкой к текущему пользователю Windows
+                var encryptedBytes = System.Security.Cryptography.ProtectedData.Protect(secretBytes, null, System.Security.Cryptography.DataProtectionScope.CurrentUser);
+                encryptedSecret = Convert.ToBase64String(encryptedBytes);
+            }
+
+            var config = new { BotIp = BotIpAddress, BotPort = BotPort, BotApiSecret = encryptedSecret, AutoSync = IsAutoSyncEnabled };
             File.WriteAllText(_configPath, JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true }));
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // ИСПРАВЛЕНИЕ: Убрали пустое проглатывание исключений (catch { })
+            _logger?.Log("BOT-SETTINGS-ERR", $"Ошибка при сохранении настроек: {ex.Message}");
+        }
     }
 
     private void LoadSettings()
@@ -96,11 +126,37 @@ public partial class BotViewModel : ObservableObject
                 var config = JsonSerializer.Deserialize<JsonElement>(File.ReadAllText(_configPath));
                 BotIpAddress = config.TryGetProperty("BotIp", out var ip) ? ip.GetString() ?? "127.0.0.1" : "127.0.0.1";
                 BotPort = config.TryGetProperty("BotPort", out var port) ? port.GetString() ?? "5000" : "5000";
-                ApiSecret = config.TryGetProperty("BotApiSecret", out var sec) ? sec.GetString() ?? "" : "";
                 IsAutoSyncEnabled = config.TryGetProperty("AutoSync", out var auto) && auto.GetBoolean();
+
+                // === ZERO TRUST: Расшифровка секрета через DPAPI ===
+                string encryptedSecret = config.TryGetProperty("BotApiSecret", out var sec) ? sec.GetString() ?? "" : "";
+
+                if (!string.IsNullOrWhiteSpace(encryptedSecret))
+                {
+                    try
+                    {
+                        var encryptedBytes = Convert.FromBase64String(encryptedSecret);
+                        var secretBytes = System.Security.Cryptography.ProtectedData.Unprotect(encryptedBytes, null, System.Security.Cryptography.DataProtectionScope.CurrentUser);
+                        ApiSecret = System.Text.Encoding.UTF8.GetString(secretBytes);
+                    }
+                    catch (Exception cryptoEx)
+                    {
+                        // Если файл перенесли на другой ПК, расшифровка не удастся
+                        _logger?.Log("CRYPTO-ERR", $"Не удалось расшифровать API Secret: {cryptoEx.Message}");
+                        ApiSecret = "";
+                    }
+                }
+                else
+                {
+                    ApiSecret = "";
+                }
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // ИСПРАВЛЕНИЕ: Убрали пустое проглатывание исключений
+            _logger?.Log("BOT-SETTINGS-ERR", $"Ошибка при загрузке настроек: {ex.Message}");
+        }
     }
 
     private async Task HeartbeatCheckAsync()
@@ -110,7 +166,7 @@ public partial class BotViewModel : ObservableObject
         {
             var request = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/sync/pending"));
             request.Headers.Add("X-API-KEY", ApiSecret);
-            var response = await _httpClient.SendAsync(request);
+            var response = await GetClient().SendAsync(request);
 
             string rawPendingContent = await response.Content.ReadAsStringAsync();
 
@@ -128,7 +184,7 @@ public partial class BotViewModel : ObservableObject
 
                 var poolReq = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/sync/pool/count"));
                 poolReq.Headers.Add("X-API-KEY", ApiSecret);
-                var poolRes = await _httpClient.SendAsync(poolReq);
+                var poolRes = await GetClient().SendAsync(poolReq);
 
                 string rawPoolContent = await poolRes.Content.ReadAsStringAsync();
 
@@ -189,7 +245,7 @@ public partial class BotViewModel : ObservableObject
             var request = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/stats"));
             request.Headers.Add("X-API-KEY", ApiSecret);
 
-            var response = await _httpClient.SendAsync(request);
+            var response = await GetClient().SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
                 var stats = await response.Content.ReadFromJsonAsync<BotStatsDto>();
@@ -256,7 +312,7 @@ public partial class BotViewModel : ObservableObject
             };
             req.Headers.Add("X-API-KEY", ApiSecret);
 
-            var response = await _httpClient.SendAsync(req);
+            var response = await GetClient().SendAsync(req);
             if (response.IsSuccessStatusCode)
             {
                 _logger.Log("BOT-SYNC", $"Отправлен срез трафика для {trafficPayload.Count} клиентов.");
@@ -280,7 +336,7 @@ public partial class BotViewModel : ObservableObject
         {
             var request = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/sync/pending"));
             request.Headers.Add("X-API-KEY", ApiSecret);
-            var response = await _httpClient.SendAsync(request);
+            var response = await GetClient().SendAsync(request);
             if (!response.IsSuccessStatusCode) return;
 
             var pendingUsers = await response.Content.ReadFromJsonAsync<List<PendingUserDto>>();
@@ -345,7 +401,7 @@ public partial class BotViewModel : ObservableObject
             var commitReq = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/sync/commit"));
             commitReq.Headers.Add("X-API-KEY", ApiSecret);
             commitReq.Content = JsonContent.Create(new CommitRequestDto { Uuids = syncedUuids });
-            await _httpClient.SendAsync(commitReq);
+            await GetClient().SendAsync(commitReq);
 
             if (needsDeployment && cabinetVm.SelectedServer != null)
             {
@@ -419,7 +475,7 @@ public partial class BotViewModel : ObservableObject
             var req = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/sync/pool"));
             req.Headers.Add("X-API-KEY", ApiSecret);
             req.Content = JsonContent.Create(keysToPush);
-            await _httpClient.SendAsync(req);
+            await GetClient().SendAsync(req);
 
             WeakReferenceMessenger.Default.Send(new KoFFPanel.Presentation.Messages.CoreDeployedMessage(server));
 
@@ -463,7 +519,7 @@ public partial class BotViewModel : ObservableObject
             var payload = new { ServerIp = cabinetVm.SelectedServer.IpAddress, CoreType = cabinetVm.SelectedServer.CoreType, InboundsConfigJson = JsonSerializer.Serialize(botInbounds) };
             var req = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/templates")) { Content = JsonContent.Create(payload) };
             req.Headers.Add("X-API-KEY", ApiSecret);
-            await _httpClient.SendAsync(req);
+            await GetClient().SendAsync(req);
 
             MessageBox.Show("Конфигурация сервера успешно отправлена!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -487,11 +543,25 @@ public partial class BotViewModel : ObservableObject
 
             var req = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/legacy/sync")) { Content = JsonContent.Create(allClients) };
             req.Headers.Add("X-API-KEY", ApiSecret);
-            var res = await _httpClient.SendAsync(req);
+            var res = await GetClient().SendAsync(req);
 
             if (res.IsSuccessStatusCode) MessageBox.Show($"База выгружена! Передано {allClients.Count} клиентов.", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         finally { IsSyncing = false; await HeartbeatCheckAsync(); }
+    }
+
+    // === НОВЫЙ МЕТОД: Глобальная защита таймеров и фоновых задач ===
+    private async void SafeFireAndForget(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            // Теперь ошибка пинга или разрыва сети просто запишется в лог, а не убьет приложение
+            _logger?.Log("BOT-CRASH-PREVENTED", $"Предотвращено падение приложения в фоне: {ex.Message}");
+        }
     }
 }
 
