@@ -114,6 +114,19 @@
                             CornerRadius="12"
                             Padding="16"
                             Margin="0,0,0,16">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <MultiDataTrigger>
+                                        <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding SupportsVless}" Value="False"/>
+                                            <Condition Binding="{Binding SupportsHysteria2}" Value="False"/>
+                                        </MultiDataTrigger.Conditions>
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <StackPanel>
                             <StackPanel Orientation="Horizontal"
                                         Margin="0,0,0,12"
@@ -184,6 +197,15 @@
                             CornerRadius="12"
                             Padding="16"
                             Margin="0,0,0,16">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SupportsVless}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <StackPanel>
                             <Grid Margin="0,0,0,12">
                                 <Grid.ColumnDefinitions>
@@ -258,6 +280,15 @@
                             CornerRadius="12"
                             Padding="16"
                             Margin="0,0,0,16">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding SupportsHysteria2}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
                         <StackPanel>
                             <Grid Margin="0,0,0,12">
                                 <Grid.ColumnDefinitions>
@@ -336,7 +367,7 @@
                     </Border>
                 </StackPanel>
 
-                <StackPanel Visibility="{Binding IsTrustTunnelMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel Visibility="{Binding SupportsTrustTunnel, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Border Background="#0DFFFFFF"
                             BorderBrush="#1AFFFFFF"
                             BorderThickness="1"
@@ -367,7 +398,52 @@
                                        Foreground="#B3FFFFFF"
                                        FontSize="12"
                                        TextWrapping="Wrap"
-                                       Margin="0,0,0,12" />
+                                       Margin="0,0,0,8" />
+                            
+                            <Border Background="#1A50fa7b" CornerRadius="6" Padding="8,4" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <TextBlock Text="🔑 Файл сертификата на сервере: " Foreground="#B3FFFFFF" FontSize="11"/>
+                                        <TextBlock Text="{Binding TrustTunnelCertPath}" Foreground="#50fa7b" FontSize="11" FontWeight="Bold"/>
+                                    </StackPanel>
+                                    
+                                    <StackPanel Visibility="{Binding IsAdmin, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <Border Height="1" Background="#1AFFFFFF" Margin="0,4"/>
+                                        <StackPanel Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
+                                            <TextBlock Text="👤 Пользователь: " Foreground="#B3FFFFFF" FontSize="11"/>
+                                            <TextBlock Text="{Binding TtUsername}" Foreground="White" FontSize="11" FontWeight="Bold" Margin="0,0,16,0"/>
+                                            <TextBlock Text="🔐 Пароль: " Foreground="#B3FFFFFF" FontSize="11"/>
+                                            <TextBlock Text="{Binding TtPassword}" Foreground="White" FontSize="11" FontWeight="Bold" Margin="0,0,8,0"/>
+                                            <ui:Button Command="{Binding CopyTtPasswordCommand}"
+                                                       Padding="4"
+                                                       Background="Transparent"
+                                                       BorderThickness="0"
+                                                       Cursor="Hand"
+                                                       ToolTip="Копировать пароль">
+                                                <ui:SymbolIcon Symbol="Copy16" Foreground="#50fa7b" FontSize="14"/>
+                                            </ui:Button>
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" Margin="0,2">
+                                            <TextBlock Text="🌐 Domain: " Foreground="#B3FFFFFF" FontSize="11"/>
+                                            <TextBlock Text="{Binding TtDomainName}" Foreground="White" FontSize="11" FontWeight="Bold" Margin="0,0,16,0"/>
+                                            <TextBlock Text="🏷️ DNS: " Foreground="#B3FFFFFF" FontSize="11"/>
+                                            <TextBlock Text="{Binding TtDnsServers}" Foreground="White" FontSize="11" FontWeight="Bold"/>
+                                        </StackPanel>
+                                        <ui:Button Command="{Binding DownloadCertCommand}" 
+                                                   Style="{StaticResource NeonCopyBtnStyle}"
+                                                   HorizontalAlignment="Left"
+                                                   Margin="0,4,0,0"
+                                                   Padding="12,6">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="ArrowDownload24" Foreground="#50fa7b" Margin="0,0,6,0"/>
+                                                <TextBlock Text="Скачать cert.pem на ПК" Foreground="#50fa7b" FontSize="11" FontWeight="Bold"/>
+                                            </StackPanel>
+                                        </ui:Button>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />

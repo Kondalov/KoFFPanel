@@ -22,14 +22,8 @@ public class XrayConfiguratorService : IXrayConfiguratorService
         {
             if (!ssh.IsConnected) return (false, "Нет подключения по SSH", "");
 
-            _logger.Log("CONFIG", "Умный режим: принудительно убиваем процессы на 443 порту...");
-            await ssh.ExecuteCommandAsync("fuser -k 443/tcp 2>/dev/null || true");
-
             _logger.Log("CONFIG", "Генерация X25519 ключей...");
             var keysOutput = await ssh.ExecuteCommandAsync("/usr/local/bin/xray x25519");
-            _logger.Log("CONFIG", "Открываем порт 443 в файрволе...");
-            await ssh.ExecuteCommandAsync("ufw allow 443/tcp 2>/dev/null || true");
-            await ssh.ExecuteCommandAsync("iptables -I INPUT -p tcp --dport 443 -j ACCEPT 2>/dev/null || true");
 
             var privMatch = Regex.Match(keysOutput, @"(?i)(?:Private\s*key|PrivateKey)\s*:\s*(\S+)");
             var pubMatch = Regex.Match(keysOutput, @"(?i)(?:Public\s*key|PublicKey|Password\s*\(PublicKey\))\s*:\s*(\S+)");
@@ -40,15 +34,15 @@ public class XrayConfiguratorService : IXrayConfiguratorService
                 return (false, "ОШИБКА: Ядро вернуло неверный формат ключей.", "");
             }
 
-            string privKey = privMatch.Groups[1].Value;
-            string pubKey = pubMatch.Groups[1].Value;
-
+            string privKey = privMatch.Groups[1].Value.Trim();
+            string pubKey = pubMatch.Groups[1].Value.Trim();
             string uuid = Guid.NewGuid().ToString();
             string shortId = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLower();
-            string sni = "www.microsoft.com";
 
-            // ИСПРАВЛЕНИЕ: Убрали geosite из базового шаблона, чтобы конфиг 100% прошел тест без скачанной базы.
-            // Оставили ручные домены для моментальной работы аналитики.
+            // ИСПРАВЛЕНИЕ: Смена SNI. dl.google.com практически никогда не блокируется DPI.
+            string sni = "dl.google.com";
+            string encodedName = Uri.EscapeDataString($"KoFFPanel_{serverIp}");
+
             string configJson = $$"""
             {
               "log": { 
@@ -76,7 +70,7 @@ public class XrayConfiguratorService : IXrayConfiguratorService
                   "protocol": "vless",
                   "settings": {
                     "clients": [
-                      { "id": "{{uuid}}", "flow": "xtls-rprx-vision", "email": "Админ" }
+                      { "id": "{{uuid}}", "flow": "xtls-rprx-vision", "email": "Admin" }
                     ],
                     "decryption": "none"
                   },
@@ -102,7 +96,10 @@ public class XrayConfiguratorService : IXrayConfiguratorService
                   "listen": "127.0.0.1",
                   "port": 10085,
                   "protocol": "dokodemo-door",
-                  "settings": { "address": "127.0.0.1" },
+                  "settings": { 
+                    "address": "127.0.0.1",
+                    "network": "tcp"
+                  },
                   "tag": "api"
                 }
               ],
@@ -163,9 +160,10 @@ EOF";
             await ssh.ExecuteCommandAsync("mv /tmp/config_test.json /usr/local/etc/xray/config.json");
             await ssh.ExecuteCommandAsync("systemctl restart xray");
 
-            string vlessLink = $"vless://{uuid}@{serverIp}:443?security=reality&encryption=none&pbk={pubKey}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={shortId}#KoFFPanel-{serverIp}";
+            // ИСПРАВЛЕНИЕ: Добавлен обязательный ALPN для современных клиентов.
+            string vlessLink = $"vless://{uuid}@{serverIp}:443?security=reality&encryption=none&alpn=h2,http/1.1&pbk={pubKey}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={shortId}#{encodedName}";
 
-            return (true, "VLESS-Reality настроен (DMCA-защита включена)!", vlessLink);
+            return (true, "VLESS-Reality настроен!", vlessLink);
         }
         catch (Exception ex)
         {

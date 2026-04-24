@@ -1,0 +1,31 @@
+📦 Solution 'KoFFBot'
+└──📁 wwwroot
+    ├── index.html
+    └──📁 assets
+        └──📁 css
+            |── styles.css
+        └──📁 js
+            ├── app.js
+            ├── game.js
+└──📁 Data
+    |── BotDbContext.cs
+└──📁 Domain
+    |── Entities.cs
+└──📁 Security
+    |── AntiCheatSigner.cs
+└──📁 Services
+    |── BotLogger.cs
+    |── GameService.cs
+    |── SshInjectorService.cs
+    |── SubscriptionGenerator.cs
+    |── TelegramBotBackgroundService.cs
+    |── TelegramBotWorker.cs
+    |── UpdateHandler.cs
+
+|── .env
+|── .gitignore
+|── appsettings.json
+|── Program.cs
+|── Worker.cs
+
+    

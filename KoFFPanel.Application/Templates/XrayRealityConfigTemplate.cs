@@ -32,9 +32,7 @@ public static class XrayRealityConfigTemplate
               "port": {{port}},
               "protocol": "vless",
               "settings": {
-                "clients": [
-                  { "id": "{{uuid}}", "flow": "xtls-rprx-vision", "email": "Админ" }
-                ],
+                "clients": [],
                 "decryption": "none"
               },
               "streamSettings": {
@@ -42,9 +40,9 @@ public static class XrayRealityConfigTemplate
                 "security": "reality",
                 "realitySettings": {
                   "show": false,
-                  "dest": "{{sni}}:443",
+                  "dest": "google.com:443",
                   "xver": 0,
-                  "serverNames": ["{{sni}}"],
+                  "serverNames": ["google.com"],
                   "privateKey": "{{privateKey}}",
                   "shortIds": ["{{shortId}}"]
                 }

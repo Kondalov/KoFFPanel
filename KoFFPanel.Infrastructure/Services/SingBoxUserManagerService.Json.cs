@@ -20,17 +20,20 @@ public partial class SingBoxUserManagerService
         var inbounds = root?["inbounds"]?.AsArray();
         if (inbounds == null) return;
 
-        bool hasReality = false, hasHy2 = false, hasTrustTunnel = false;
+        bool hasReality = false, hasHy2 = false, hasXHttp = false;
         foreach (var inboundNode in inbounds) {
             var type = inboundNode?["type"]?.ToString();
-            if (type == "vless") { if (inboundNode?["transport"]?["type"]?.ToString() == "quic") hasTrustTunnel = true; else hasReality = true; }
-            else if (type == "hysteria2") hasHy2 = true;
+            if ("vless".Equals(type, StringComparison.OrdinalIgnoreCase)) { 
+                if ("quic".Equals(inboundNode?["transport"]?["type"]?.ToString(), StringComparison.OrdinalIgnoreCase)) hasXHttp = true; 
+                else hasReality = true; 
+            }
+            else if ("hysteria2".Equals(type, StringComparison.OrdinalIgnoreCase)) hasHy2 = true;
         }
 
         foreach (var inbound in inbounds.OfType<JsonObject>()) {
             var type = inbound["type"]?.ToString();
-            if (type == "vless") {
-                var isQuic = inbound["transport"]?["type"]?.ToString() == "quic";
+            if ("vless".Equals(type, StringComparison.OrdinalIgnoreCase)) {
+                var isQuic = "quic".Equals(inbound["transport"]?["type"]?.ToString(), StringComparison.OrdinalIgnoreCase);
                 var usersArray = new JsonArray();
                 foreach (var u in dbUsers.Where(u => u.IsActive && ((!isQuic && u.IsVlessEnabled) || (isQuic && u.IsTrustTunnelEnabled))))
                     usersArray.Add(isQuic ? new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid } : new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid, ["flow"] = "xtls-rprx-vision" });
@@ -41,14 +44,14 @@ public partial class SingBoxUserManagerService
 
         if (!hasReality) foreach (var u in dbUsers) u.VlessLink = "VLESS не установлен!";
         if (!hasHy2) foreach (var u in dbUsers) u.Hysteria2Link = "Hysteria 2 не установлен!";
-        if (!hasTrustTunnel) foreach (var u in dbUsers) u.TrustTunnelLink = "TrustTunnel не установлен!";
+        if (!hasXHttp) foreach (var u in dbUsers) u.TrustTunnelLink = "TrustTunnel не установлен!";
         await _dbContext.SaveChangesAsync();
     }
 
     private void UpdateVlessLinks(JsonObject inbound, List<VpnClient> dbUsers, string serverIp, bool isQuic)
     {
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
-        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "www.microsoft.com";
+        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "google.com";
         int port = (int?)inbound["listen_port"] ?? (isQuic ? 4433 : 443);
 
         if (!isQuic) {
@@ -58,9 +61,9 @@ public partial class SingBoxUserManagerService
                 var settings = JsonDocument.Parse(profile?.Inbounds.FirstOrDefault(i => i.Protocol == "vless")?.SettingsJson ?? "{}").RootElement;
                 pubKey = settings.GetProperty("publicKey").GetString() ?? ""; shortId = settings.GetProperty("shortId").GetString() ?? "";
             } catch { }
-            foreach (var u in dbUsers) u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{u.Email}";
+            foreach (var u in dbUsers) u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2,http/1.1#SingBox_{u.Email}";
         } else {
-            foreach (var u in dbUsers) u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=quic&security=tls&sni={sni}&allowInsecure=1&insecure=1#TrustTunnel_{u.Email}";
+            foreach (var u in dbUsers) u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=quic&security=tls&sni={sni}&alpn=h3&allowInsecure=1&insecure=1#TrustTunnel_{u.Email}";
         }
     }
 
@@ -68,13 +71,13 @@ public partial class SingBoxUserManagerService
     {
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
         int port = (int?)inbound["listen_port"] ?? 8443;
-        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "www.microsoft.com";
+        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "google.com";
         string pass = inbound["obfs"]?["password"]?.ToString() ?? "";
         string obfs = string.IsNullOrEmpty(pass) ? "" : $"&obfs=salamander&obfs-password={pass}";
         var users = new JsonArray();
         foreach (var u in dbUsers) {
             if (u.IsActive && u.IsHysteria2Enabled) users.Add(new JsonObject { ["name"] = u.Email, ["password"] = u.Uuid });
-            u.Hysteria2Link = $"hy2://{u.Uuid}@{safeIp}:{port}?sni={sni}&insecure=1{obfs}#SingBox_HY2_{u.Email}";
+            u.Hysteria2Link = $"hy2://{u.Uuid}@{safeIp}:{port}?sni={sni}&insecure=1{obfs}&alpn=h3#SingBox_HY2_{u.Email}";
         }
         inbound["users"] = users;
     }

@@ -55,12 +55,12 @@ public partial class CabinetViewModel
                 var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                 var updatedUsers = freshContext.Clients.AsNoTracking().Where(c => c.ServerIp == ip).ToList();
 
-                foreach (var client in updatedUsers)
+                foreach (var client in Clients)
                 {
                     var links = new List<string>();
-                    if (client.IsTrustTunnelEnabled && !string.IsNullOrEmpty(client.TrustTunnelLink) && !client.TrustTunnelLink.Contains("не установлен")) links.Add(client.TrustTunnelLink);
-                    if (client.IsVlessEnabled && !string.IsNullOrEmpty(client.VlessLink) && !client.VlessLink.Contains("не установлен")) links.Add(client.VlessLink);
-                    if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link) && !client.Hysteria2Link.Contains("не установлен")) links.Add(client.Hysteria2Link);
+                    if (client.IsTrustTunnelEnabled && !string.IsNullOrEmpty(client.TrustTunnelLink) && client.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TrustTunnelLink);
+                    if (client.IsVlessEnabled && !string.IsNullOrEmpty(client.VlessLink) && client.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.VlessLink);
+                    if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link) && client.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) links.Add(client.Hysteria2Link);
                     await _subscriptionService.UpdateUserSubscriptionAsync(ssh, client.Uuid ?? "", links);
                 }
 

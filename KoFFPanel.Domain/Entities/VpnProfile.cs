@@ -20,13 +20,13 @@ public class VpnProfile
     // ИСПРАВЛЕНИЕ: Жестко храним тип установленного ядра ("xray" или "sing-box")
     public string CoreType { get; set; } = "xray";
 
-    [Obsolete("Используйте коллекцию Inbounds.")]
+    // === LEGACY DATA (For migration only) ===
     public int VpnPort { get; set; } = 443;
-    [Obsolete] public string Uuid { get; set; } = "";
-    [Obsolete] public string PrivateKey { get; set; } = "";
-    [Obsolete] public string PublicKey { get; set; } = "";
-    [Obsolete] public string ShortId { get; set; } = "";
-    [Obsolete] public string Sni { get; set; } = "www.microsoft.com";
+    public string Uuid { get; set; } = "";
+    public string PrivateKey { get; set; } = "";
+    public string PublicKey { get; set; } = "";
+    public string ShortId { get; set; } = "";
+    public string Sni { get; set; } = "www.microsoft.com";
 
     public void MigrateLegacyData()
     {

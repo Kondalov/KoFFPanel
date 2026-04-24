@@ -6,9 +6,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Runtime.Versioning;
 
 namespace KoFFPanel.Infrastructure.Services;
 
+[SupportedOSPlatform("windows")]
 public class ProfileRepository : IProfileRepository
 {
     private readonly string _appDataFolder;
@@ -31,7 +33,7 @@ public class ProfileRepository : IProfileRepository
 
             foreach (var p in profiles)
             {
-                if (!string.IsNullOrEmpty(p.Password) && p.Password.StartsWith("DPAPI:"))
+                if (!string.IsNullOrEmpty(p.Password) && p.Password.StartsWith("DPAPI:", StringComparison.OrdinalIgnoreCase))
                 {
                     try
                     {
@@ -65,7 +67,7 @@ public class ProfileRepository : IProfileRepository
 
         foreach (var p in safeProfiles)
         {
-            if (!string.IsNullOrEmpty(p.Password) && !p.Password.StartsWith("DPAPI:"))
+            if (!string.IsNullOrEmpty(p.Password) && !p.Password.StartsWith("DPAPI:", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {

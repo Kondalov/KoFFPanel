@@ -58,7 +58,7 @@ public class SmartPortValidator : ISmartPortValidator
             {
                 _logger.Log("PORT-VALIDATOR", $"Проверка порта {port}. Ответ ОС: {sysCheck.Trim()}");
 
-                if (sysCheck.Contains("sing-box") || sysCheck.Contains("xray"))
+                if (sysCheck.Contains("sing-box") || sysCheck.Contains("xray") || sysCheck.Contains("trusttunnel"))
                 {
                     return (true, "Занят нашим ядром (Допустимо)");
                 }
@@ -73,8 +73,10 @@ public class SmartPortValidator : ISmartPortValidator
     // Уровень 5: Умный Auto-Suggest
     public async Task<int> SuggestBestPortAsync(ISshService ssh, string serverId, string protocolType)
     {
-        // Пытаемся всеми силами занять 443! Если занят сторонним ПО - идем по резервным Cloudflare портам
-        int[] preferredPorts = { 443, 8443, 4433, 2053, 2083, 8080 };
+        // Пытаемся всеми силами занять 443 или 2443 для TrustTunnel!
+        int[] preferredPorts = protocolType.ToLower() == "trusttunnel" 
+            ? new[] { 2443, 443, 8443, 4433 } 
+            : new[] { 443, 8443, 4433, 2053, 2083, 8080 };
 
         foreach (int port in preferredPorts)
         {

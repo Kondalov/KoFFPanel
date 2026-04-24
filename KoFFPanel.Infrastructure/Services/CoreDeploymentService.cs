@@ -25,82 +25,241 @@ public partial class CoreDeploymentService : ICoreDeploymentService
     public async Task<(bool IsSuccess, string Message)> RunPreFlightChecksAsync(ISshService ssh)
     {
         if (!ssh.IsConnected) return (false, "Нет SSH подключения");
+
+        // === ИСПРАВЛЕНИЕ: Синхронизация времени (КРИТИЧНО ДЛЯ REALITY) и проверка прав ===
         string checkScript = @"
-if [ ""$EUID"" -ne 0 ]; then echo 'ERROR|Нужны права root (sudo).'; exit 0; fi
-if ! command -v systemctl >/dev/null 2>&1; then echo 'ERROR|Сервер не поддерживает systemd.'; exit 0; fi
+if [ ""$EUID"" -ne 0 ]; then 
+    if ! command -v sudo >/dev/null 2>&1; then 
+        echo 'ERROR|Пользователь не root, а утилита sudo не установлена. Деплой невозможен.'; exit 0; 
+    fi
+    if ! groups | grep -q -E '\bsudo\b|\bwheel\b'; then 
+        echo 'ERROR|Пользователь не состоит в группе sudo или wheel. Нет прав для установки.'; exit 0; 
+    fi
+fi
+if ! command -v systemctl >/dev/null 2>&1; then echo 'ERROR|Сервер не поддерживает systemd (требуется для служб).'; exit 0; fi
 if ! command -v curl >/dev/null 2>&1; then echo 'ERROR|Пакет curl не установлен.'; exit 0; fi
+
+# ЗАЩИТА ОТ ДУРАКА: Синхронизация времени. Рассинхрон > 2 минут вызывает глухой Тайм-аут в XTLS-Reality!
+SUDO_CMD=""""
+if [ ""$EUID"" -ne 0 ]; then SUDO_CMD=""sudo""; fi
+$SUDO_CMD timedatectl set-ntp true 2>/dev/null || true
+$SUDO_CMD apt-get update -q && $SUDO_CMD DEBIAN_FRONTEND=noninteractive apt-get install -y chrony tzdata >/dev/null 2>&1 || true
+$SUDO_CMD systemctl restart chrony 2>/dev/null || true
+
 echo 'READY|Сервер готов к установке.'
 ";
         string result = (await ssh.ExecuteCommandAsync(checkScript)).Trim();
         if (result.StartsWith("ERROR|")) return (false, result.Split('|')[1]);
+
         return (true, "Сервер готов.");
     }
 
     public async Task<string> GetInstalledXrayVersionAsync(ISshService ssh) => ssh.IsConnected ? (await ssh.ExecuteCommandAsync("xray version | head -n 1 | awk '{print $2}'")).Trim() : "Отключен";
     public async Task<string> GetInstalledSingBoxVersionAsync(ISshService ssh) => ssh.IsConnected ? (await ssh.ExecuteCommandAsync("sing-box version | grep 'version' | awk '{print $3}'")).Trim() : "Отключен";
-    public async Task<string> GetInstalledTrustTunnelVersionAsync(ISshService ssh) => ssh.IsConnected ? (await ssh.ExecuteCommandAsync("trusttunnel --version 2>/dev/null | awk '{print $2}'")).Trim() : "Отключен";
+    public async Task<string> GetInstalledTrustTunnelVersionAsync(ISshService ssh) => ssh.IsConnected ? (await ssh.ExecuteCommandAsync("/usr/local/bin/trusttunnel --version 2>/dev/null | awk '{print $2}'")).Trim() : "Отключен";
 
     public async Task<(bool IsSuccess, string Log)> InstallXrayAsync(ISshService ssh, string targetVersion = "latest")
-    {
-        string cmd = targetVersion == "latest" ? "bash -c \"$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)\" @ install" : $"bash -c \"$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)\" @ install --version {targetVersion}";
-        string log = await ssh.ExecuteCommandAsync(cmd, TimeSpan.FromMinutes(3));
-        return (log.Contains("installed") || log.Contains("success"), log);
-    }
+        => await InstallXrayInternalAsync(ssh, targetVersion, "");
 
     public async Task<(bool IsSuccess, string Log)> InstallSingBoxAsync(ISshService ssh, string targetVersion = "latest")
-    {
-        string installCmd = @"
-LATEST_VERSION=$(curl -sL https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep '""tag_name"":' | sed -E 's/.*""v([^""]+)"".*/\1/')
-if [ -z ""$LATEST_VERSION"" ] || [[ ""$LATEST_VERSION"" == *""http""* ]]; then LATEST_VERSION=""1.8.11""; fi
-bash <(curl -fsSL https://sing-box.app/install.sh) install ""$LATEST_VERSION""
-if command -v sing-box >/dev/null 2>&1; then echo 'SUCCESS_INSTALLED'; else echo 'FAIL_INSTALL'; fi
-".Replace("\r", "");
-        string log = await ssh.ExecuteCommandAsync(installCmd, TimeSpan.FromMinutes(3));
-        return (log.Contains("SUCCESS_INSTALLED") || log.Contains("installed") || log.Contains("already"), log);
-    }
+        => await InstallSingBoxInternalAsync(ssh, targetVersion, "");
 
     public async Task<(bool IsSuccess, string Log)> InstallTrustTunnelAsync(ISshService ssh, string targetVersion = "latest")
-    {
-        string installCmd = @"
-wget -qO /tmp/trusttunnel.tar.gz https://github.com/TrustTunnel/TrustTunnel/releases/latest/download/trusttunnel-linux-amd64.tar.gz || \
-wget -qO /usr/local/bin/trusttunnel https://github.com/TrustTunnel/TrustTunnel/releases/latest/download/trusttunnel-linux-amd64
-if [ -f /tmp/trusttunnel.tar.gz ]; then tar -xzf /tmp/trusttunnel.tar.gz -C /tmp/; mv /tmp/trusttunnel /usr/local/bin/trusttunnel; rm /tmp/trusttunnel.tar.gz; fi
-chmod +x /usr/local/bin/trusttunnel
-if command -v trusttunnel >/dev/null 2>&1; then echo 'success'; else echo 'failed'; fi
-".Replace("\r", "");
-        string log = await ssh.ExecuteCommandAsync(installCmd, TimeSpan.FromMinutes(3));
-        return (log.Contains("success"), log);
-    }
+        => await InstallTrustTunnelInternalAsync(ssh, targetVersion, "");
 
     public async Task<(bool IsSuccess, string Log)> DeployFullStackAsync(ISshService ssh, VpnProfile profile, string coreType, List<(IProtocolBuilder Builder, int Port)> protocols)
     {
+        string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "deploy_steps.log");
+        async Task LogStep(string step) 
+        {
+            string msg = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {step}";
+            _logger.Log("DEPLOY-TRACE", msg);
+            try { await File.AppendAllTextAsync(logPath, msg + "\n"); } catch { }
+        }
+
         try
         {
-            _logger.Log("DEPLOY-TRACE", "[1/7] Начало развертывания...");
-            await ssh.ExecuteCommandAsync("systemctl stop sing-box xray trusttunnel 2>/dev/null; systemctl disable sing-box xray trusttunnel 2>/dev/null; killall -9 sing-box xray trusttunnel 2>/dev/null; rm -rf /usr/local/etc/xray /etc/sing-box /etc/trusttunnel; mkdir -p /etc/sing-box /usr/local/etc/xray /etc/trusttunnel");
+            await LogStep($"=== НАЧАЛО ДЕПЛОЯ: Ядро {coreType}, IP {profile.IpAddress} ===");
 
-            var installRes = coreType.ToLower() == "sing-box" ? await InstallSingBoxAsync(ssh) : (coreType.ToLower() == "trusttunnel" ? await InstallTrustTunnelAsync(ssh) : await InstallXrayAsync(ssh));
-            if (!installRes.IsSuccess) return (false, $"Ошибка установки ядра: {installRes.Log}");
+            string sudoPrefix = profile.Username.Equals("root", StringComparison.OrdinalIgnoreCase)
+                ? ""
+                : $"echo '{profile.Password.Replace("'", "'\\''")}' | sudo -S ";
 
-            var existingInbounds = profile.Inbounds.ToList(); profile.Inbounds.Clear();
-            foreach (var p in protocols)
+            string coreName = coreType.ToLower();
+
+            await LogStep("[1/7] Подготовка файловой системы и остановка служб...");
+            if (coreName == "trusttunnel")
             {
-                await ssh.ExecuteCommandAsync($@"if command -v ufw >/dev/null 2>&1; then ufw allow {p.Port}/tcp && ufw allow {p.Port}/udp || true; fi; iptables -I INPUT 1 -p tcp --dport {p.Port} -j ACCEPT || true; iptables-save > /etc/iptables/rules.v4 2>/dev/null || true");
-                var existingDb = existingInbounds.FirstOrDefault(i => i.Protocol.ToLower() == p.Builder.ProtocolType.ToLower());
-                ServerInbound inboundDb;
-                if (existingDb != null && existingDb.Port == p.Port) { await SmartRestoreCertsAsync(ssh, existingDb); inboundDb = existingDb; }
-                else inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
-                profile.Inbounds.Add(inboundDb);
+                await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl stop trusttunnel 2>/dev/null; {sudoPrefix}systemctl disable trusttunnel 2>/dev/null; {sudoPrefix}killall -9 trusttunnel 2>/dev/null; {sudoPrefix}rm -rf /etc/trusttunnel; {sudoPrefix}mkdir -p /etc/trusttunnel");
+                profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() == "trusttunnel");
+            }
+            else
+            {
+                await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl stop sing-box xray 2>/dev/null; {sudoPrefix}systemctl disable sing-box xray 2>/dev/null; {sudoPrefix}killall -9 sing-box xray 2>/dev/null; {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray; {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray");
+
+                if (coreName == "xray")
+                {
+                    await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /var/log/xray && {sudoPrefix}touch /var/log/xray/access.log /var/log/xray/error.log && {sudoPrefix}chmod -R 777 /var/log/xray");
+                }
+
+                // ИСПРАВЛЕНИЕ: При установке Xray/SingBox удаляем ВСЕ старые протоколы этих ядер. 
+                // TrustTunnel удаляем только если в новом списке его нет.
+                profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() != "trusttunnel"); 
+                
+                // Если мы ставим только Xray/SingBox и не передали TrustTunnel в protocols, 
+                // то логично и его вычистить для "чистой" установки, как просил пользователь.
+                if (!protocols.Any(p => p.Builder.ProtocolType.ToLower() == "trusttunnel"))
+                {
+                    profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() == "trusttunnel");
+                }
+
+                profile.CoreType = coreName;
             }
 
-            if (coreType.ToLower() == "trusttunnel") await DeployTrustTunnelConfigAsync(ssh, profile);
-            else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower());
+            await LogStep("[2/7] Установка бинарных файлов ядра...");
+            var installRes = coreType.ToLower() == "sing-box" ? await InstallSingBoxInternalAsync(ssh, "latest", sudoPrefix) :
+                             (coreType.ToLower() == "trusttunnel" ? await InstallTrustTunnelInternalAsync(ssh, "latest", sudoPrefix) :
+                             await InstallXrayInternalAsync(ssh, "latest", sudoPrefix));
 
-            profile.CoreType = coreType.ToLower(); _profileRepository.UpdateProfile(profile);
-            await ssh.ExecuteCommandAsync($"systemctl enable {coreType.ToLower()} --now && systemctl restart {coreType.ToLower()}");
+            if (!installRes.IsSuccess) 
+            {
+                await LogStep($"ОШИБКА: Не удалось установить ядро. Лог: {installRes.Log}");
+                return (false, $"Ошибка установки ядра: {installRes.Log}");
+            }
+
+            await LogStep("[3/7] Генерация конфигураций для протоколов...");
+            foreach (var p in protocols)
+            {
+                await LogStep($"Обработка протокола: {p.Builder.ProtocolType} на порту {p.Port}");
+                var existingDb = profile.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == p.Builder.ProtocolType.ToLower());
+                ServerInbound inboundDb;
+                if (existingDb != null && existingDb.Port == p.Port) 
+                { 
+                    await LogStep("Восстановление существующих сертификатов...");
+                    await SmartRestoreCertsAsync(ssh, existingDb); 
+                    inboundDb = existingDb; 
+                }
+                else 
+                {
+                    await LogStep("Генерация новых ключей/сертификатов...");
+                    inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
+                }
+                
+                if (!profile.Inbounds.Contains(inboundDb))
+                    profile.Inbounds.Add(inboundDb);
+            }
+
+            await LogStep("[4/7] Настройка Firewall (открытие портов)...");
+            foreach (var inbound in profile.Inbounds)
+            {
+                await LogStep($"Открытие порта {inbound.Port} ({inbound.Protocol})...");
+                await SafeOpenPortAsync(ssh, inbound.Port, sudoPrefix);
+            }
+
+            await LogStep("[5/7] Развертывание файлов конфигурации...");
+            if (coreType.ToLower() == "trusttunnel") await DeployTrustTunnelConfigAsync(ssh, profile, sudoPrefix);
+            else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
+
+            await LogStep("[6/7] Сохранение состояния в базу данных...");
+            _profileRepository.UpdateProfile(profile);
+
+            await LogStep("[7/7] Запуск службы и проверка статуса...");
+            await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload && {sudoPrefix}systemctl enable {coreName} --now && {sudoPrefix}systemctl restart {coreName}");
+            
+            // Даем время на запуск
+            await Task.Delay(2000);
+            string status = (await ssh.ExecuteCommandAsync($"systemctl is-active {coreName}")).Trim();
+
+            if (status != "active")
+            {
+                string errorLogs = await ssh.ExecuteCommandAsync($"{sudoPrefix}journalctl -u {coreName} -n 50 --no-pager");
+                await LogStep($"КРИТИЧЕСКИЙ СБОЙ: Сервис {coreName} имеет статус {status}!");
+                await LogStep($"ЛОГИ ОШИБОК:\n{errorLogs}");
+                return (false, $"Ядро {coreName} не запустилось! Статус: {status}. Логи:\n{errorLogs}");
+            }
+
+            await LogStep("=== ДЕПЛОЙ ЗАВЕРШЕН УСПЕШНО ===");
             return (true, $"Успешно развернуто! Ядро: {coreType.ToUpper()}.");
         }
-        catch (Exception ex) { _logger.Log("DEPLOY-ERROR", $"[FAIL] {ex.Message}"); return (false, ex.Message); }
+        catch (Exception ex) 
+        { 
+            await LogStep($"КРИТИЧЕСКАЯ ОШИБКА ИСКЛЮЧЕНИЯ: {ex.Message}\n{ex.StackTrace}");
+            return (false, ex.Message); 
+        }
+    }
+
+    private async Task SafeOpenPortAsync(ISshService ssh, int port, string sudoPrefix)
+    {
+        // ИСПРАВЛЕНИЕ: Жестко вставляем ACCEPT на ПЕРВУЮ позицию в INPUT, чтобы обойти любой UFW/Firewalld
+        string cmd = $@"
+if command -v ufw >/dev/null 2>&1; then {sudoPrefix}ufw allow {port}/tcp && {sudoPrefix}ufw allow {port}/udp || true; fi
+if command -v firewall-cmd >/dev/null 2>&1; then {sudoPrefix}firewall-cmd --add-port={port}/tcp --permanent && {sudoPrefix}firewall-cmd --reload || true; fi
+{sudoPrefix}iptables -I INPUT 1 -p tcp --dport {port} -j ACCEPT || true
+{sudoPrefix}iptables -I INPUT 1 -p udp --dport {port} -j ACCEPT || true
+{sudoPrefix}sh -c 'iptables-save > /etc/iptables/rules.v4' 2>/dev/null || true";
+
+        await ssh.ExecuteCommandAsync(cmd);
+    }
+
+    private async Task<(bool IsSuccess, string Log)> InstallXrayInternalAsync(ISshService ssh, string targetVersion, string sudoPrefix)
+    {
+        string script = @"
+apt-get update -q && apt-get install -y curl wget unzip jq >/dev/null 2>&1
+DOWNLOAD_URL=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r "".assets[] | select(.name == \""Xray-linux-64.zip\"") | .browser_download_url"")
+if [ -z ""$DOWNLOAD_URL"" ]; then echo 'FAIL_INSTALL'; exit 1; fi
+rm -rf /tmp/xray_install && mkdir -p /tmp/xray_install && cd /tmp/xray_install
+wget -q ""$DOWNLOAD_URL"" -O xray.zip
+unzip -o xray.zip >/dev/null
+chmod +x xray
+mv xray /usr/local/bin/xray
+if command -v xray >/dev/null 2>&1; then echo 'SUCCESS_INSTALLED'; else echo 'FAIL_INSTALL'; fi
+cd /tmp && rm -rf /tmp/xray_install
+".Replace("\r", "");
+
+        string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
+        string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(3));
+        return (log.Contains("SUCCESS_INSTALLED") || log.Contains("installed") || log.Contains("already"), log);
+    }
+
+    private async Task<(bool IsSuccess, string Log)> InstallSingBoxInternalAsync(ISshService ssh, string targetVersion, string sudoPrefix)
+    {
+        string script = @"
+apt-get update -q && apt-get install -y curl wget tar jq >/dev/null 2>&1
+DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r "".assets[].browser_download_url"" | grep -i ""linux"" | grep -E ""amd64|x86_64"" | grep ""tar.gz"" | head -n 1)
+if [ -z ""$DOWNLOAD_URL"" ]; then echo 'FAIL_INSTALL'; exit 1; fi
+rm -rf /tmp/singbox_install && mkdir -p /tmp/singbox_install && cd /tmp/singbox_install
+wget -q ""$DOWNLOAD_URL"" -O sb.tar.gz
+if ! tar -xzf sb.tar.gz --strip-components=1; then echo 'FAIL_INSTALL'; exit 1; fi
+chmod +x * 2>/dev/null || true
+if [ -f ""sing-box"" ]; then mv sing-box /usr/local/bin/sing-box; fi
+if command -v sing-box >/dev/null 2>&1; then echo 'SUCCESS_INSTALLED'; else echo 'FAIL_INSTALL'; fi
+cd /tmp && rm -rf /tmp/singbox_install
+".Replace("\r", "");
+
+        string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
+        string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(3));
+        return (log.Contains("SUCCESS_INSTALLED") || log.Contains("installed") || log.Contains("already"), log);
+    }
+
+    private async Task<(bool IsSuccess, string Log)> InstallTrustTunnelInternalAsync(ISshService ssh, string targetVersion, string sudoPrefix)
+    {
+        string script = @"
+apt-get update -q && apt-get install -y curl wget tar jq >/dev/null 2>&1
+DOWNLOAD_URL=$(curl -s https://api.github.com/repos/TrustTunnel/TrustTunnel/releases/latest | jq -r "".assets[].browser_download_url"" | grep -i ""linux"" | grep -E ""amd64|x86_64"" | grep ""tar.gz"" | grep -v ""dbgsym"" | grep -v ""debug"" | head -n 1)
+if [ -z ""$DOWNLOAD_URL"" ]; then echo 'failed'; exit 1; fi
+rm -rf /tmp/trusttunnel_install && mkdir -p /tmp/trusttunnel_install && cd /tmp/trusttunnel_install
+wget -q ""$DOWNLOAD_URL"" -O tt.tar.gz
+if ! tar -xzf tt.tar.gz --strip-components=1; then echo 'failed'; exit 1; fi
+chmod +x * 2>/dev/null || true
+if [ -f ""trusttunnel"" ]; then mv trusttunnel /usr/local/bin/trusttunnel; fi
+if [ -f ""trusttunnel_endpoint"" ]; then mv trusttunnel_endpoint /usr/local/bin/trusttunnel; fi
+if command -v trusttunnel >/dev/null 2>&1; then echo 'success'; else echo 'failed'; fi
+cd /tmp && rm -rf /tmp/trusttunnel_install
+".Replace("\r", "");
+
+        string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
+        string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(3));
+        return (log.Contains("success"), log);
     }
 
     private async Task SmartRestoreCertsAsync(ISshService ssh, ServerInbound existingDb)
@@ -109,61 +268,74 @@ if command -v trusttunnel >/dev/null 2>&1; then echo 'success'; else echo 'faile
             var settings = JsonNode.Parse(existingDb.SettingsJson);
             string cp = settings?["certPath"]?.ToString(); string kp = settings?["keyPath"]?.ToString();
             if (!string.IsNullOrWhiteSpace(cp) && !string.IsNullOrWhiteSpace(kp))
-                await ssh.ExecuteCommandAsync($@"if [ ! -f ""{cp}"" ] || [ ! -f ""{kp}"" ]; then mkdir -p $(dirname ""{cp}""); openssl ecparam -genkey -name prime256v1 -out ""{kp}""; openssl req -new -x509 -days 36500 -key ""{kp}"" -out ""{cp}"" -subj ""/CN=bing.com""; fi");
+                await ssh.ExecuteCommandAsync($@"if [ ! -f ""{cp}"" ] || [ ! -f ""{kp}"" ]; then mkdir -p $(dirname ""{cp}""); openssl ecparam -genkey -name prime256v1 -out ""{kp}""; openssl req -new -x509 -days 36500 -key ""{kp}"" -out ""{cp}"" -subj ""/CN=google.com""; fi");
         } catch { }
     }
 
-    private async Task DeployTrustTunnelConfigAsync(ISshService ssh, VpnProfile profile)
+    private async Task DeployTrustTunnelConfigAsync(ISshService ssh, VpnProfile profile, string sudoPrefix)
     {
         var inbound = profile.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == "trusttunnel");
         if (inbound == null) return;
         var settings = JsonNode.Parse(inbound.SettingsJson);
-        string sni = settings?["sni"]?.ToString() ?? "vpn.local";
+        string sni = settings?["sni"]?.ToString() ?? "google.com";
         string cp = settings?["certPath"]?.ToString() ?? ""; string kp = settings?["keyPath"]?.ToString() ?? "";
-        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(GenerateTrustTunnelVpnToml(inbound)))}' | base64 -d > /etc/trusttunnel/vpn.toml");
-        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(GenerateTrustTunnelHostsToml(sni, cp, kp)))}' | base64 -d > /etc/trusttunnel/hosts.toml");
-        await ssh.ExecuteCommandAsync("echo '[[rule]]\naction = \"allow\"\n' > /etc/trusttunnel/rules.toml; touch /etc/trusttunnel/credentials.toml");
-        await ssh.ExecuteCommandAsync(@"cat > /etc/systemd/system/trusttunnel.service <<EOF
-[Unit]
+
+        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(GenerateTrustTunnelVpnToml(inbound)))}' | base64 -d | {sudoPrefix}tee /etc/trusttunnel/vpn.toml > /dev/null");
+        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(GenerateTrustTunnelHostsToml(sni, cp, kp)))}' | base64 -d | {sudoPrefix}tee /etc/trusttunnel/hosts.toml > /dev/null");
+        await ssh.ExecuteCommandAsync($"{sudoPrefix}sh -c 'echo \"[[rule]]\naction = \\\"allow\\\"\n\" > /etc/trusttunnel/rules.toml'");
+        await ssh.ExecuteCommandAsync($"{sudoPrefix}touch /etc/trusttunnel/credentials.toml");
+
+        // ИСПРАВЛЕНИЕ: Обеспечиваем доступность сертификата для админа по удобному пути
+        await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /opt/trusttunnel && {sudoPrefix}cp {cp} /opt/trusttunnel/cert.pem 2>/dev/null || true");
+
+        string serviceData = @"[Unit]
 Description=TrustTunnel VPN Server
 After=network.target
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/etc/trusttunnel
-ExecStart=/usr/local/bin/trusttunnel --config /etc/trusttunnel/vpn.toml
+ExecStart=/usr/local/bin/trusttunnel vpn.toml hosts.toml
 Restart=on-failure
 RestartSec=5
 [Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload".Replace("\r", ""));
+WantedBy=multi-user.target";
+
+        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceData))}' | base64 -d | {sudoPrefix}tee /etc/systemd/system/trusttunnel.service > /dev/null");
+        await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload");
     }
 
-    private async Task DeployJsonCoreConfigAsync(ISshService ssh, VpnProfile profile, string core)
+    private async Task DeployJsonCoreConfigAsync(ISshService ssh, VpnProfile profile, string core, string sudoPrefix)
     {
         var inboundsArray = new JsonArray();
-        foreach (var inbound in profile.Inbounds) {
+        foreach (var inbound in profile.Inbounds)
+        {
             var settings = JsonNode.Parse(inbound.SettingsJson);
             var node = core == "sing-box" ? BuildSingBoxInbound(inbound, settings) : BuildXrayInbound(inbound, settings);
             if (node != null) inboundsArray.Add(node);
         }
+
         var baseConfig = new JsonObject();
-        if (core == "sing-box") {
+        if (core == "sing-box")
+        {
             baseConfig["log"] = new JsonObject { ["level"] = "info" }; baseConfig["inbounds"] = inboundsArray;
             baseConfig["outbounds"] = new JsonArray { new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, new JsonObject { ["type"] = "block", ["tag"] = "block" } };
             baseConfig["route"] = new JsonObject { ["rules"] = new JsonArray() };
-        } else {
-            baseConfig["log"] = new JsonObject { ["loglevel"] = "warning" }; baseConfig["inbounds"] = inboundsArray;
+        }
+        else
+        {
+            baseConfig["log"] = new JsonObject { ["loglevel"] = "warning", ["access"] = "/var/log/xray/access.log", ["error"] = "/var/log/xray/error.log" }; baseConfig["inbounds"] = inboundsArray;
             baseConfig["outbounds"] = new JsonArray { new JsonObject { ["protocol"] = "freedom", ["tag"] = "direct" }, new JsonObject { ["protocol"] = "blackhole", ["tag"] = "block" } };
             baseConfig["routing"] = new JsonObject { ["rules"] = new JsonArray() };
         }
+
         string path = core == "sing-box" ? "/etc/sing-box/config.json" : "/usr/local/etc/xray/config.json";
-        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(baseConfig.ToJsonString(new JsonSerializerOptions { WriteIndented = true })))}' | base64 -d > {path}");
+        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(baseConfig.ToJsonString(new JsonSerializerOptions { WriteIndented = true })))}' | base64 -d | {sudoPrefix}tee {path} > /dev/null");
+
         string bin = core == "sing-box" ? "sing-box" : "xray";
-        string exec = core == "sing-box" ? $"$(command -v sing-box) run -c {path}" : $"$(command -v xray) run -config {path}";
-        await ssh.ExecuteCommandAsync($@"cat > /etc/systemd/system/{bin}.service <<EOF
-[Unit]
+        string exec = core == "sing-box" ? $"/usr/local/bin/sing-box run -c {path}" : $"/usr/local/bin/xray run -config {path}";
+
+        string serviceData = $@"[Unit]
 Description={bin} Service
 After=network.target network-online.target
 [Service]
@@ -172,8 +344,9 @@ ExecStart={exec}
 Restart=on-failure
 RestartSec=5
 [Install]
-WantedBy=multi-user.target
-EOF
-systemctl daemon-reload".Replace("\r", ""));
+WantedBy=multi-user.target";
+
+        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceData))}' | base64 -d | {sudoPrefix}tee /etc/systemd/system/{bin}.service > /dev/null");
+        await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload");
     }
 }

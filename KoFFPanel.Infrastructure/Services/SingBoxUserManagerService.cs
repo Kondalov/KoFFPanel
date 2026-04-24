@@ -25,6 +25,63 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
     public async Task<List<VpnClient>> GetUsersAsync(ISshService ssh, string serverIp)
     {
         var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+        var globalUsers = await _dbContext.Clients.Where(c => c.ServerIp != serverIp).ToListAsync();
+        bool isMigrated = false;
+
+        foreach (var gu in globalUsers.GroupBy(u => u.Email).Select(g => g.First()))
+        {
+            if (!dbUsers.Any(u => u.Email == gu.Email))
+            {
+                var newUser = new VpnClient 
+                { 
+                    Email = gu.Email, 
+                    Uuid = string.IsNullOrEmpty(gu.Uuid) ? Guid.NewGuid().ToString() : gu.Uuid, 
+                    ServerIp = serverIp, 
+                    Protocol = gu.Protocol, 
+                    TrafficLimit = gu.TrafficLimit, 
+                    ExpiryDate = gu.ExpiryDate, 
+                    IsActive = gu.IsActive, 
+                    IsP2PBlocked = gu.IsP2PBlocked, 
+                    IsVlessEnabled = gu.IsVlessEnabled,
+                    IsHysteria2Enabled = gu.IsHysteria2Enabled,
+                    IsTrustTunnelEnabled = gu.IsTrustTunnelEnabled
+                };
+                _dbContext.Clients.Add(newUser);
+                dbUsers.Add(newUser);
+                isMigrated = true;
+            }
+        }
+
+        // Create Admin if NO users exist globally and locally
+        if (dbUsers.Count == 0 && globalUsers.Count == 0)
+        {
+            var admin = new VpnClient { Email = "ADMIN", Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true, IsTrustTunnelEnabled = true, IsHysteria2Enabled = true };
+            _dbContext.Clients.Add(admin);
+            dbUsers.Add(admin);
+            isMigrated = true;
+        }
+
+        // ИСПРАВЛЕНИЕ: Удаление дублей админа (ADMIN vs Админ)
+        var oldAdmin = dbUsers.FirstOrDefault(u => u.Email == "Админ");
+        var standardAdmin = dbUsers.FirstOrDefault(u => u.Email == "ADMIN");
+
+        if (oldAdmin != null)
+        {
+            if (standardAdmin == null)
+            {
+                oldAdmin.Email = "ADMIN";
+                isMigrated = true;
+            }
+            else
+            {
+                _dbContext.Clients.Remove(oldAdmin);
+                dbUsers.Remove(oldAdmin);
+                isMigrated = true;
+            }
+        }
+
+        if (isMigrated) await _dbContext.SaveChangesAsync();
+
         if (!ssh.IsConnected) return dbUsers;
         string raw = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null");
         if (string.IsNullOrWhiteSpace(raw) || !raw.Contains("{")) return dbUsers;
@@ -32,15 +89,15 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
             var root = JsonNode.Parse(raw);
             var vless = root?["inbounds"]?.AsArray()?.FirstOrDefault(i => i?["type"]?.ToString() == "vless");
             if (vless != null) {
-                bool changed = false;
+                bool changedFromConfig = false;
                 foreach (var c in vless["users"]?.AsArray() ?? new JsonArray()) {
                     string uuid = c?["uuid"]?.ToString() ?? "";
                     if (!dbUsers.Any(u => u.Uuid == uuid)) {
                         _dbContext.Clients.Add(new VpnClient { Email = c?["name"]?.ToString() ?? "Unknown", Uuid = uuid, ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true });
-                        changed = true;
+                        changedFromConfig = true;
                     }
                 }
-                if (changed) await _dbContext.SaveChangesAsync();
+                if (changedFromConfig) await _dbContext.SaveChangesAsync();
             }
             await RebuildInboundsAsync(root, serverIp);
             return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();

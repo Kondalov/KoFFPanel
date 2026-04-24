@@ -39,7 +39,7 @@ public class VlessRealityBuilder : IProtocolBuilder
             privateKey = privateKey,
             publicKey = publicKey,
             shortId = shortId,
-            sni = "www.microsoft.com"
+            sni = "google.com"
         };
 
         return new ServerInbound
@@ -55,12 +55,12 @@ public class VlessRealityBuilder : IProtocolBuilder
     {
         var settings = JsonDocument.Parse(inbound.SettingsJson).RootElement;
         string pubKey = settings.GetProperty("publicKey").GetString() ?? "";
-        string sni = settings.GetProperty("sni").GetString() ?? "www.microsoft.com";
+        string sni = settings.GetProperty("sni").GetString() ?? "google.com";
         string shortId = settings.GetProperty("shortId").GetString() ?? "";
 
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
 
-        // ИСПРАВЛЕНИЕ: Возвращаем &flow=xtls-rprx-vision в ссылку!
-        return $"vless://{clientUuid}@{safeIp}:{inbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel-{clientEmail}";
+        // ИСПРАВЛЕНИЕ: Добавлен alpn=h2 для Hiddify 4.1.1
+        return $"vless://{clientUuid}@{safeIp}:{inbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#KoFFPanel-{clientEmail}";
     }
 }

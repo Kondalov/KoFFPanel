@@ -138,13 +138,27 @@ public class SshService : ISshService, IDisposable
         if (_sftpClient == null || !_sftpClient.IsConnected)
             throw new InvalidOperationException("SFTP is not connected.");
 
-        var files = await Task.Run(() => _sftpClient.ListDirectory(path));
-        return files.Where(f => f.Name != ".")
-                    .OrderByDescending(f => f.Name == "..")
-                    .ThenByDescending(f => f.IsDirectory)
-                    .ThenBy(f => f.Name)
-                    .Select(f => (f.Name, f.IsDirectory))
-                    .ToList();
+        try
+        {
+            var files = await Task.Run(() => _sftpClient.ListDirectory(path));
+            return files.Where(f => f.Name != ".")
+                        .OrderByDescending(f => f.Name == "..")
+                        .ThenByDescending(f => f.IsDirectory)
+                        .ThenBy(f => f.Name)
+                        .Select(f => (f.Name, f.IsDirectory))
+                        .ToList();
+        }
+        catch (Renci.SshNet.Common.SftpPermissionDeniedException)
+        {
+            // === ИСПРАВЛЕНИЕ: Защита от краша при отсутствии прав на папку ===
+            _logger?.Log("SFTP-WARN", $"Отказано в доступе к директории: {path}");
+            return Enumerable.Empty<(string Name, bool IsDir)>();
+        }
+        catch (Exception ex)
+        {
+            _logger?.Log("SFTP-ERROR", $"Ошибка чтения директории {path}: {ex.Message}");
+            return Enumerable.Empty<(string Name, bool IsDir)>();
+        }
     }
 
     public async Task DownloadFileAsync(string remotePath, Stream localStream)

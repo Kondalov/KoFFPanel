@@ -95,7 +95,19 @@ public partial class TerminalViewModel
         IsConnected = _sshService.IsConnected;
         ConnectionInfo = $"ПОДКЛЮЧЕНО: {CurrentProfile.Username}@{CurrentProfile.IpAddress}";
 
+        // === ИСПРАВЛЕНИЕ: Динамическая стартовая директория (Защита от дурака) ===
+        try
+        {
+            string homeDir = await _sshService.ExecuteCommandAsync("pwd");
+            CurrentDirectory = string.IsNullOrWhiteSpace(homeDir) ? "/" : homeDir.Trim();
+        }
+        catch
+        {
+            CurrentDirectory = "/";
+        }
+
         await LoadFilesAsync();
+
         StartMonitoring();
 
         try

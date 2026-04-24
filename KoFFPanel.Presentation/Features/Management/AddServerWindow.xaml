@@ -3,8 +3,6 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="{Binding WindowTitle}"
-                 Width="500"
-                 Height="700"
                  MinWidth="440"
                  MinHeight="650"
                  WindowStartupLocation="CenterScreen"
@@ -237,7 +235,8 @@
                 </RadialGradientBrush>
             </Grid.Background>
 
-            <Grid Margin="16,36,16,16">
+        <Viewbox Stretch="Uniform">
+            <Grid Width="460" Height="620" Margin="16,36,16,16">
                 <Border Background="#E614141E"
                         CornerRadius="20"
                         BorderThickness="1"
@@ -597,6 +596,7 @@
                     </Grid>
                 </Border>
             </Grid>
+        </Viewbox>
         </Grid>
     </Grid>
 </ui:FluentWindow>

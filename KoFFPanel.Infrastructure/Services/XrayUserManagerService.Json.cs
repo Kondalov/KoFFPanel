@@ -17,29 +17,51 @@ public partial class XrayUserManagerService
         var inbounds = root?["inbounds"]?.AsArray();
         if (inbounds == null) return;
 
-        bool hasReality = false, hasTrustTunnel = false;
+        bool hasReality = false;
+        bool hasXHttp = false;
         foreach (var inbound in inbounds.OfType<JsonObject>()) {
-            if (inbound["protocol"]?.ToString() == "vless") {
+            if ("vless".Equals(inbound["protocol"]?.ToString(), StringComparison.OrdinalIgnoreCase)) {
                 var net = inbound["streamSettings"]?["network"]?.ToString();
-                if (net == "quic" || net == "xhttp") hasTrustTunnel = true;
-                else if (net == "tcp") hasReality = true;
+                if ("tcp".Equals(net, StringComparison.OrdinalIgnoreCase)) hasReality = true;
+                if ("xhttp".Equals(net, StringComparison.OrdinalIgnoreCase) || "quic".Equals(net, StringComparison.OrdinalIgnoreCase)) hasXHttp = true;
             }
         }
 
         foreach (var inbound in inbounds.OfType<JsonObject>()) {
-            if (inbound["protocol"]?.ToString() == "vless") {
+            if ("vless".Equals(inbound["protocol"]?.ToString(), StringComparison.OrdinalIgnoreCase)) {
                 var net = inbound["streamSettings"]?["network"]?.ToString();
-                var isQuic = net == "quic" || net == "xhttp";
+                bool isXHttp = "xhttp".Equals(net, StringComparison.OrdinalIgnoreCase) || "quic".Equals(net, StringComparison.OrdinalIgnoreCase);
+                
                 var clients = new JsonArray();
-                foreach (var u in dbUsers.Where(u => u.IsActive && ((!isQuic && u.IsVlessEnabled) || (isQuic && u.IsTrustTunnelEnabled))))
-                    clients.Add(isQuic ? new JsonObject { ["id"] = u.Uuid, ["email"] = u.Email } : new JsonObject { ["id"] = u.Uuid, ["flow"] = "xtls-rprx-vision", ["email"] = u.Email });
+                var targetUsers = dbUsers.Where(u => u.IsActive && (!isXHttp ? u.IsVlessEnabled : u.IsTrustTunnelEnabled));
+
+                foreach (var u in targetUsers)
+                {
+                    var clientObj = new JsonObject { ["id"] = u.Uuid, ["email"] = u.Email };
+                    if (!isXHttp) clientObj["flow"] = "xtls-rprx-vision";
+                    clients.Add(clientObj);
+                }
+
                 if (inbound["settings"] is JsonObject s) s["clients"] = clients;
-                await UpdateXrayLinksAsync(inbound, dbUsers, serverIp, ssh, isQuic);
+                await UpdateXrayLinksAsync(inbound, dbUsers, serverIp, ssh, isXHttp);
             }
         }
 
-        if (!hasReality) foreach (var u in dbUsers) u.VlessLink = "VLESS не установлен!";
-        if (!hasTrustTunnel) foreach (var u in dbUsers) u.TrustTunnelLink = "TrustTunnel не установлен!";
+        // Если Reality не найден в конфиге, помечаем это в ссылках
+        if (!hasReality) 
+        {
+            foreach (var u in dbUsers) 
+            {
+                if (string.IsNullOrEmpty(u.VlessLink) || u.VlessLink.Contains("не установлен"))
+                    u.VlessLink = "VLESS-Reality не найден в конфиге сервера";
+            }
+        }
+
+        foreach (var u in dbUsers) 
+        {
+            u.Hysteria2Link = "Не поддерживается в Xray (используйте Sing-Box)";
+            if (!hasXHttp) u.TrustTunnelLink = "TrustTunnel не активен (установлен Xray-Reality)";
+        }
         await _dbContext.SaveChangesAsync();
     }
 
@@ -47,28 +69,67 @@ public partial class XrayUserManagerService
     {
         int port = (int?)inbound["port"] ?? (isQuic ? 4433 : 443);
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
-        if (!isQuic) {
+
+        if (!isQuic)
+        {
             var rs = inbound["streamSettings"]?["realitySettings"];
-            string sid = rs?["shortIds"]?[0]?.ToString() ?? ""; string sni = rs?["serverNames"]?[0]?.ToString() ?? "www.microsoft.com";
-            string pk = rs?["privateKey"]?.ToString() ?? ""; string pub = "";
-            if (!string.IsNullOrEmpty(pk)) {
+            string sid = rs?["shortIds"]?[0]?.ToString() ?? "";
+
+            // ИСПРАВЛЕНИЕ: Fallback должен строго совпадать с тем, что генерирует ядро (www.microsoft.com)
+            string sni = rs?["serverNames"]?[0]?.ToString() ?? "www.microsoft.com";
+
+            string pk = rs?["privateKey"]?.ToString() ?? "";
+            string pub = "";
+
+            if (!string.IsNullOrEmpty(pk))
+            {
                 var outStr = await ssh.ExecuteCommandAsync($"/usr/local/bin/xray x25519 -i {pk}");
-                var m = System.Text.RegularExpressions.Regex.Match(outStr, @"(?i)key\s*:\s*(\S+)");
+                var m = System.Text.RegularExpressions.Regex.Match(outStr, @"(?i)PublicKey[)]?\s*:\s*(\S+)");
                 if (m.Success) pub = m.Groups[1].Value.Trim();
             }
-            foreach (var u in dbUsers) u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&encryption=none&pbk={pub}&headerType=none&fp=chrome&sni={sni}&sid={sid}&flow=xtls-rprx-vision#Xray_{u.Email}";
-        } else {
-            string sni = inbound["streamSettings"]?["tlsSettings"]?["serverName"]?.ToString() ?? "adguard.com";
-            foreach (var u in dbUsers) u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=xhttp&security=tls&encryption=none&sni={sni}&alpn=h3&host={sni}&path=%2F&allowInsecure=1&insecure=1#TrustTunnel_{u.Email}";
+
+            foreach (var u in dbUsers)
+            {
+                string encodedName = Uri.EscapeDataString($"KoFFPanel_{u.Email}");
+                u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pub}&fp=chrome&sni={sni}&sid={sid}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
+            }
+        }
+        else
+        {
+            string sni = inbound["streamSettings"]?["tlsSettings"]?["serverName"]?.ToString() ?? "www.microsoft.com";
+            foreach (var u in dbUsers)
+            {
+                string encodedName = Uri.EscapeDataString($"TrustTunnel_{u.Email}");
+                u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=xhttp&security=tls&encryption=none&sni={sni}&alpn=h3&host={sni}&path=%2F&allowInsecure=1&insecure=1#{encodedName}";
+            }
         }
     }
 
     private async Task<(bool IsSuccess, string Message)> ApplyAndTestConfigAsync(ISshService ssh, string newJson)
     {
-        string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(newJson.Replace("\r", "")));
-        await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d > /tmp/config_users_test.json");
-        if (!(await ssh.ExecuteCommandAsync("/usr/local/bin/xray run -test -config /tmp/config_users_test.json 2>&1")).Contains("Configuration OK")) return (false, "Ошибка теста Xray!");
-        await ssh.ExecuteCommandAsync("cp /usr/local/etc/xray/config.json /usr/local/etc/xray/config.backup.json; mv /tmp/config_users_test.json /usr/local/etc/xray/config.json; systemctl stop xray 2>/dev/null; killall -9 xray 2>/dev/null; systemctl restart xray");
+        string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
+
+        // ИСПРАВЛЕНИЕ: Добавлен StringComparison для соответствия строгим правилам .NET 10
+        string b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(newJson.Replace("\r", "", StringComparison.OrdinalIgnoreCase)));
+
+        await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {s} tee /tmp/config_users_test.json >/dev/null");
+
+        string testResult = await ssh.ExecuteCommandAsync("/usr/local/bin/xray run -test -config /tmp/config_users_test.json 2>&1");
+
+        // ИСПРАВЛЕНИЕ: Добавлен StringComparison.OrdinalIgnoreCase в метод Contains
+        if (!testResult.Contains("Configuration OK", StringComparison.OrdinalIgnoreCase))
+        {
+            return (false, "Ошибка теста Xray! Конфиг не прошел валидацию.");
+        }
+
+        string applyCmd = $"{s} cp /usr/local/etc/xray/config.json /usr/local/etc/xray/config.backup.json; " +
+                          $"{s} mv /tmp/config_users_test.json /usr/local/etc/xray/config.json; " +
+                          $"{s} systemctl stop xray 2>/dev/null; " +
+                          $"{s} killall -9 xray 2>/dev/null; " +
+                          $"{s} systemctl restart xray";
+
+        await ssh.ExecuteCommandAsync(applyCmd);
+
         return (true, "Обновлено!");
     }
 }

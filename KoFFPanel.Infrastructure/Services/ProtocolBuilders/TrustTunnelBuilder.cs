@@ -11,17 +11,18 @@ public class TrustTunnelBuilder : IProtocolBuilder
     public string ProtocolType => "trusttunnel";
     public string DisplayName => "TrustTunnel (MASQUE HTTP/3)";
     public string TransportType => "udp";
-    public int DefaultPort => 443;
+    public int DefaultPort => 2443;
 
     public async Task<ServerInbound> GenerateNewInboundAsync(ISshService ssh, int port)
     {
         string certDir = "/etc/trusttunnel/certs";
         string certPath = $"{certDir}/server.crt";
         string keyPath = $"{certDir}/server.key";
-        string hostname = "vpn.trusttunnel.local"; // Дефолтный хост для самоподписанных сертификатов
+        string hostname = "google.com"; // Более реалистичный SNI для обхода DPI
 
         await ssh.ExecuteCommandAsync($"mkdir -p {certDir}");
-        string certCmd = $"openssl req -x509 -nodes -newkey rsa:2048 -keyout {keyPath} -out {certPath} -days 3650 -subj \"/CN={hostname}\" 2>/dev/null";
+        // Генерация сертификата с корректным SAN для SNI
+        string certCmd = $"openssl req -x509 -nodes -newkey rsa:2048 -keyout {keyPath} -out {certPath} -days 3650 -subj \"/CN={hostname}\" -addext \"subjectAltName = DNS:{hostname}\" 2>/dev/null";
         await ssh.ExecuteCommandAsync(certCmd);
 
         var settings = new

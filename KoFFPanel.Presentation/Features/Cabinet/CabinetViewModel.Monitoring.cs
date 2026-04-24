@@ -30,7 +30,13 @@ public partial class CabinetViewModel
 
         bool isSingBox = profile.CoreType == "sing-box";
         bool isTrustTunnel = profile.CoreType == "trusttunnel";
+        
         string displayCoreName = isSingBox ? "Sing-box" : (isTrustTunnel ? "TrustTunnel" : "Xray-core");
+        if (profile.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel") && !isTrustTunnel)
+        {
+            displayCoreName += " + TrustTunnel";
+        }
+
         string serviceName = isSingBox ? "sing-box" : (isTrustTunnel ? "trusttunnel" : "xray");
 
         _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ядро: {displayCoreName.ToUpper()}");
@@ -72,7 +78,39 @@ public partial class CabinetViewModel
         int tcpCount = await GetTcpConnectionsCountAsync(localSsh, res.TcpConnections);
         TcpConnections = tcpCount;
 
-        string coreStatusStr = (await localSsh.ExecuteCommandAsync($"systemctl is-active {serviceName}")).Trim() == "active" ? "Active" : "Stopped";
+        // УМНЫЙ АЛГОРИТМ: Детекция всех ядер
+        string checkCoresCmd = "systemctl show -p ActiveState sing-box xray trusttunnel 2>/dev/null";
+        string coresRaw = await localSsh.ExecuteCommandAsync(checkCoresCmd);
+        var coresLines = coresRaw.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        
+        bool sbActive = coresLines.Any(l => l.Contains("sing-box") && l.Contains("active"));
+        bool xrActive = coresLines.Any(l => l.Contains("xray") && l.Contains("active"));
+        bool ttActive = coresLines.Any(l => l.Contains("trusttunnel") && l.Contains("active"));
+
+        // Если show не выдал имен, пробуем классический is-active
+        if (coresLines.Length < 3)
+        {
+            string fallback = await localSsh.ExecuteCommandAsync("systemctl is-active sing-box xray trusttunnel 2>/dev/null");
+            var fbLines = fallback.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            sbActive = fbLines.Length > 0 && fbLines[0].Trim() == "active";
+            xrActive = fbLines.Length > 1 && fbLines[1].Trim() == "active";
+            ttActive = fbLines.Length > 2 && fbLines[2].Trim() == "active";
+        }
+
+        string actualDisplayCore = displayCoreName;
+        if (sbActive && xrActive) actualDisplayCore = "Sing-box + Xray";
+        else if (sbActive) actualDisplayCore = "Sing-box";
+        else if (xrActive) actualDisplayCore = "Xray-core";
+        
+        if (ttActive && !actualDisplayCore.Contains("TrustTunnel")) 
+            actualDisplayCore = (actualDisplayCore == "TrustTunnel") ? "TrustTunnel" : actualDisplayCore + " + TrustTunnel";
+
+        string coreStatusStr = "Stopped";
+        if (actualDisplayCore.Contains("Sing-box") && sbActive) coreStatusStr = "Active";
+        else if (actualDisplayCore.Contains("Xray") && xrActive) coreStatusStr = "Active";
+        else if (actualDisplayCore.Contains("TrustTunnel") && ttActive) coreStatusStr = "Active";
+        else coreStatusStr = "Stopped";
+
         string journalLogs = await localSsh.ExecuteCommandAsync($"journalctl -u {serviceName} -n 5 --no-pager");
         string accessLogs = await GetAccessLogsAsync(localSsh, isSingBox, isTrustTunnel);
         string grepTest = await GetParserTestLogsAsync(localSsh, isSingBox, isTrustTunnel);
@@ -90,7 +128,7 @@ public partial class CabinetViewModel
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            UpdateUiAfterCycle(displayCoreName, coreStatusStr, coreStats, journalLogs, accessLogs, grepTest);
+            UpdateUiAfterCycle(actualDisplayCore, coreStatusStr, coreStats, journalLogs, accessLogs, grepTest);
             bool dbNeedsUpdate = ProcessClientsAfterCycle(trafficStats, activeUsernames, allOnlineStats, trafficBatch, connectionBatch);
             
             if (dbNeedsUpdate && SelectedServer != null)

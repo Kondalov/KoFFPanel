@@ -2,7 +2,6 @@
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using KoFFPanel.Application.Constants;
-using KoFFPanel.Application.Constants;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Application.Interfaces.ProtocolBuilders;
 using KoFFPanel.Application.Services;
@@ -249,7 +248,6 @@ public partial class DeployWizardViewModel : ObservableObject
             return;
         }
 
-        // === ИСПРАВЛЕНИЕ: Умный алгоритм выбора сервера перед установкой ===
         var allServers = _profileRepository.LoadProfiles();
 
         if (allServers.Count == 0)
@@ -259,16 +257,14 @@ public partial class DeployWizardViewModel : ObservableObject
         }
         else if (allServers.Count > 1)
         {
-            // Используем новый сервис вместо прямого создания окна (Соблюдаем Clean Architecture)
             var targetServer = _serverSelectionService.SelectServer(allServers, _server);
 
             if (targetServer != null)
             {
-                // Если пользователь выбрал другой сервер, переподключаем SSH и проверяем порты заново
                 if (_server.Id != targetServer.Id)
                 {
                     bool revalidationPassed = await SwitchServerAndRevalidateAsync(targetServer, selectedItems);
-                    if (!revalidationPassed) return; // Защита от дурака сработала, порты заняты, прерываем деплой
+                    if (!revalidationPassed) return;
                 }
             }
             else
@@ -277,7 +273,17 @@ public partial class DeployWizardViewModel : ObservableObject
                 return;
             }
         }
-        // ====================================================================
+
+        // === ИСПРАВЛЕНИЕ: Обязательный Guard Clause (Pre-flight check) ===
+        StatusMessage = "Проверка прав доступа (Pre-flight check)...";
+        var preFlight = await _deploymentService.RunPreFlightChecksAsync(_ssh);
+        if (!preFlight.IsSuccess)
+        {
+            StatusMessage = $"ОШИБКА: {preFlight.Message}";
+            _logger.Log("WIZARD-ERROR", $"[PRE-FLIGHT FAIL] {preFlight.Message}");
+            return; // Жестко прерываем установку, так как прав нет
+        }
+        // ================================================================
 
         StatusMessage = "🚀 Развертывание ядра и портов... (Подождите)";
         IsNotInstalling = false;

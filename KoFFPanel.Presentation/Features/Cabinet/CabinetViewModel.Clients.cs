@@ -31,32 +31,50 @@ public partial class CabinetViewModel
         var server = SelectedServer;
         if (ssh == null || !ssh.IsConnected || server == null) return;
 
-        var window = _serviceProvider.GetRequiredService<AddClientWindow>();
-        if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
-        
-        if (window.DataContext is AddClientViewModel vm)
+        try
         {
-            vm.Initialize(server.IpAddress ?? "");
-            if (window.ShowDialog() == true)
+            var window = _serviceProvider.GetRequiredService<AddClientWindow>();
+            if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
+
+            if (window.DataContext is AddClientViewModel vm)
             {
-                ServerStatus = $"Добавление клиента {vm.ClientName}...";
-                long limit = (long)(vm.TrafficLimitGb * 1024L * 1024 * 1024);
-                string ip = server.IpAddress ?? "";
+                vm.Initialize(server.IpAddress ?? "");
 
-                var (success, msg, vlessLink) = IsSingBoxActive()
-                    ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked)
-                    : await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate);
+                // Открываем окно
+                window.ShowDialog();
 
-                if (success)
+                // === ИСПРАВЛЕНИЕ: Проверяем флаг успешности вместо DialogResult ===
+                if (vm.IsSuccess)
                 {
-                    var links = new List<string>();
-                    if (!string.IsNullOrEmpty(vlessLink)) links.Add(vlessLink);
-                    await _subscriptionService.UpdateUserSubscriptionAsync(ssh, vm.ClientName, links);
-                    ServerStatus = $"Онлайн (Клиент {vm.ClientName} добавлен!)";
-                    await LoadUsersAsync();
+                    ServerStatus = $"Добавление клиента {vm.ClientName}...";
+                    long limit = (long)(vm.TrafficLimitGb * 1024L * 1024 * 1024);
+                    string ip = server.IpAddress ?? "";
+
+                    var (success, msg, vlessLink) = IsSingBoxActive()
+                        ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked)
+                        : await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate);
+
+                    if (success)
+                    {
+                        var links = new List<string>();
+                        if (!string.IsNullOrEmpty(vlessLink)) links.Add(vlessLink);
+                        await _subscriptionService.UpdateUserSubscriptionAsync(ssh, vm.ClientName, links);
+
+                        ServerStatus = $"Онлайн (Клиент {vm.ClientName} добавлен!)";
+                        await LoadUsersAsync();
+                    }
+                    else
+                    {
+                        ServerStatus = $"Ошибка: {msg}";
+                        _logger?.Log("ADD-CLIENT", $"Ошибка создания на сервере: {msg}");
+                    }
                 }
-                else ServerStatus = $"Ошибка: {msg}";
             }
+        }
+        catch (Exception ex)
+        {
+            ServerStatus = "Ошибка приложения при добавлении.";
+            _logger?.Log("ADD-CLIENT-CRASH", ex.Message);
         }
     }
 
@@ -117,32 +135,63 @@ public partial class CabinetViewModel
         var server = SelectedServer;
         if (client == null || ssh == null || !ssh.IsConnected || server == null) return;
 
-        var window = _serviceProvider.GetRequiredService<AddClientWindow>();
-        if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
-
-        string email = client.Email ?? "Unknown";
-        string ip = server.IpAddress ?? "";
-
-        if (window.DataContext is AddClientViewModel vm) 
+        try
         {
-            vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked);
-            if (window.ShowDialog() == true)
+            var window = _serviceProvider.GetRequiredService<AddClientWindow>();
+            if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
+
+            string email = client.Email ?? "Unknown";
+            string ip = server.IpAddress ?? "";
+
+            if (window.DataContext is AddClientViewModel vm)
             {
-                long newLimit = (long)(vm.TrafficLimitGb * 1024L * 1024 * 1024);
+                vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked);
 
-                bool success = IsSingBoxActive()
-                    ? await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.IsP2PBlocked)
-                    : await _userManager.UpdateUserLimitsAsync(ip, email, newLimit, vm.ExpiryDate);
+                // Открываем окно
+                window.ShowDialog();
 
-                if (success)
+                // === ИСПРАВЛЕНИЕ: Проверяем флаг успешности вместо DialogResult ===
+                if (vm.IsSuccess)
                 {
-                    client.TrafficLimit = newLimit;
-                    client.ExpiryDate = vm.ExpiryDate;
-                    client.Note = vm.Note;
-                    client.IsP2PBlocked = vm.IsP2PBlocked;
-                    ServerStatus = "Онлайн (Лимиты обновлены)";
+                    long newLimit = (long)(vm.TrafficLimitGb * 1024L * 1024 * 1024);
+
+                    bool success = IsSingBoxActive()
+                        ? await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.IsP2PBlocked)
+                        : await _userManager.UpdateUserLimitsAsync(ip, email, newLimit, vm.ExpiryDate);
+
+                    if (success)
+                    {
+                        // Обновляем модель в UI
+                        client.TrafficLimit = newLimit;
+                        client.ExpiryDate = vm.ExpiryDate;
+                        client.Note = vm.Note;
+                        client.IsP2PBlocked = vm.IsP2PBlocked;
+
+                        // === ИСПРАВЛЕНИЕ: Принудительное сохранение изменений в БД ===
+                        var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                        var dbClient = dbContext.Clients.FirstOrDefault(c => c.Email == email && c.ServerIp == ip);
+                        if (dbClient != null)
+                        {
+                            dbClient.TrafficLimit = newLimit;
+                            dbClient.ExpiryDate = vm.ExpiryDate;
+                            dbClient.Note = vm.Note;
+                            dbClient.IsP2PBlocked = vm.IsP2PBlocked;
+                            await dbContext.SaveChangesAsync();
+                        }
+
+                        ServerStatus = "Онлайн (Лимиты обновлены)";
+                    }
+                    else
+                    {
+                        ServerStatus = "Ошибка обновления лимитов.";
+                    }
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            ServerStatus = "Ошибка приложения при редактировании.";
+            _logger?.Log("EDIT-CLIENT-CRASH", ex.Message);
         }
     }
 
@@ -187,7 +236,7 @@ public partial class CabinetViewModel
         if (window.DataContext is ClientProtocolsViewModel vm)
         {
             string ip = server.IpAddress ?? "";
-            vm.Initialize(client, server.CoreType ?? "xray");
+            vm.Initialize(client, _subscriptionService.GetSubscriptionUrl(ip, client.Uuid ?? ""));
 
             vm.SaveCallback = async (updatedClient) =>
             {
@@ -199,9 +248,9 @@ public partial class CabinetViewModel
                 }
 
                 var activeLinks = new List<string>();
-                if (updatedClient.IsVlessEnabled && !string.IsNullOrEmpty(updatedClient.VlessLink) && !updatedClient.VlessLink.Contains("не установлен")) activeLinks.Add(updatedClient.VlessLink);
-                if (updatedClient.IsHysteria2Enabled && !string.IsNullOrEmpty(updatedClient.Hysteria2Link) && !updatedClient.Hysteria2Link.Contains("не установлен")) activeLinks.Add(updatedClient.Hysteria2Link);
-                if (updatedClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(updatedClient.TrustTunnelLink) && !updatedClient.TrustTunnelLink.Contains("не установлен")) activeLinks.Add(updatedClient.TrustTunnelLink);
+                if (updatedClient.IsVlessEnabled && !string.IsNullOrEmpty(updatedClient.VlessLink) && updatedClient.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.VlessLink);
+                if (updatedClient.IsHysteria2Enabled && !string.IsNullOrEmpty(updatedClient.Hysteria2Link) && updatedClient.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.Hysteria2Link);
+                if (updatedClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(updatedClient.TrustTunnelLink) && updatedClient.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.TrustTunnelLink);
 
                 if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
                 {
