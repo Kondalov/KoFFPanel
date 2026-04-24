@@ -61,9 +61,17 @@ public partial class SingBoxUserManagerService
                 var settings = JsonDocument.Parse(profile?.Inbounds.FirstOrDefault(i => i.Protocol == "vless")?.SettingsJson ?? "{}").RootElement;
                 pubKey = settings.GetProperty("publicKey").GetString() ?? ""; shortId = settings.GetProperty("shortId").GetString() ?? "";
             } catch { }
-            foreach (var u in dbUsers) u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2,http/1.1#SingBox_{u.Email}";
+            foreach (var u in dbUsers) 
+            {
+                string encodedName = Uri.EscapeDataString($"SB_VLESS_{u.Email}");
+                u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
+            }
         } else {
-            foreach (var u in dbUsers) u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=quic&security=tls&sni={sni}&alpn=h3&allowInsecure=1&insecure=1#TrustTunnel_{u.Email}";
+            foreach (var u in dbUsers) 
+            {
+                string encodedName = Uri.EscapeDataString($"TT_{u.Email}");
+                u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=quic&security=tls&sni={sni}&alpn=h3&allowInsecure=1&insecure=1#{encodedName}";
+            }
         }
     }
 
@@ -71,13 +79,17 @@ public partial class SingBoxUserManagerService
     {
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
         int port = (int?)inbound["listen_port"] ?? 8443;
-        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "google.com";
+        
+        // ИСПРАВЛЕНИЕ: Fallback для SNI должен быть bing.com, как в генераторе сертификатов Hysteria2Builder.cs
+        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "bing.com"; 
+        
         string pass = inbound["obfs"]?["password"]?.ToString() ?? "";
         string obfs = string.IsNullOrEmpty(pass) ? "" : $"&obfs=salamander&obfs-password={pass}";
         var users = new JsonArray();
         foreach (var u in dbUsers) {
             if (u.IsActive && u.IsHysteria2Enabled) users.Add(new JsonObject { ["name"] = u.Email, ["password"] = u.Uuid });
-            u.Hysteria2Link = $"hy2://{u.Uuid}@{safeIp}:{port}?sni={sni}&insecure=1{obfs}&alpn=h3#SingBox_HY2_{u.Email}";
+            string encodedName = Uri.EscapeDataString($"SB_HY2_{u.Email}");
+            u.Hysteria2Link = $"hy2://{u.Uuid}@{safeIp}:{port}?sni={sni}&insecure=1{obfs}&alpn=h3#{encodedName}";
         }
         inbound["users"] = users;
     }

@@ -149,7 +149,8 @@ public partial class ClientProtocolsViewModel : ObservableObject
             string sni = settings.GetProperty("sni").GetString() ?? "bing.com";
             string obfs = settings.GetProperty("obfsPassword").GetString() ?? "";
             string safeIp = ip.Contains(":") && !ip.StartsWith("[") ? $"[{ip}]" : ip;
-            return $"hysteria2://{uuid}@{safeIp}:{inbound.Port}?sni={sni}&obfs=emerald&obfs-password={obfs}&insecure=1#KoFF_{email}";
+            string encodedName = Uri.EscapeDataString($"KoFF_{email}");
+            return $"hy2://{uuid}@{safeIp}:{inbound.Port}?sni={sni}&obfs=salamander&obfs-password={obfs}&insecure=1#{encodedName}";
         } catch { return "Ошибка генерации ссылки"; }
     }
 
