@@ -41,7 +41,7 @@ public class TrustTunnelUserManagerService : ITrustTunnelUserManagerService
         }
 
         string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(sb.ToString()));
-        await ssh.ExecuteCommandAsync($"echo '{base64Creds}' | base64 -d | sudo tee /etc/trusttunnel/credentials.toml >/dev/null");
+        await ssh.ExecuteCommandAsync($"echo '{base64Creds}' | base64 -d | sudo tee /opt/trusttunnel2/credentials.toml >/dev/null");
 
         var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
         var ttInbound = profile?.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == "trusttunnel");

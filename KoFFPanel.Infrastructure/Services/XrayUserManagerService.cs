@@ -101,7 +101,9 @@ public partial class XrayUserManagerService : IXrayUserManagerService
         if (string.IsNullOrWhiteSpace(raw) || raw.Contains("No such")) return dbUsers;
         try {
             var root = JsonNode.Parse(raw);
-            foreach (var inbound in root?["inbounds"]?.AsArray().OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>()) {
+            if (root == null) return dbUsers;
+
+            foreach (var inbound in root["inbounds"]?.AsArray().OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>()) {
                 if (inbound["protocol"]?.ToString() == "vless") {
                     foreach (var c in inbound["settings"]?["clients"]?.AsArray() ?? new JsonArray()) {
                         string email = c?["email"]?.ToString() ?? "Unknown";
@@ -300,9 +302,12 @@ EOF";
             if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.Contains("{"))
             {
                 var root = JsonNode.Parse(rawJson);
-                await RebuildInboundsAsync(root, serverIp, ssh);
-                var res = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                if (!res.IsSuccess) return (false, res.Message, "");
+                if (root != null)
+                {
+                    await RebuildInboundsAsync(root, serverIp, ssh);
+                    var res = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                    if (!res.IsSuccess) return (false, res.Message, "");
+                }
             }
         }
         
@@ -316,8 +321,12 @@ EOF";
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
         if (await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp) <= 1) return (false, "Последний!");
         if (user != null) { _dbContext.Clients.Remove(user); await _dbContext.SaveChangesAsync(); }
-        var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json 2>/dev/null"));
+        
+        var rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json 2>/dev/null");
+        if (string.IsNullOrWhiteSpace(rawJson)) return (true, "Удален.");
+        var root = JsonNode.Parse(rawJson);
         if (root == null) return (true, "Удален.");
+
         await RebuildInboundsAsync(root, serverIp, ssh);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -326,8 +335,11 @@ EOF";
     {
         var stats = new Dictionary<string, long>();
         try {
-            var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("/usr/local/bin/xray api statsquery --server=127.0.0.1:10085"));
-            foreach (var item in root?["stat"]?.AsArray() ?? new JsonArray()) {
+            var raw = await ssh.ExecuteCommandAsync("/usr/local/bin/xray api statsquery --server=127.0.0.1:10085");
+            var root = JsonNode.Parse(raw);
+            if (root == null) return stats;
+
+            foreach (var item in root["stat"]?.AsArray() ?? new JsonArray()) {
                 var parts = item?["name"]?.ToString().Split(">>>");
                 if (parts?.Length == 4 && parts[0] == "user") {
                     string email = parts[1]; long val = long.Parse(item?["value"]?.ToString() ?? "0");
@@ -344,7 +356,11 @@ EOF";
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
         if (user == null) return (false, "Нет в БД");
         user.IsActive = active; await _dbContext.SaveChangesAsync();
-        var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json"));
+        
+        var rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json");
+        var root = JsonNode.Parse(rawJson);
+        if (root == null) return (false, "Ошибка конфига");
+
         await RebuildInboundsAsync(root, serverIp, ssh);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -366,7 +382,10 @@ EOF";
     public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> dbUsers)
     {
         try {
-            var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json"));
+            var rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json");
+            var root = JsonNode.Parse(rawJson);
+            if (root == null) return false;
+
             string ip = dbUsers.FirstOrDefault()?.ServerIp ?? "";
             if (!string.IsNullOrEmpty(ip)) await RebuildInboundsAsync(root, ip, ssh);
             return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;

@@ -87,7 +87,9 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         if (string.IsNullOrWhiteSpace(raw) || !raw.Contains("{")) return dbUsers;
         try {
             var root = JsonNode.Parse(raw);
-            var vless = root?["inbounds"]?.AsArray()?.FirstOrDefault(i => i?["type"]?.ToString() == "vless");
+            if (root == null) return dbUsers;
+
+            var vless = root["inbounds"]?.AsArray()?.FirstOrDefault(i => i?["type"]?.ToString() == "vless");
             if (vless != null) {
                 bool changedFromConfig = false;
                 foreach (var c in vless["users"]?.AsArray() ?? new JsonArray()) {
@@ -110,10 +112,16 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         if (await _dbContext.Clients.AnyAsync(c => c.Email == name && c.ServerIp == serverIp)) return (false, "Уже есть!", "");
         var newUser = new VpnClient { Email = name, Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, TrafficLimit = limit, ExpiryDate = expiry, IsP2PBlocked = p2p, IsVlessEnabled = true, IsActive = true };
         _dbContext.Clients.Add(newUser); await _dbContext.SaveChangesAsync();
-        var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json"));
-        await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
-        var res = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-        return (res.IsSuccess, res.Message, (await _dbContext.Clients.FirstOrDefaultAsync(u => u.Uuid == newUser.Uuid))?.VlessLink ?? "");
+        
+        var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+        var root = JsonNode.Parse(rawJson);
+        if (root != null)
+        {
+            await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
+            var res = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            return (res.IsSuccess, res.Message, (await _dbContext.Clients.FirstOrDefaultAsync(u => u.Uuid == newUser.Uuid))?.VlessLink ?? "");
+        }
+        return (false, "Ошибка чтения конфига сервера", "");
     }
 
     public async Task<(bool IsSuccess, string Message)> RemoveUserAsync(ISshService ssh, string serverIp, string name)
@@ -121,8 +129,12 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
         if (await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp) <= 1) return (false, "Последний!");
         if (user != null) { _dbContext.Clients.Remove(user); await _dbContext.SaveChangesAsync(); }
-        var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null"));
+        
+        var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null");
+        if (string.IsNullOrWhiteSpace(rawJson)) return (true, "Удален.");
+        var root = JsonNode.Parse(rawJson);
         if (root == null) return (true, "Удален.");
+
         await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -132,7 +144,11 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
         if (user == null) return (false, "Нет в БД");
         user.IsActive = active; await _dbContext.SaveChangesAsync();
-        var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json"));
+
+        var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+        var root = JsonNode.Parse(rawJson);
+        if (root == null) return (false, "Ошибка конфига");
+
         await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
@@ -143,7 +159,11 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         if (user == null) return false;
         user.TrafficLimit = limit; user.ExpiryDate = expiry; user.IsP2PBlocked = p2p;
         await _dbContext.SaveChangesAsync();
-        var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json"));
+
+        var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+        var root = JsonNode.Parse(rawJson);
+        if (root == null) return false;
+
         await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
         return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;
     }
@@ -157,7 +177,10 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
 
     public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> dbUsers)
     {
-        var root = JsonNode.Parse(await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json"));
+        var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+        var root = JsonNode.Parse(rawJson);
+        if (root == null) return false;
+
         string ip = dbUsers.FirstOrDefault()?.ServerIp ?? "";
         if (!string.IsNullOrEmpty(ip)) { await RebuildInboundsAsync(root, ip); await ApplyP2PRulesAsync(root, ip); }
         return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;

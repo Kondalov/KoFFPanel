@@ -22,5 +22,5 @@ public interface ICoreDeploymentService
         ISshService ssh,
         VpnProfile profile,
         string coreType,
-        List<(IProtocolBuilder Builder, int Port)> protocols);
+        List<(IProtocolBuilder Builder, int Port, string? TtUsername, string? TtPassword)> protocols);
 }

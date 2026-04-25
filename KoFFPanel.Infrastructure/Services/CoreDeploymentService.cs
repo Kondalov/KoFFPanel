@@ -67,7 +67,7 @@ echo 'READY|Сервер готов к установке.'
     public async Task<(bool IsSuccess, string Log)> InstallTrustTunnelAsync(ISshService ssh, string targetVersion = "latest")
         => await InstallTrustTunnelInternalAsync(ssh, targetVersion, "");
 
-    public async Task<(bool IsSuccess, string Log)> DeployFullStackAsync(ISshService ssh, VpnProfile profile, string coreType, List<(IProtocolBuilder Builder, int Port)> protocols)
+    public async Task<(bool IsSuccess, string Log)> DeployFullStackAsync(ISshService ssh, VpnProfile profile, string coreType, List<(IProtocolBuilder Builder, int Port, string? TtUsername, string? TtPassword)> protocols)
     {
         string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "deploy_steps.log");
         async Task LogStep(string step) 
@@ -90,7 +90,7 @@ echo 'READY|Сервер готов к установке.'
             await LogStep("[1/7] Подготовка файловой системы и остановка служб...");
             if (coreName == "trusttunnel")
             {
-                await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl stop trusttunnel 2>/dev/null; {sudoPrefix}systemctl disable trusttunnel 2>/dev/null; {sudoPrefix}killall -9 trusttunnel 2>/dev/null; {sudoPrefix}rm -rf /etc/trusttunnel; {sudoPrefix}mkdir -p /etc/trusttunnel");
+                await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl stop trusttunnel 2>/dev/null; {sudoPrefix}systemctl disable trusttunnel 2>/dev/null; {sudoPrefix}killall -9 trusttunnel trusttunnel_endpoint 2>/dev/null; {sudoPrefix}rm -rf /etc/trusttunnel /opt/trusttunnel /opt/trusttunnel2; {sudoPrefix}mkdir -p /opt/trusttunnel2");
                 profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() == "trusttunnel");
             }
             else
@@ -157,7 +157,7 @@ echo 'READY|Сервер готов к установке.'
             }
 
             await LogStep("[5/7] Развертывание файлов конфигурации...");
-            if (coreType.ToLower() == "trusttunnel") await DeployTrustTunnelConfigAsync(ssh, profile, sudoPrefix);
+            if (coreType.ToLower() == "trusttunnel") await DeployTrustTunnelConfigAsync(ssh, profile, sudoPrefix, protocols);
             else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
 
             await LogStep("[6/7] Сохранение состояния в базу данных...");
@@ -247,14 +247,12 @@ cd /tmp && rm -rf /tmp/singbox_install
 apt-get update -q && apt-get install -y curl wget tar jq >/dev/null 2>&1
 DOWNLOAD_URL=$(curl -s https://api.github.com/repos/TrustTunnel/TrustTunnel/releases/latest | jq -r "".assets[].browser_download_url"" | grep -i ""linux"" | grep -E ""amd64|x86_64"" | grep ""tar.gz"" | grep -v ""dbgsym"" | grep -v ""debug"" | head -n 1)
 if [ -z ""$DOWNLOAD_URL"" ]; then echo 'failed'; exit 1; fi
-rm -rf /tmp/trusttunnel_install && mkdir -p /tmp/trusttunnel_install && cd /tmp/trusttunnel_install
+mkdir -p /opt/trusttunnel2 && cd /opt/trusttunnel2
 wget -q ""$DOWNLOAD_URL"" -O tt.tar.gz
 if ! tar -xzf tt.tar.gz --strip-components=1; then echo 'failed'; exit 1; fi
-chmod +x * 2>/dev/null || true
-if [ -f ""trusttunnel"" ]; then mv trusttunnel /usr/local/bin/trusttunnel; fi
-if [ -f ""trusttunnel_endpoint"" ]; then mv trusttunnel_endpoint /usr/local/bin/trusttunnel; fi
-if command -v trusttunnel >/dev/null 2>&1; then echo 'success'; else echo 'failed'; fi
-cd /tmp && rm -rf /tmp/trusttunnel_install
+rm tt.tar.gz
+chmod +x setup_wizard trusttunnel_endpoint 2>/dev/null || true
+if [ -f ""trusttunnel_endpoint"" ]; then echo 'success'; else echo 'failed'; fi
 ".Replace("\r", "");
 
         string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
@@ -272,36 +270,67 @@ cd /tmp && rm -rf /tmp/trusttunnel_install
         } catch { }
     }
 
-    private async Task DeployTrustTunnelConfigAsync(ISshService ssh, VpnProfile profile, string sudoPrefix)
+    private async Task DeployTrustTunnelConfigAsync(ISshService ssh, VpnProfile profile, string sudoPrefix, List<(IProtocolBuilder Builder, int Port, string? TtUsername, string? TtPassword)> protocols)
     {
         var inbound = profile.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == "trusttunnel");
         if (inbound == null) return;
         var settings = JsonNode.Parse(inbound.SettingsJson);
-        string sni = settings?["sni"]?.ToString() ?? "google.com";
-        string cp = settings?["certPath"]?.ToString() ?? ""; string kp = settings?["keyPath"]?.ToString() ?? "";
+        string sni = settings?["sni"]?.ToString() ?? "vpn.endpoint";
 
-        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(GenerateTrustTunnelVpnToml(inbound)))}' | base64 -d | {sudoPrefix}tee /etc/trusttunnel/vpn.toml > /dev/null");
-        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(GenerateTrustTunnelHostsToml(sni, cp, kp)))}' | base64 -d | {sudoPrefix}tee /etc/trusttunnel/hosts.toml > /dev/null");
-        await ssh.ExecuteCommandAsync($"{sudoPrefix}sh -c 'echo \"[[rule]]\naction = \\\"allow\\\"\n\" > /etc/trusttunnel/rules.toml'");
-        await ssh.ExecuteCommandAsync($"{sudoPrefix}touch /etc/trusttunnel/credentials.toml");
+        // Получаем переданные креды
+        var ttProtocolInfo = protocols.FirstOrDefault(p => p.Builder.ProtocolType.ToLower() == "trusttunnel");
+        string username = string.IsNullOrWhiteSpace(ttProtocolInfo.TtUsername) ? "ADMIN" : ttProtocolInfo.TtUsername;
+        string password = string.IsNullOrWhiteSpace(ttProtocolInfo.TtPassword) ? Guid.NewGuid().ToString("N").Substring(0, 16) : ttProtocolInfo.TtPassword;
 
-        // ИСПРАВЛЕНИЕ: Обеспечиваем доступность сертификата для админа по удобному пути
-        await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /opt/trusttunnel && {sudoPrefix}cp {cp} /opt/trusttunnel/cert.pem 2>/dev/null || true");
+        // Создаем или обновляем пользователя в БД для синхронизации
+        using (var db = new KoFFPanel.Infrastructure.Data.AppDbContext())
+        {
+            var adminClient = db.Clients.FirstOrDefault(c => c.ServerIp == profile.IpAddress && c.Email == username);
+            if (adminClient == null)
+            {
+                adminClient = new VpnClient 
+                {
+                    Email = username,
+                    Uuid = password,
+                    ServerIp = profile.IpAddress!,
+                    IsTrustTunnelEnabled = true,
+                    IsActive = true,
+                    IsVlessEnabled = false,
+                    IsHysteria2Enabled = false,
+                    TrafficLimit = 0
+                };
+                db.Clients.Add(adminClient);
+            }
+            else
+            {
+                adminClient.Uuid = password;
+                adminClient.IsTrustTunnelEnabled = true;
+            }
+            await db.SaveChangesAsync();
+        }
+
+        // Генерация ТОЧНЫХ и полных конфигураций через официальный мастер в неинтерактивном режиме (умная защита)
+        await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /opt/trusttunnel2");
+        string setupCmd = $@"{sudoPrefix}cd /opt/trusttunnel2 && {sudoPrefix}./setup_wizard -m non-interactive -a 0.0.0.0:{inbound.Port} -c {username}:{password} -n {sni} --lib-settings vpn.toml --hosts-settings hosts.toml --cert-type self-signed";
+        await ssh.ExecuteCommandAsync(setupCmd);
 
         string serviceData = @"[Unit]
-Description=TrustTunnel VPN Server
+Description=TrustTunnel VPN Service (Custom Port 5443)
 After=network.target
+
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/etc/trusttunnel
-ExecStart=/usr/local/bin/trusttunnel vpn.toml hosts.toml
+WorkingDirectory=/opt/trusttunnel2
+ExecStart=/opt/trusttunnel2/trusttunnel_endpoint vpn.toml hosts.toml
 Restart=on-failure
 RestartSec=5
+LimitNOFILE=65536
+
 [Install]
 WantedBy=multi-user.target";
 
-        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceData))}' | base64 -d | {sudoPrefix}tee /etc/systemd/system/trusttunnel.service > /dev/null");
+        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceData.Replace("\r", "")))}' | base64 -d | {sudoPrefix}tee /etc/systemd/system/trusttunnel.service > /dev/null");
         await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload");
     }
 

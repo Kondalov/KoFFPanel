@@ -306,85 +306,133 @@
                                             CornerRadius="12"
                                             Padding="16"
                                             Margin="0,0,0,12">
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="120" />
-                                            </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="120" />
+                                                </Grid.ColumnDefinitions>
 
-                                            <ui:ToggleSwitch Grid.Column="0"
-                                                             IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                             VerticalAlignment="Center"
-                                                             Margin="0,0,16,0" />
+                                                <ui:ToggleSwitch Grid.Column="0"
+                                                                 IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                 VerticalAlignment="Center"
+                                                                 Margin="0,0,16,0" />
 
-                                            <StackPanel Grid.Column="1"
-                                                        VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding Builder.DisplayName}"
-                                                           Foreground="White"
-                                                           FontWeight="Bold"
-                                                           FontSize="15"
-                                                           Margin="0,0,0,4" />
-                                                <TextBlock Text="{Binding ValidationMessage}"
-                                                           FontSize="12"
-                                                           TextWrapping="Wrap">
-                                                    <TextBlock.Style>
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="Foreground"
-                                                                    Value="#00ff88" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsValid}"
-                                                                             Value="False">
-                                                                    <Setter Property="Foreground"
-                                                                            Value="#ff4444" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding IsSelected}"
-                                                                             Value="False">
-                                                                    <Setter Property="Foreground"
-                                                                            Value="#666666" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </TextBlock.Style>
-                                                </TextBlock>
+                                                <StackPanel Grid.Column="1"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Builder.DisplayName}"
+                                                               Foreground="White"
+                                                               FontWeight="Bold"
+                                                               FontSize="15"
+                                                               Margin="0,0,0,4" />
+                                                    <TextBlock Text="{Binding ValidationMessage}"
+                                                               FontSize="12"
+                                                               TextWrapping="Wrap">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground"
+                                                                        Value="#00ff88" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsValid}"
+                                                                                 Value="False">
+                                                                        <Setter Property="Foreground"
+                                                                                Value="#ff4444" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IsSelected}"
+                                                                                 Value="False">
+                                                                        <Setter Property="Foreground"
+                                                                                Value="#666666" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </StackPanel>
+
+                                                <StackPanel Grid.Column="2"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock Text="Порт:"
+                                                               Foreground="#B3FFFFFF"
+                                                               FontSize="11"
+                                                               Margin="0,0,0,4" />
+                                                    <ui:TextBox Text="{Binding PortText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                IsEnabled="{Binding IsSelected}"
+                                                                TextAlignment="Center"
+                                                                FontWeight="Bold"
+                                                                FontSize="16"
+                                                                Height="36">
+                                                        <ui:TextBox.Style>
+                                                            <Style TargetType="ui:TextBox"
+                                                                   BasedOn="{StaticResource {x:Type ui:TextBox}}">
+                                                                <Setter Property="BorderBrush"
+                                                                        Value="#33FFFFFF" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsValid}"
+                                                                                 Value="False">
+                                                                        <Setter Property="BorderBrush"
+                                                                                Value="#ff4444" />
+                                                                        <Setter Property="BorderThickness"
+                                                                                Value="2" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding IsSelected}"
+                                                                                 Value="False">
+                                                                        <Setter Property="Opacity"
+                                                                                Value="0.3" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ui:TextBox.Style>
+                                                    </ui:TextBox>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <!-- ИСПРАВЛЕНИЕ: Стильные поля для ввода Username и Password (TrustTunnel) -->
+                                            <StackPanel Margin="0,16,0,0">
+                                                <StackPanel.Style>
+                                                    <Style TargetType="StackPanel">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsSelected}" Value="True" />
+                                                                    <Condition Binding="{Binding IsTrustTunnel}" Value="True" />
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </MultiDataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </StackPanel.Style>
+
+                                                <TextBlock Text="УЧЕТНАЯ ЗАПИСЬ (АДМИН)" Foreground="#00FFCC" FontWeight="Bold" FontSize="11" Margin="0,0,0,8"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="12"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <StackPanel Grid.Column="0">
+                                                        <TextBlock Text="Username:" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,4"/>
+                                                        <TextBox Text="{Binding TtUsername, UpdateSourceTrigger=PropertyChanged}" Background="#1A50fa7b" Foreground="White" BorderThickness="1" BorderBrush="#50fa7b" Padding="8,6" FontSize="12"/>
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="2">
+                                                        <TextBlock Text="Password:" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,4"/>
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="Auto"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBox Grid.Column="0" Text="{Binding TtPassword, UpdateSourceTrigger=PropertyChanged}" Background="#1A00f2ff" Foreground="White" BorderThickness="1" BorderBrush="#00f2ff" Padding="8,6" FontSize="12"/>
+                                                            <ui:Button Grid.Column="1" Command="{Binding GenerateTtPasswordCommand}" ToolTip="Сгенерировать случайный пароль" Background="#00f2ff" BorderThickness="0" Padding="8,6" Cursor="Hand">
+                                                                <ui:SymbolIcon Symbol="ArrowClockwise24" Foreground="Black" FontSize="14" FontWeight="Bold"/>
+                                                            </ui:Button>
+                                                        </Grid>
+                                                    </StackPanel>
+                                                </Grid>
                                             </StackPanel>
-
-                                            <StackPanel Grid.Column="2"
-                                                        VerticalAlignment="Center">
-                                                <TextBlock Text="Порт:"
-                                                           Foreground="#B3FFFFFF"
-                                                           FontSize="11"
-                                                           Margin="0,0,0,4" />
-                                                <ui:TextBox Text="{Binding PortText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                            IsEnabled="{Binding IsSelected}"
-                                                            TextAlignment="Center"
-                                                            FontWeight="Bold"
-                                                            FontSize="16"
-                                                            Height="36">
-                                                    <ui:TextBox.Style>
-                                                        <Style TargetType="ui:TextBox"
-                                                               BasedOn="{StaticResource {x:Type ui:TextBox}}">
-                                                            <Setter Property="BorderBrush"
-                                                                    Value="#33FFFFFF" />
-                                                            <Style.Triggers>
-                                                                <DataTrigger Binding="{Binding IsValid}"
-                                                                             Value="False">
-                                                                    <Setter Property="BorderBrush"
-                                                                            Value="#ff4444" />
-                                                                    <Setter Property="BorderThickness"
-                                                                            Value="2" />
-                                                                </DataTrigger>
-                                                                <DataTrigger Binding="{Binding IsSelected}"
-                                                                             Value="False">
-                                                                    <Setter Property="Opacity"
-                                                                            Value="0.3" />
-                                                                </DataTrigger>
-                                                            </Style.Triggers>
-                                                        </Style>
-                                                    </ui:TextBox.Style>
-                                                </ui:TextBox>
-                                            </StackPanel>
-                                        </Grid>
+                                        </StackPanel>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>

@@ -11,14 +11,14 @@ public class TrustTunnelBuilder : IProtocolBuilder
     public string ProtocolType => "trusttunnel";
     public string DisplayName => "TrustTunnel (MASQUE HTTP/3)";
     public string TransportType => "udp";
-    public int DefaultPort => 2443;
+    public int DefaultPort => 5443;
 
     public async Task<ServerInbound> GenerateNewInboundAsync(ISshService ssh, int port)
     {
-        string certDir = "/etc/trusttunnel/certs";
+        string certDir = "/opt/trusttunnel2/certs";
         string certPath = $"{certDir}/server.crt";
         string keyPath = $"{certDir}/server.key";
-        string hostname = "google.com"; // Более реалистичный SNI для обхода DPI
+        string hostname = "vpn.endpoint"; // Более реалистичный SNI для обхода DPI
 
         await ssh.ExecuteCommandAsync($"mkdir -p {certDir}");
         // Генерация сертификата с корректным SAN для SNI

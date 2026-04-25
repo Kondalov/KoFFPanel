@@ -12,10 +12,10 @@ namespace KoFFPanel.Infrastructure.Services;
 
 public partial class CoreDeploymentService
 {
-    private string GenerateTrustTunnelVpnToml(ServerInbound inbound)
+    public static string GenerateTrustTunnelVpnToml(ServerInbound inbound)
     {
-        return $@"
-listen_address = ""0.0.0.0:{inbound.Port}""
+        // ВАЖНО: Никаких отступов в начале строк! Rust TOML парсер в v1.0.33 крайне чувствителен.
+        string toml = $@"listen_address = ""0.0.0.0:{inbound.Port}""
 ipv6_available = true
 allow_private_network_connections = false
 tls_handshake_timeout_secs = 10
@@ -25,6 +25,8 @@ tcp_connections_timeout_secs = 604800
 udp_connections_timeout_secs = 300
 credentials_file = ""credentials.toml""
 rules_file = ""rules.toml""
+
+[listen_protocols]
 
 [listen_protocols.http2]
 initial_connection_window_size = 8388608
@@ -41,26 +43,23 @@ initial_max_streams_bidi = 4096
 enable_early_data = true
 
 [forward_protocol]
-direct = {{}}
-";
+direct = {{}}";
+
+        return toml.Replace("\r", "");
     }
 
-    private string GenerateTrustTunnelHostsToml(string sni, string certPath, string keyPath)
+    public static string GenerateTrustTunnelHostsToml(string sni, string certPath, string keyPath)
     {
-        return $@"
-[[main_hosts]]
+        // ИСПРАВЛЕНИЕ: Используем относительные пути как в рабочей инструкции пользователя
+        string toml = $@"[[main_hosts]]
 hostname = ""{sni}""
-cert_chain_path = ""{certPath}""
-private_key_path = ""{keyPath}""
+cert_chain_path = ""certs/cert.pem""
+private_key_path = ""certs/key.pem""";
 
-[[ping_hosts]]
-hostname = ""ping.{sni}""
-cert_chain_path = ""{certPath}""
-private_key_path = ""{keyPath}""
-";
+        return toml.Replace("\r", "");
     }
 
-    private JsonObject BuildSingBoxInbound(ServerInbound inboundDb, JsonNode settings)
+    private JsonObject? BuildSingBoxInbound(ServerInbound inboundDb, JsonNode? settings)
     {
         string protocol = inboundDb.Protocol.ToLower();
         if (protocol == "vless")
@@ -108,7 +107,7 @@ private_key_path = ""{keyPath}""
         return null;
     }
 
-    private JsonObject BuildXrayInbound(ServerInbound inboundDb, JsonNode settings)
+    private JsonObject? BuildXrayInbound(ServerInbound inboundDb, JsonNode? settings)
     {
         if (inboundDb.Protocol.ToLower() == "vless")
         {

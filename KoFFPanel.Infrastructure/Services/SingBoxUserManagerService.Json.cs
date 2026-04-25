@@ -44,7 +44,15 @@ public partial class SingBoxUserManagerService
 
         if (!hasReality) foreach (var u in dbUsers) u.VlessLink = "VLESS не установлен!";
         if (!hasHy2) foreach (var u in dbUsers) u.Hysteria2Link = "Hysteria 2 не установлен!";
-        if (!hasXHttp) foreach (var u in dbUsers) u.TrustTunnelLink = "TrustTunnel не установлен!";
+
+        // ИСПРАВЛЕНИЕ: Не затираем TrustTunnelLink, если он установлен как отдельный протокол
+        var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
+        bool hasAnyTrustTunnel = hasXHttp || (profile?.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel") ?? false);
+        
+        if (!hasAnyTrustTunnel) 
+        {
+            foreach (var u in dbUsers) u.TrustTunnelLink = "TrustTunnel не установлен!";
+        }
         await _dbContext.SaveChangesAsync();
     }
 
@@ -70,7 +78,7 @@ public partial class SingBoxUserManagerService
             foreach (var u in dbUsers) 
             {
                 string encodedName = Uri.EscapeDataString($"TT_{u.Email}");
-                u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=quic&security=tls&sni={sni}&alpn=h3&allowInsecure=1&insecure=1#{encodedName}";
+                u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=xhttp&security=tls&sni={sni.Replace("google.com", "vpn.endpoint")}&alpn=h3&allowInsecure=1&insecure=1#{encodedName}";
             }
         }
     }
@@ -99,10 +107,11 @@ public partial class SingBoxUserManagerService
         try
         {
             var blockedNames = await _dbContext.Clients.AsNoTracking().Where(c => c.ServerIp == serverIp && c.IsP2PBlocked).Select(c => c.Email.Trim()).ToListAsync();
+            
             if (root["log"] is JsonObject logObj) logObj["level"] = "trace";
-            else if (root.AsObject() != null) root["log"] = new JsonObject { ["level"] = "trace" };
+            else if (root is JsonObject rootObj) rootObj["log"] = new JsonObject { ["level"] = "trace" };
 
-            var inbounds = root?["inbounds"]?.AsArray();
+            var inbounds = root["inbounds"]?.AsArray();
             if (inbounds != null)
             {
                 foreach (var inbound in inbounds)
@@ -129,7 +138,7 @@ public partial class SingBoxUserManagerService
                 domains = (await File.ReadAllLinesAsync(rulesFile)).Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).ToList();
             }
 
-            var rulesArray = root?["route"]?["rules"]?.AsArray();
+            var rulesArray = root["route"]?["rules"]?.AsArray();
             if (rulesArray != null)
             {
                 var rulesToRemove = rulesArray.Where(r => r?["outbound"]?.ToString() == "block" || r?["action"]?.ToString() == "sniff").ToList();

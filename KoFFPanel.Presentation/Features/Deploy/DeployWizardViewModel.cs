@@ -27,9 +27,23 @@ public partial class ProtocolSetupItem : ObservableObject
     [ObservableProperty] private bool _isValid = true;
     [ObservableProperty] private string _validationMessage = "Ожидание...";
 
+    [ObservableProperty] private string _ttUsername = "ADMIN";
+    [ObservableProperty] private string _ttPassword = "";
+    
+    public bool IsTrustTunnel => Builder.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase);
+
     public ProtocolSetupItem(IProtocolBuilder builder)
     {
         Builder = builder;
+        if (IsTrustTunnel) GenerateTtPassword();
+    }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void GenerateTtPassword()
+    {
+        const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+        var random = new Random();
+        TtPassword = new string(Enumerable.Repeat(chars, 16).Select(s => s[random.Next(s.Length)]).ToArray());
     }
 }
 
@@ -146,10 +160,10 @@ public partial class DeployWizardViewModel : ObservableObject
                     item.IsValid = true;
                     item.ValidationMessage = "Установлен (Включите для переустановки)";
                 }
-                // Для TrustTunnel задаем порт 443 по умолчанию
+                // Для TrustTunnel задаем порт 5443 по умолчанию
                 else if (builder.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase))
                 {
-                    item.PortText = "443";
+                    item.PortText = "5443";
                 }
             }
 
@@ -288,7 +302,7 @@ public partial class DeployWizardViewModel : ObservableObject
         StatusMessage = "🚀 Развертывание ядра и портов... (Подождите)";
         IsNotInstalling = false;
 
-        var protocolsToInstall = selectedItems.Select(p => (p.Builder, int.Parse(p.PortText))).ToList();
+        var protocolsToInstall = selectedItems.Select(p => (p.Builder, int.Parse(p.PortText), p.IsTrustTunnel ? p.TtUsername : null, p.IsTrustTunnel ? p.TtPassword : null)).ToList();
 
         var (success, log) = await _deploymentService.DeployFullStackAsync(_ssh, _server, GetSelectedCoreType(), protocolsToInstall);
 

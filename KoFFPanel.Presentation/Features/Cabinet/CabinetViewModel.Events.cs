@@ -22,6 +22,9 @@ public partial class CabinetViewModel
             return;
         }
 
+        // ИСПРАВЛЕНИЕ: Обновляем выбранный сервер свежими данными (с новыми Inbounds)
+        SelectedServer = message.Server;
+
         var ssh = _currentMonitoringSsh;
         if (ssh == null || !ssh.IsConnected)
         {
@@ -47,10 +50,19 @@ public partial class CabinetViewModel
 
         try
         {
-            bool syncSuccess = isSingBox ? await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients) :
-                              (isTrustTunnel ? await _trustTunnelUserManager.SyncUsersToCoreAsync(ssh, Clients) : await _userManager.SyncUsersToCoreAsync(ssh, Clients));
+            // Сначала синхронизируем основное ядро
+            bool coreSyncSuccess = isSingBox ? await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients) :
+                                   (isTrustTunnel ? await _trustTunnelUserManager.SyncUsersToCoreAsync(ssh, Clients) : 
+                                   await _userManager.SyncUsersToCoreAsync(ssh, Clients));
 
-            if (syncSuccess)
+            // ДОПОЛНИТЕЛЬНО: Если на сервере установлен TrustTunnel как второй протокол, синхронизируем и его!
+            bool hasTrustTunnelExtra = SelectedServer.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel");
+            if (hasTrustTunnelExtra && !isTrustTunnel)
+            {
+                await _trustTunnelUserManager.SyncUsersToCoreAsync(ssh, Clients);
+            }
+
+            if (coreSyncSuccess)
             {
                 var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                 var updatedUsers = freshContext.Clients.AsNoTracking().Where(c => c.ServerIp == ip).ToList();

@@ -14,7 +14,7 @@ public partial class XrayUserManagerService
     private async Task RebuildInboundsAsync(JsonNode root, string serverIp, ISshService ssh)
     {
         var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
-        var inbounds = root?["inbounds"]?.AsArray();
+        var inbounds = root["inbounds"]?.AsArray();
         if (inbounds == null) return;
 
         bool hasReality = false;
@@ -68,7 +68,7 @@ public partial class XrayUserManagerService
     private async Task UpdateXrayLinksAsync(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string serverIp, ISshService ssh, bool isQuic)
     {
         int port = (int?)inbound["port"] ?? (isQuic ? 4433 : 443);
-        string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+        string safeIp = serverIp.Contains(':') && !serverIp.StartsWith('[') ? $"[{serverIp}]" : serverIp;
 
         if (!isQuic)
         {
@@ -96,11 +96,11 @@ public partial class XrayUserManagerService
         }
         else
         {
-            string sni = inbound["streamSettings"]?["tlsSettings"]?["serverName"]?.ToString() ?? "www.microsoft.com";
+            string sni = inbound["streamSettings"]?["tlsSettings"]?["serverName"]?.ToString() ?? "vpn.endpoint";
             foreach (var u in dbUsers)
             {
                 string encodedName = Uri.EscapeDataString($"TrustTunnel_{u.Email}");
-                u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=xhttp&security=tls&encryption=none&sni={sni}&alpn=h3&host={sni}&path=%2F&allowInsecure=1&insecure=1#{encodedName}";
+                u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=xhttp&security=tls&sni={sni}&alpn=h3#{encodedName}";
             }
         }
     }

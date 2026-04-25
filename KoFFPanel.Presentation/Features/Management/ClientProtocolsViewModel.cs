@@ -41,11 +41,12 @@ public partial class ClientProtocolsViewModel : ObservableObject
     [ObservableProperty] private bool _isTrustTunnelEnabled;
     [ObservableProperty] private string _trustTunnelLink = "";
     [ObservableProperty] private bool _isTrustTunnelCopied;
-    [ObservableProperty] private string _trustTunnelCertPath = "/opt/trusttunnel/cert.pem";
+    [ObservableProperty] private string _trustTunnelCertPath = "/opt/trusttunnel2/cert.pem";
     [ObservableProperty] private string _ttUsername = "";
     [ObservableProperty] private string _ttPassword = "";
     [ObservableProperty] private string _ttDomainName = "";
     [ObservableProperty] private string _ttDnsServers = "";
+    [ObservableProperty] private string _ttServerAddress = "";
     [ObservableProperty] private bool _isAdmin;
 
     private readonly ISshService _ssh;
@@ -68,6 +69,7 @@ public partial class ClientProtocolsViewModel : ObservableObject
         Email = client.Email;
         WindowTitle = $"Протоколы: {client.Email}";
         IsAdmin = client.Email.Equals("ADMIN", StringComparison.OrdinalIgnoreCase);
+        TtServerAddress = client.ServerIp;
 
         HttpLink = httpLink;
 
@@ -286,6 +288,9 @@ public partial class ClientProtocolsViewModel : ObservableObject
         _originalClient.IsVlessEnabled = IsVlessEnabled;
         _originalClient.IsHysteria2Enabled = IsHysteria2Enabled;
         _originalClient.IsTrustTunnelEnabled = IsTrustTunnelEnabled;
+
+        // В окне доступа поля TrustTunnel только для чтения (информация после установки)
+        // Мы не сохраняем TtUsername и TtPassword здесь, так как они задаются только через мастер установки.
 
         SaveCallback?.Invoke(_originalClient);
         CloseAction?.Invoke();

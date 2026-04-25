@@ -4,19 +4,15 @@ using System;
 class Program {
     static void Main() {
         var pk = new PrivateKeyFile(@"C:\Users\Nikolay\.ssh\id_ed25519", "01983");
-        using var client = new SshClient("103.71.22.166", "root", new[] { pk });
+        using var ssh = new SshClient("103.71.22.166", "root", new[] { pk });
         try {
-            client.Connect();
-            Console.WriteLine("==== SING-BOX STATUS ====");
-            Console.WriteLine(client.CreateCommand("systemctl status sing-box --no-pager").Execute());
-            Console.WriteLine("==== SING-BOX LOGS ====");
-            Console.WriteLine(client.CreateCommand("journalctl -u sing-box -n 30 --no-pager").Execute());
-            Console.WriteLine("==== PORTS (UDP) ====");
-            Console.WriteLine(client.CreateCommand("ss -ulnp").Execute());
-            Console.WriteLine("==== FIREWALL ====");
-            Console.WriteLine(client.CreateCommand("iptables -L -n | grep -i udp").Execute());
-            Console.WriteLine("==== SING-BOX CONFIG ====");
-            Console.WriteLine(client.CreateCommand("cat /etc/sing-box/config.json").Execute());
+            ssh.Connect();
+            Console.WriteLine(ssh.RunCommand("rm -rf /opt/trusttunnel2/vpn.toml /opt/trusttunnel2/hosts.toml /opt/trusttunnel2/rules.toml").Result);
+            Console.WriteLine(ssh.RunCommand("cd /opt/trusttunnel2 && ./setup_wizard -m non-interactive -a 0.0.0.0:5443 -c KOLA:01983 -n vpn.endpoint --lib-settings vpn.toml --hosts-settings hosts.toml --cert-type self-signed").Result);
+            Console.WriteLine("\n==== VPN.TOML ====");
+            Console.WriteLine(ssh.RunCommand("cat /opt/trusttunnel2/vpn.toml").Result);
+            Console.WriteLine("\n==== HOSTS.TOML ====");
+            Console.WriteLine(ssh.RunCommand("cat /opt/trusttunnel2/hosts.toml").Result);
         } catch (Exception ex) {
             Console.WriteLine(ex.ToString());
         }
