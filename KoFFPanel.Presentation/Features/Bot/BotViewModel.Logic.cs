@@ -215,7 +215,8 @@ public partial class BotViewModel
                 {
                     Uuid = c.Uuid,
                     TrafficLimitBytes = c.TrafficLimit,
-                    TrafficUsedBytes = c.TrafficUsed
+                    TrafficUsedBytes = c.TrafficUsed,
+                    ExpiryDate = c.ExpiryDate
                 }).ToList();
 
             if (!trafficPayload.Any()) return;
