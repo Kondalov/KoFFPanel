@@ -1,4 +1,4 @@
-using KoFFPanel.Domain.Entities;
+﻿using KoFFPanel.Domain.Entities;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Presentation.Features.Cabinet;
 using KoFFPanel.Presentation.Features.Bot;
@@ -98,6 +98,13 @@ public partial class CabinetViewModel
         {
             System.Windows.Application.Current.Dispatcher.Invoke(() => Clients.Remove(client));
             await _subscriptionService.DeleteUserSubscriptionAsync(ssh, uuid);
+
+            // === ИСПРАВЛЕНИЕ: Физическое удаление из БД ===
+            try {
+                var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                var dbClient = dbContext.Clients.FirstOrDefault(c => c.Uuid == uuid && c.ServerIp == ip);
+                if (dbClient != null) { dbContext.Clients.Remove(dbClient); await dbContext.SaveChangesAsync(); }
+            } catch (Exception ex) { _logger?.Log("DB-DELETE-ERR", ex.Message); }
             ServerStatus = $"Онлайн (Клиент {email} успешно удален)";
         }
         else ServerStatus = $"Ошибка удаления: {msg}";

@@ -224,7 +224,7 @@ public partial class BotViewModel : ObservableObject
                 {
                     Uuid = newUuid,
                     Email = tempEmail,
-                    ServerIp = server.IpAddress,
+                    ServerIp = BotIpAddress,
                     TrafficLimit = tempLimit,
                     IsActive = true,
                     Protocol = "VLESS",
@@ -234,7 +234,7 @@ public partial class BotViewModel : ObservableObject
                 };
 
                 dbContext.Clients.Add(newClient);
-                keysToPush.Add(new ReserveKeyDto { Uuid = newUuid, ServerIp = server.IpAddress, TrafficLimitBytes = tempLimit });
+                keysToPush.Add(new ReserveKeyDto { Uuid = newUuid, ServerIp = BotIpAddress, TrafficLimitBytes = tempLimit });
 
                 System.Windows.Application.Current.Dispatcher.Invoke(() => cabinetVm.Clients.Add(newClient));
             }

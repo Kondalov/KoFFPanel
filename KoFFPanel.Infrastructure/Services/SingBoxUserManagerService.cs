@@ -1,4 +1,4 @@
-using KoFFPanel.Application.Interfaces;
+﻿using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -24,92 +24,37 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
 
     public async Task<List<VpnClient>> GetUsersAsync(ISshService ssh, string serverIp)
     {
+        // === MODERN 2026: SOURCE OF TRUTH ===
         var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
-        var globalUsers = await _dbContext.Clients.Where(c => c.ServerIp != serverIp).ToListAsync();
-        bool isMigrated = false;
 
-        foreach (var gu in globalUsers.GroupBy(u => u.Email).Select(g => g.First()))
-        {
-            if (!dbUsers.Any(u => u.Email == gu.Email))
-            {
-                var newUser = new VpnClient 
-                { 
-                    Email = gu.Email, 
-                    Uuid = string.IsNullOrEmpty(gu.Uuid) ? Guid.NewGuid().ToString() : gu.Uuid, 
-                    ServerIp = serverIp, 
-                    Protocol = gu.Protocol, 
-                    TrafficLimit = gu.TrafficLimit, 
-                    ExpiryDate = gu.ExpiryDate, 
-                    IsActive = gu.IsActive, 
-                    IsP2PBlocked = gu.IsP2PBlocked, 
-                    IsVlessEnabled = gu.IsVlessEnabled,
-                    IsHysteria2Enabled = gu.IsHysteria2Enabled,
-                    IsTrustTunnelEnabled = gu.IsTrustTunnelEnabled
-                };
-                _dbContext.Clients.Add(newUser);
-                dbUsers.Add(newUser);
-                isMigrated = true;
-            }
-        }
-
-        // Create Admin if NO users exist globally and locally
-        if (dbUsers.Count == 0 && globalUsers.Count == 0)
+        if (dbUsers.Count == 0)
         {
             var admin = new VpnClient { Email = "ADMIN", Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true, IsTrustTunnelEnabled = true, IsHysteria2Enabled = true };
-            _dbContext.Clients.Add(admin);
+            _dbContext.Clients.Add(admin); await _dbContext.SaveChangesAsync();
             dbUsers.Add(admin);
-            isMigrated = true;
         }
 
-        // ИСПРАВЛЕНИЕ: Удаление дублей админа (ADMIN vs Админ)
-        var oldAdmin = dbUsers.FirstOrDefault(u => u.Email == "Админ");
-        var standardAdmin = dbUsers.FirstOrDefault(u => u.Email == "ADMIN");
-
-        if (oldAdmin != null)
+        if (ssh.IsConnected)
         {
-            if (standardAdmin == null)
+            string raw = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null");
+            if (!string.IsNullOrWhiteSpace(raw) && raw.Contains("{"))
             {
-                oldAdmin.Email = "ADMIN";
-                isMigrated = true;
-            }
-            else
-            {
-                _dbContext.Clients.Remove(oldAdmin);
-                dbUsers.Remove(oldAdmin);
-                isMigrated = true;
+                try {
+                    var root = JsonNode.Parse(raw);
+                    if (root != null) {
+                        await RebuildInboundsAsync(root, serverIp);
+                        await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                    }
+                } catch { }
             }
         }
-
-        if (isMigrated) await _dbContext.SaveChangesAsync();
-
-        if (!ssh.IsConnected) return dbUsers;
-        string raw = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null");
-        if (string.IsNullOrWhiteSpace(raw) || !raw.Contains("{")) return dbUsers;
-        try {
-            var root = JsonNode.Parse(raw);
-            if (root == null) return dbUsers;
-
-            var vless = root["inbounds"]?.AsArray()?.FirstOrDefault(i => i?["type"]?.ToString() == "vless");
-            if (vless != null) {
-                bool changedFromConfig = false;
-                foreach (var c in vless["users"]?.AsArray() ?? new JsonArray()) {
-                    string uuid = c?["uuid"]?.ToString() ?? "";
-                    if (!dbUsers.Any(u => u.Uuid == uuid)) {
-                        _dbContext.Clients.Add(new VpnClient { Email = c?["name"]?.ToString() ?? "Unknown", Uuid = uuid, ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true });
-                        changedFromConfig = true;
-                    }
-                }
-                if (changedFromConfig) await _dbContext.SaveChangesAsync();
-            }
-            await RebuildInboundsAsync(root, serverIp);
-            return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
-        } catch { return dbUsers; }
+        return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
     }
 
     public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true)
     {
         try { SshGuard.ThrowIfInvalid(name, null); } catch (Exception ex) { return (false, ex.Message, ""); }
-        if (await _dbContext.Clients.AnyAsync(c => c.Email == name && c.ServerIp == serverIp)) return (false, "Уже есть!", "");
+        if (await _dbContext.Clients.AnyAsync(c => c.Email == name && c.ServerIp == serverIp)) return (false, "Ð£Ð¶Ðµ ÐµÑÑ‚ÑŒ!", "");
         var newUser = new VpnClient { Email = name, Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, TrafficLimit = limit, ExpiryDate = expiry, IsP2PBlocked = p2p, IsVlessEnabled = true, IsActive = true };
         _dbContext.Clients.Add(newUser); await _dbContext.SaveChangesAsync();
         
@@ -121,19 +66,19 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
             var res = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
             return (res.IsSuccess, res.Message, (await _dbContext.Clients.FirstOrDefaultAsync(u => u.Uuid == newUser.Uuid))?.VlessLink ?? "");
         }
-        return (false, "Ошибка чтения конфига сервера", "");
+        return (false, "ÐžÑˆÐ¸Ð±ÐºÐ° Ñ‡Ñ‚ÐµÐ½Ð¸Ñ ÐºÐ¾Ð½Ñ„Ð¸Ð³Ð° ÑÐµÑ€Ð²ÐµÑ€Ð°", "");
     }
 
     public async Task<(bool IsSuccess, string Message)> RemoveUserAsync(ISshService ssh, string serverIp, string name)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-        if (await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp) <= 1) return (false, "Последний!");
+        if (await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp) <= 1) return (false, "ÐŸÐ¾ÑÐ»ÐµÐ´Ð½Ð¸Ð¹!");
         if (user != null) { _dbContext.Clients.Remove(user); await _dbContext.SaveChangesAsync(); }
         
         var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null");
-        if (string.IsNullOrWhiteSpace(rawJson)) return (true, "Удален.");
+        if (string.IsNullOrWhiteSpace(rawJson)) return (true, "Ð£Ð´Ð°Ð»ÐµÐ½.");
         var root = JsonNode.Parse(rawJson);
-        if (root == null) return (true, "Удален.");
+        if (root == null) return (true, "Ð£Ð´Ð°Ð»ÐµÐ½.");
 
         await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -142,12 +87,12 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
     public async Task<(bool IsSuccess, string Message)> ToggleUserStatusAsync(ISshService ssh, string serverIp, string name, bool active)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-        if (user == null) return (false, "Нет в БД");
+        if (user == null) return (false, "ÐÐµÑ‚ Ð² Ð‘Ð”");
         user.IsActive = active; await _dbContext.SaveChangesAsync();
 
         var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
         var root = JsonNode.Parse(rawJson);
-        if (root == null) return (false, "Ошибка конфига");
+        if (root == null) return (false, "ÐžÑˆÐ¸Ð±ÐºÐ° ÐºÐ¾Ð½Ñ„Ð¸Ð³Ð°");
 
         await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

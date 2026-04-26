@@ -1,4 +1,4 @@
-using KoFFPanel.Application.Interfaces;
+﻿using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -25,108 +25,41 @@ public partial class XrayUserManagerService : IXrayUserManagerService
 
     public async Task<List<VpnClient>> GetUsersAsync(ISshService ssh, string serverIp)
     {
+        // === MODERN 2026: SOURCE OF TRUTH ===
+        // База данных - единственный источник. Никакого клонирования с других серверов.
         var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
-        var globalUsers = await _dbContext.Clients.Where(c => c.ServerIp != serverIp).ToListAsync();
-        bool isMigrated = false;
 
-        foreach (var gu in globalUsers.GroupBy(u => u.Email).Select(g => g.First()))
+        if (dbUsers.Count == 0)
         {
-            if (!dbUsers.Any(u => u.Email == gu.Email))
-            {
-                var newUser = new VpnClient 
-                { 
-                    Email = gu.Email, 
-                    Uuid = string.IsNullOrEmpty(gu.Uuid) ? Guid.NewGuid().ToString() : gu.Uuid, 
-                    ServerIp = serverIp, 
-                    Protocol = gu.Protocol, 
-                    TrafficLimit = gu.TrafficLimit, 
-                    ExpiryDate = gu.ExpiryDate, 
-                    IsActive = gu.IsActive, 
-                    IsP2PBlocked = gu.IsP2PBlocked, 
-                    IsVlessEnabled = gu.IsVlessEnabled,
-                    IsHysteria2Enabled = gu.IsHysteria2Enabled,
-                    IsTrustTunnelEnabled = gu.IsTrustTunnelEnabled
-                };
-                _dbContext.Clients.Add(newUser);
-                dbUsers.Add(newUser);
-                isMigrated = true;
-            }
-        }
-
-        // Create Admin if NO users exist globally and locally
-        if (dbUsers.Count == 0 && globalUsers.Count == 0)
-        {
-            // ИСПРАВЛЕНИЕ: Для Xray сервиса по умолчанию включаем ТОЛЬКО VLESS.
-            // TrustTunnel и Hysteria2 должны быть выключены, если они не настроены.
-            var admin = new VpnClient 
-            { 
-                Email = "ADMIN", 
-                Uuid = Guid.NewGuid().ToString(), 
-                ServerIp = serverIp, 
-                Protocol = "VLESS", 
-                IsActive = true, 
-                IsP2PBlocked = true, 
-                IsVlessEnabled = true, 
-                IsTrustTunnelEnabled = false, 
-                IsHysteria2Enabled = false 
-            };
-            _dbContext.Clients.Add(admin);
+            var admin = new VpnClient { Email = "ADMIN", Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true };
+            _dbContext.Clients.Add(admin); await _dbContext.SaveChangesAsync();
             dbUsers.Add(admin);
-            isMigrated = true;
         }
 
-        // ИСПРАВЛЕНИЕ: Удаление дублей админа (ADMIN vs Админ)
-        var oldAdmin = dbUsers.FirstOrDefault(u => u.Email == "Админ");
-        var standardAdmin = dbUsers.FirstOrDefault(u => u.Email == "ADMIN");
-
-        if (oldAdmin != null)
+        if (ssh.IsConnected)
         {
-            if (standardAdmin == null)
+            string raw = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json 2>/dev/null");
+            if (!string.IsNullOrWhiteSpace(raw) && !raw.Contains("No such"))
             {
-                oldAdmin.Email = "ADMIN";
-                isMigrated = true;
-            }
-            else
-            {
-                _dbContext.Clients.Remove(oldAdmin);
-                dbUsers.Remove(oldAdmin);
-                isMigrated = true;
+                try {
+                    var root = JsonNode.Parse(raw);
+                    if (root != null) {
+                        await RebuildInboundsAsync(root, serverIp, ssh);
+                        await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                    }
+                } catch { }
             }
         }
-
-        if (isMigrated) await _dbContext.SaveChangesAsync();
-
-        if (!ssh.IsConnected) return dbUsers;
-        string raw = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json 2>/dev/null");
-        if (string.IsNullOrWhiteSpace(raw) || raw.Contains("No such")) return dbUsers;
-        try {
-            var root = JsonNode.Parse(raw);
-            if (root == null) return dbUsers;
-
-            foreach (var inbound in root["inbounds"]?.AsArray().OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>()) {
-                if (inbound["protocol"]?.ToString() == "vless") {
-                    foreach (var c in inbound["settings"]?["clients"]?.AsArray() ?? new JsonArray()) {
-                        string email = c?["email"]?.ToString() ?? "Unknown";
-                        if (!dbUsers.Any(u => u.Email == email)) {
-                            var newUser = new VpnClient { Email = email, Uuid = c?["id"]?.ToString() ?? "", ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true };
-                            _dbContext.Clients.Add(newUser); dbUsers.Add(newUser);
-                        }
-                    }
-                }
-            }
-            await _dbContext.SaveChangesAsync(); await RebuildInboundsAsync(root, serverIp, ssh);
-            var res = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
-        } catch { return dbUsers; }
+        return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
     }
 
     public async Task<(bool IsSuccess, string Message, string VlessLink)> InitializeRealityAsync(ISshService ssh, string serverIp)
     {
         try
         {
-            if (!ssh.IsConnected) return (false, "Нет подключения по SSH", "");
+            if (!ssh.IsConnected) return (false, "ÐÐµÑ‚ Ð¿Ð¾Ð´ÐºÐ»ÑŽÑ‡ÐµÐ½Ð¸Ñ Ð¿Ð¾ SSH", "");
 
-            _logger.Log("CONFIG", "Генерация X25519 ключей...");
+            _logger.Log("CONFIG", "Ð“ÐµÐ½ÐµÑ€Ð°Ñ†Ð¸Ñ X25519 ÐºÐ»ÑŽÑ‡ÐµÐ¹...");
             var keysOutput = await ssh.ExecuteCommandAsync("/usr/local/bin/xray x25519");
 
             var privMatch = Regex.Match(keysOutput, @"(?i)(?:Private\s*key|PrivateKey)\s*:\s*(\S+)");
@@ -134,8 +67,8 @@ public partial class XrayUserManagerService : IXrayUserManagerService
 
             if (!privMatch.Success || !pubMatch.Success)
             {
-                _logger.Log("CONFIG-ERROR", $"Не удалось распарсить ключи. Вывод ядра: {keysOutput}");
-                return (false, "ОШИБКА: Ядро вернуло неверный формат ключей.", "");
+                _logger.Log("CONFIG-ERROR", $"ÐÐµ ÑƒÐ´Ð°Ð»Ð¾ÑÑŒ Ñ€Ð°ÑÐ¿Ð°Ñ€ÑÐ¸Ñ‚ÑŒ ÐºÐ»ÑŽÑ‡Ð¸. Ð’Ñ‹Ð²Ð¾Ð´ ÑÐ´Ñ€Ð°: {keysOutput}");
+                return (false, "ÐžÐ¨Ð˜Ð‘ÐšÐ: Ð¯Ð´Ñ€Ð¾ Ð²ÐµÑ€Ð½ÑƒÐ»Ð¾ Ð½ÐµÐ²ÐµÑ€Ð½Ñ‹Ð¹ Ñ„Ð¾Ñ€Ð¼Ð°Ñ‚ ÐºÐ»ÑŽÑ‡ÐµÐ¹.", "");
             }
 
             string privKey = privMatch.Groups[1].Value.Trim();
@@ -146,7 +79,7 @@ public partial class XrayUserManagerService : IXrayUserManagerService
             string sni = "www.microsoft.com";
             string encodedName = Uri.EscapeDataString($"KoFFPanel_{serverIp}");
 
-            // ИСПРАВЛЕНИЕ: loglevel изменен на "info" для сбора расширенной телеметрии (диагностика Тайм-аутов)
+            // Ð˜Ð¡ÐŸÐ ÐÐ’Ð›Ð•ÐÐ˜Ð•: loglevel Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½ Ð½Ð° "info" Ð´Ð»Ñ ÑÐ±Ð¾Ñ€Ð° Ñ€Ð°ÑÑˆÐ¸Ñ€ÐµÐ½Ð½Ð¾Ð¹ Ñ‚ÐµÐ»ÐµÐ¼ÐµÑ‚Ñ€Ð¸Ð¸ (Ð´Ð¸Ð°Ð³Ð½Ð¾ÑÑ‚Ð¸ÐºÐ° Ð¢Ð°Ð¹Ð¼-Ð°ÑƒÑ‚Ð¾Ð²)
             string configJson = $$"""
             {
               "log": { 
@@ -241,7 +174,7 @@ public partial class XrayUserManagerService : IXrayUserManagerService
 
             if (!testResult.Contains("Configuration OK"))
             {
-                return (false, "ОШИБКА: Ядро отклонило сгенерированный конфиг!", "");
+                return (false, "ÐžÐ¨Ð˜Ð‘ÐšÐ: Ð¯Ð´Ñ€Ð¾ Ð¾Ñ‚ÐºÐ»Ð¾Ð½Ð¸Ð»Ð¾ ÑÐ³ÐµÐ½ÐµÑ€Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð½Ñ‹Ð¹ ÐºÐ¾Ð½Ñ„Ð¸Ð³!", "");
             }
 
             await ssh.ExecuteCommandAsync("mkdir -p /var/log/xray");
@@ -266,20 +199,20 @@ EOF";
 
             string vlessLink = $"vless://{uuid}@{serverIp}:443?security=reality&encryption=none&alpn=h2,http/1.1&pbk={pubKey}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={shortId}#{encodedName}";
 
-            return (true, "VLESS-Reality настроен!", vlessLink);
+            return (true, "VLESS-Reality Ð½Ð°ÑÑ‚Ñ€Ð¾ÐµÐ½!", vlessLink);
         }
         catch (Exception ex)
         {
-            return (false, $"КРИТИЧЕСКАЯ ОШИБКА: {ex.Message}", "");
+            return (false, $"ÐšÐ Ð˜Ð¢Ð˜Ð§Ð•Ð¡ÐšÐÐ¯ ÐžÐ¨Ð˜Ð‘ÐšÐ: {ex.Message}", "");
         }
     }
 
     public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true)
     {
         try { SshGuard.ThrowIfInvalid(email, null); } catch (Exception ex) { return (false, ex.Message, ""); }
-        if (await _dbContext.Clients.AnyAsync(c => c.Email == email && c.ServerIp == serverIp)) return (false, "Уже есть!", "");
+        if (await _dbContext.Clients.AnyAsync(c => c.Email == email && c.ServerIp == serverIp)) return (false, "Ð£Ð¶Ðµ ÐµÑÑ‚ÑŒ!", "");
 
-        // ИСПРАВЛЕНИЕ: Для Xray сервиса включаем по умолчанию ТОЛЬКО VLESS.
+        // Ð˜Ð¡ÐŸÐ ÐÐ’Ð›Ð•ÐÐ˜Ð•: Ð”Ð»Ñ Xray ÑÐµÑ€Ð²Ð¸ÑÐ° Ð²ÐºÐ»ÑŽÑ‡Ð°ÐµÐ¼ Ð¿Ð¾ ÑƒÐ¼Ð¾Ð»Ñ‡Ð°Ð½Ð¸ÑŽ Ð¢ÐžÐ›Ð¬ÐšÐž VLESS.
         var user = new VpnClient 
         { 
             Email = email, 
@@ -312,20 +245,20 @@ EOF";
         }
         
         var savedUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
-        return (true, "Пользователь добавлен!", savedUser?.VlessLink ?? "");
+        return (true, "ÐŸÐ¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»ÑŒ Ð´Ð¾Ð±Ð°Ð²Ð»ÐµÐ½!", savedUser?.VlessLink ?? "");
     }
 
     public async Task<(bool IsSuccess, string Message)> RemoveUserAsync(ISshService ssh, string serverIp, string email)
     {
-        if (email.Equals("Админ", StringComparison.OrdinalIgnoreCase)) return (false, "Нельзя удалить Админа!");
+        if (email.Equals("ÐÐ´Ð¼Ð¸Ð½", StringComparison.OrdinalIgnoreCase)) return (false, "ÐÐµÐ»ÑŒÐ·Ñ ÑƒÐ´Ð°Ð»Ð¸Ñ‚ÑŒ ÐÐ´Ð¼Ð¸Ð½Ð°!");
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
-        if (await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp) <= 1) return (false, "Последний!");
+        if (await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp) <= 1) return (false, "ÐŸÐ¾ÑÐ»ÐµÐ´Ð½Ð¸Ð¹!");
         if (user != null) { _dbContext.Clients.Remove(user); await _dbContext.SaveChangesAsync(); }
         
         var rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json 2>/dev/null");
-        if (string.IsNullOrWhiteSpace(rawJson)) return (true, "Удален.");
+        if (string.IsNullOrWhiteSpace(rawJson)) return (true, "Ð£Ð´Ð°Ð»ÐµÐ½.");
         var root = JsonNode.Parse(rawJson);
-        if (root == null) return (true, "Удален.");
+        if (root == null) return (true, "Ð£Ð´Ð°Ð»ÐµÐ½.");
 
         await RebuildInboundsAsync(root, serverIp, ssh);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -354,12 +287,12 @@ EOF";
     public async Task<(bool IsSuccess, string Message)> ToggleUserStatusAsync(ISshService ssh, string serverIp, string email, bool active)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
-        if (user == null) return (false, "Нет в БД");
+        if (user == null) return (false, "ÐÐµÑ‚ Ð² Ð‘Ð”");
         user.IsActive = active; await _dbContext.SaveChangesAsync();
         
         var rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json");
         var root = JsonNode.Parse(rawJson);
-        if (root == null) return (false, "Ошибка конфига");
+        if (root == null) return (false, "ÐžÑˆÐ¸Ð±ÐºÐ° ÐºÐ¾Ð½Ñ„Ð¸Ð³Ð°");
 
         await RebuildInboundsAsync(root, serverIp, ssh);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

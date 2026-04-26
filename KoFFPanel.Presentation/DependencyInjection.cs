@@ -1,4 +1,4 @@
-using KoFFPanel.Application.Interfaces;
+﻿using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Infrastructure.Services;
 using KoFFPanel.Presentation.Services;
 using KoFFPanel.Presentation.Features.Bot;
@@ -17,7 +17,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddPresentationServices(this IServiceCollection services)
     {
-        // 1. Инфраструктура и Core-сервисы
+        // 1. Ð˜Ð½Ñ„Ñ€Ð°ÑÑ‚Ñ€ÑƒÐºÑ‚ÑƒÑ€Ð° Ð¸ Core-ÑÐµÑ€Ð²Ð¸ÑÑ‹
         services.AddSingleton<IAppLogger, AppLogger>();
         services.AddSingleton<IProfileRepository, ProfileRepository>();
         services.AddTransient<ISshService, SshService>();
@@ -46,14 +46,14 @@ public static class DependencyInjection
 
         services.AddSingleton<IClientAnalyticsService, ClientAnalyticsService>();
 
-        // 2. Сервисы UI и Билдеры
+        // 2. Ð¡ÐµÑ€Ð²Ð¸ÑÑ‹ UI Ð¸ Ð‘Ð¸Ð»Ð´ÐµÑ€Ñ‹
         services.AddTransient<IFilePickerService, FilePickerService>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.VlessRealityBuilder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.Hysteria2Builder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrustTunnelBuilder>();
 
         // 3. ViewModels
-        services.AddTransient<CabinetViewModel>();
+        services.AddSingleton<CabinetViewModel>();
         services.AddTransient<TerminalViewModel>();
         services.AddTransient<AddServerViewModel>();
         services.AddTransient<AddClientViewModel>();
