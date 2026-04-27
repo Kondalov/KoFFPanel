@@ -257,8 +257,6 @@
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0"
@@ -273,42 +271,6 @@
                                    FontSize="14" />
                         <TextBlock Text="{Binding XrayVersion}"
                                    Foreground="#00f2ff"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   HorizontalAlignment="Right" />
-                    </Grid>
-                </Border>
-
-                <Border Grid.Row="1"
-                        Grid.ColumnSpan="2"
-                        BorderBrush="#0AFFFFFF"
-                        BorderThickness="0,0,0,1"
-                        Margin="0,0,0,8"
-                        Padding="0,0,0,8">
-                    <Grid>
-                        <TextBlock Text="Аптайм"
-                                   Foreground="#B3FFFFFF"
-                                   FontSize="14" />
-                        <TextBlock Text="{Binding XrayUptime}"
-                                   Foreground="#ffffff"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   HorizontalAlignment="Right" />
-                    </Grid>
-                </Border>
-
-                <Border Grid.Row="2"
-                        Grid.ColumnSpan="2"
-                        BorderBrush="#0AFFFFFF"
-                        BorderThickness="0,0,0,1"
-                        Margin="0,0,0,8"
-                        Padding="0,0,0,8">
-                    <Grid>
-                        <TextBlock Text="Конфиг"
-                                   Foreground="#B3FFFFFF"
-                                   FontSize="14" />
-                        <TextBlock Text="{Binding XrayConfigStatus}"
-                                   Foreground="#00ff88"
                                    FontSize="14"
                                    FontWeight="SemiBold"
                                    HorizontalAlignment="Right" />

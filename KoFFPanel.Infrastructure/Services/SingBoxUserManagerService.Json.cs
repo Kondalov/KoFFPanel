@@ -165,14 +165,12 @@ public partial class SingBoxUserManagerService
             return (false, "Ошибка теста конфига!");
         }
 
-        // ИСПРАВЛЕНИЕ: Умный алгоритм применения (Hot Reload).
-        // 1. Делаем бекап старого конфига.
-        // 2. Перемещаем новый конфиг на место рабочего.
-        // 3. Пытаемся сделать мягкий reload (SIGHUP), чтобы не сбрасывать PID и подключения.
-        // 4. Fallback: если reload по какой-то причине не сработал, делаем обычный restart.
+        // ИСПРАВЛЕНИЕ: Отправка сигнала SIGHUP (Hot Reload) напрямую в процесс.
+        // Это обходит ограничения systemctl и гарантированно заставляет Sing-box
+        // перечитать конфигурацию без изменения PID и сброса аптайма.
         string applyCmd = "cp /etc/sing-box/config.json /etc/sing-box/config.backup.json; " +
                           "mv /tmp/sb_test.json /etc/sing-box/config.json; " +
-                          "systemctl reload sing-box || systemctl restart sing-box";
+                          "killall -HUP sing-box 2>/dev/null || systemctl restart sing-box";
 
         await ssh.ExecuteCommandAsync(applyCmd);
 
