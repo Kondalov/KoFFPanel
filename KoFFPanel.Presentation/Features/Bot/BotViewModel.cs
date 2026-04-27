@@ -180,6 +180,10 @@ public partial class BotViewModel : ObservableObject
             _logger.Log("BOT-SYNC", $"Синхронизировано {syncedUuids.Count} юзеров.");
             PendingUsersCount = 0;
         }
+        catch (Exception ex)
+        {
+            _logger.Log("BOT-SYNC-ERR", $"Ошибка синхронизации: {ex.Message}");
+        }
         finally
         {
             IsSyncing = false;
@@ -251,6 +255,10 @@ public partial class BotViewModel : ObservableObject
             ReserveKeysCount += keysNeeded;
             _logger.Log("BOT-POOL", $"Успешно добавлено {keysNeeded} ключей в резерв.");
         }
+        catch (Exception ex)
+        {
+            _logger.Log("BOT-POOL-ERR", $"Ошибка при добавлении ключей в резерв: {ex.Message}");
+        }
         finally
         {
             IsSyncing = false;
@@ -292,6 +300,10 @@ public partial class BotViewModel : ObservableObject
 
             MessageBox.Show("Конфигурация сервера успешно отправлена!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
         }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Ошибка отправки конфигурации: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
         finally { IsSyncing = false; }
     }
 
@@ -315,6 +327,10 @@ public partial class BotViewModel : ObservableObject
             var res = await GetClient().SendAsync(req);
 
             if (res.IsSuccessStatusCode) MessageBox.Show($"База выгружена! Передано {allClients.Count} клиентов.", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Ошибка выгрузки базы: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally { IsSyncing = false; await HeartbeatCheckAsync(); }
     }

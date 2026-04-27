@@ -136,7 +136,7 @@ public partial class TerminalViewModel
                 {
                     string output = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         if (_isWebViewReady)
                         {
