@@ -199,7 +199,6 @@ public partial class CabinetViewModel
         }
         finally
         {
-            // Жестко глушим мониторинг в панели, чтобы предотвратить спам ошибками таймаутов
             ServerStatus = "Сервер ушел в перезагрузку (Offline)";
             StopMonitoring();
             ssh.Disconnect();
