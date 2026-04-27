@@ -122,10 +122,11 @@ public partial class XrayUserManagerService
             return (false, "Ошибка теста Xray! Конфиг не прошел валидацию.");
         }
 
+        // ИСПРАВЛЕНИЕ: Отказ от деструктивного killall -9.
+        // Даем возможность Xray завершить текущие сессии мягко (Graceful Shutdown)
+        // и безопасно перезапускаем службу штатным средством Systemd.
         string applyCmd = $"{s} cp /usr/local/etc/xray/config.json /usr/local/etc/xray/config.backup.json; " +
                           $"{s} mv /tmp/config_users_test.json /usr/local/etc/xray/config.json; " +
-                          $"{s} systemctl stop xray 2>/dev/null; " +
-                          $"{s} killall -9 xray 2>/dev/null; " +
                           $"{s} systemctl restart xray";
 
         await ssh.ExecuteCommandAsync(applyCmd);

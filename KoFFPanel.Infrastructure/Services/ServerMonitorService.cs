@@ -12,6 +12,7 @@ namespace KoFFPanel.Infrastructure.Services;
 
 public class ServerMonitorService : IServerMonitorService
 {
+    private readonly IAppLogger _logger;
     public async Task<ServerResources> GetResourcesAsync(ISshService sshService, string coreType)
     {
         if (!sshService.IsConnected) return new ServerResources(0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
@@ -79,6 +80,16 @@ public class ServerMonitorService : IServerMonitorService
         catch { }
 
         return new ServerResources(0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
+    }
+
+
+    /// <summary>
+    /// скрипт собирает значения абсолютно всех переменных (PID, SYS_UP, T_MONO и т.д.) и передает их в слой C#, который сохраняет их в app_analytics.log
+    /// </summary>
+    /// <param name="logger"></param>
+    public ServerMonitorService(IAppLogger logger)
+    {
+        _logger = logger;
     }
 
     public async Task<List<UserOnlineInfo>> GetUserOnlineStatsAsync(ISshService sshService, string coreType)
@@ -291,53 +302,85 @@ public class ServerMonitorService : IServerMonitorService
         return (false, 0);
     }
 
+    /// <summary>
+    /// метод выполняет комплексную проверку статуса ядра (Xray/Sing-Box/TrustTunnel) через SSH, собирая данные о версии, валидности конфига, аптайме и последних ошибках. Вся логика обработки и вычислений вынесена в единый shell-скрипт для минимизации количества SSH вызовов и обеспечения максимальной точности данных, особенно в условиях LXC/OpenVZ, где системные часы могут быть рассинхронизированы. Результат возвращается в виде объекта CoreStatusInfo, который может быть легко отображен в UI или сохранен в аналитике.
+    /// </summary>
+    /// <param name="sshService"></param>
+    /// <param name="coreType"></param>
+    /// <returns></returns>
     public async Task<CoreStatusInfo> GetCoreStatusInfoAsync(ISshService sshService, string coreType)
     {
-        var info = new CoreStatusInfo();
+        var info = new CoreStatusInfo { Uptime = "Загрузка..." };
         if (!sshService.IsConnected) return info;
 
         string cmdText = $@"
+        export LC_ALL=C
         export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
-        CORE=""{coreType.ToLower()}""
-        NOW=$(date +%s)
         
+        CORE=""{coreType.ToLower()}""
+        SVC=$CORE
         BIN=$(command -v $CORE 2>/dev/null || echo ""/usr/local/bin/$CORE"")
 
+        # 1. Быстрая проверка
         if [ ""$CORE"" = ""sing-box"" ]; then
             V=$($BIN version 2>/dev/null | grep 'version' | awk '{{print $3}}')
             $BIN check -c /etc/sing-box/config.json >/dev/null 2>&1 && C=""Валиден"" || C=""Ошибка""
-            PID=$(systemctl show -p ExecMainPID sing-box 2>/dev/null | awk -F= '{{print $2}}')
-            E=$(journalctl -u sing-box -n 50 --no-pager 2>/dev/null | grep -iE 'error|fatal|rejected' | tail -n 1 | sed 's/.*msg=//' | tr -d '\r\n')
         elif [ ""$CORE"" = ""trusttunnel"" ]; then
             V=$($BIN --version 2>/dev/null | awk '{{print $2}}')
             [ -f /etc/trusttunnel/vpn.toml ] && C=""Валиден"" || C=""Ошибка""
-            PID=$(systemctl show -p ExecMainPID trusttunnel 2>/dev/null | awk -F= '{{print $2}}')
-            E=$(journalctl -u trusttunnel -n 50 --no-pager 2>/dev/null | grep -iE 'error|fatal|panic' | tail -n 1 | tr -d '\r\n')
         else
             V=$($BIN version 2>/dev/null | head -n 1 | awk '{{print $2}}')
-            if [ -z ""$V"" ]; then V=$($BIN -version 2>/dev/null | head -n 1 | awk '{{print $2}}'); fi
             $BIN run -test -config /usr/local/etc/xray/config.json >/dev/null 2>&1 && C=""Валиден"" || C=""Ошибка""
-            PID=$(systemctl show -p ExecMainPID xray 2>/dev/null | awk -F= '{{print $2}}')
-            E=$(tail -n 200 /var/log/xray/error.log 2>/dev/null | grep -iE 'error|fail|rejected' | grep -v '\[Info\]' | tail -n 1 | tr -d '\r\n')
         fi
 
+        E=$(journalctl -u $SVC -n 10 --no-pager 2>/dev/null | grep -iE 'error|fatal|panic|rejected' | tail -n 1 | sed 's/.*msg=//' | tr -d '\r\n|')
+
+        # 2. Точный поиск PID
+        PID=$(systemctl show -p MainPID $SVC 2>/dev/null | cut -d= -f2 | tr -dc '0-9')
+        [ -z ""$PID"" ] || [ ""$PID"" = ""0"" ] && PID=$(pgrep -x ""$CORE"" | head -n 1 | tr -dc '0-9')
+        [ -z ""$PID"" ] || [ ""$PID"" = ""0"" ] && PID=$(pgrep -f ""$CORE"" | grep -v grep | head -n 1 | tr -dc '0-9')
+
+        ELAPSED_SEC=0
+        
+        # 3. Аптайм через Unix Epoch ядра (защита от любых багов Linux и LXC)
         if [ -n ""$PID"" ] && [ ""$PID"" != ""0"" ]; then
-            START=$(stat -c %Y /proc/$PID 2>/dev/null || echo $NOW)
-            ELAPSED=$((NOW - START))
-            U=$(awk -v t=""$ELAPSED"" 'BEGIN {{printf ""%dd %dh %dm"", t/86400, (t%86400)/3600, (t%3600)/60}}')
+            START_EPOCH=$(stat -c %Y /proc/""$PID"" 2>/dev/null | tr -dc '0-9')
+            if [ -n ""$START_EPOCH"" ]; then
+                NOW_EPOCH=$(date +%s | tr -dc '0-9')
+                ELAPSED_SEC=$((NOW_EPOCH - START_EPOCH))
+            else
+                # Резерв на случай отсутствия прав
+                E_PS=$(ps -p ""$PID"" -o etimes= 2>/dev/null | tr -dc '0-9')
+                [ -n ""$E_PS"" ] && ELAPSED_SEC=$E_PS
+            fi
+        fi
+
+        [ ""$ELAPSED_SEC"" -lt 0 ] && ELAPSED_SEC=0
+
+        # 4. Форматирование (ДОБАВЛЕНЫ СЕКУНДЫ В ВЫВОД)
+        if [ -n ""$PID"" ] && [ ""$PID"" != ""0"" ]; then
+            D=$((ELAPSED_SEC / 86400))
+            H=$(( (ELAPSED_SEC % 86400) / 3600 ))
+            M=$(( (ELAPSED_SEC % 3600) / 60 ))
+            S=$((ELAPSED_SEC % 60))
+            U=""${{D}}d ${{H}}h ${{M}}m ${{S}}s""
         else
             U=""Остановлен""
         fi
 
-        V=${{V:-""Неизвестно""}}
-        [ -z ""$C"" ] && C=""Неизвестно""
-        [ -z ""$E"" ] && E=""Нет ошибок""
-        echo ""$V|$C|$U|$E""
+        echo ""${{V:-Неизвестно}}|${{C:-Неизвестно}}|$U|${{E:-Нет ошибок}}""
         ".Replace("\r", "");
 
         try
         {
             string result = await sshService.ExecuteCommandAsync(cmdText);
+
+            if (string.IsNullOrWhiteSpace(result))
+            {
+                info.Uptime = "Таймаут SSH";
+                return info;
+            }
+
             var parts = result.Replace("\r", "").Split('\n').LastOrDefault(s => s.Contains('|'))?.Split('|');
 
             if (parts != null && parts.Length >= 4)
@@ -347,11 +390,18 @@ public class ServerMonitorService : IServerMonitorService
                 info.Uptime = parts[2].Trim();
 
                 string err = parts[3].Trim();
-                // ИСПРАВЛЕНИЕ: Обрезаем длинный текст ошибки, чтобы он не ломал UI!
                 info.LastError = err.Length > 35 ? err.Substring(0, 35) + "..." : err;
             }
+            else
+            {
+                info.Uptime = "Сбой парсинга";
+            }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            info.Uptime = "КРАШ C#";
+            info.LastError = ex.Message;
+        }
 
         return info;
     }

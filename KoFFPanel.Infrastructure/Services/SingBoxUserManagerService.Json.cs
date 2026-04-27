@@ -159,8 +159,23 @@ public partial class SingBoxUserManagerService
     {
         string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(newJson.Replace("\r", "")));
         await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d > /tmp/sb_test.json");
-        if ((await ssh.ExecuteCommandAsync("sing-box check -c /tmp/sb_test.json 2>&1")).Contains("error")) return (false, "Ошибка теста конфига!");
-        await ssh.ExecuteCommandAsync("cp /etc/sing-box/config.json /etc/sing-box/config.backup.json; mv /tmp/sb_test.json /etc/sing-box/config.json; systemctl stop sing-box xray 2>/dev/null; killall -9 sing-box xray 2>/dev/null; systemctl restart sing-box");
-        return (true, "Обновлено!");
+
+        if ((await ssh.ExecuteCommandAsync("sing-box check -c /tmp/sb_test.json 2>&1")).Contains("error"))
+        {
+            return (false, "Ошибка теста конфига!");
+        }
+
+        // ИСПРАВЛЕНИЕ: Умный алгоритм применения (Hot Reload).
+        // 1. Делаем бекап старого конфига.
+        // 2. Перемещаем новый конфиг на место рабочего.
+        // 3. Пытаемся сделать мягкий reload (SIGHUP), чтобы не сбрасывать PID и подключения.
+        // 4. Fallback: если reload по какой-то причине не сработал, делаем обычный restart.
+        string applyCmd = "cp /etc/sing-box/config.json /etc/sing-box/config.backup.json; " +
+                          "mv /tmp/sb_test.json /etc/sing-box/config.json; " +
+                          "systemctl reload sing-box || systemctl restart sing-box";
+
+        await ssh.ExecuteCommandAsync(applyCmd);
+
+        return (true, "Обновлено (Hot Reload)!");
     }
 }

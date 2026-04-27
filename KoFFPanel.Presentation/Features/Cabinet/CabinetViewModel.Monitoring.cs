@@ -67,49 +67,38 @@ public partial class CabinetViewModel
 
     private async Task RunMonitoringCycleStepAsync(ISshService localSsh, VpnProfile profile, bool isSingBox, bool isTrustTunnel, string serviceName, string ip, string displayCoreName, CancellationToken token)
     {
-        var pingResult = await _monitorService.PingServerAsync(ip); 
+        var pingResult = await _monitorService.PingServerAsync(ip);
         PingMs = pingResult.Success ? pingResult.RoundtripTime : 0;
 
         var res = await _monitorService.GetResourcesAsync(localSsh, profile.CoreType);
         NetworkSpeed = res.NetworkSpeed; XrayProcesses = res.XrayProcesses; SynRecv = res.SynRecv; ErrorRate = res.ErrorRate;
 
         await UpdateSystemMetricsAsync(localSsh, res);
-        
+
         int tcpCount = await GetTcpConnectionsCountAsync(localSsh, res.TcpConnections);
         TcpConnections = tcpCount;
 
-        // УМНЫЙ АЛГОРИТМ: Детекция всех ядер
-        string checkCoresCmd = "systemctl show -p ActiveState sing-box xray trusttunnel 2>/dev/null";
-        string coresRaw = await localSsh.ExecuteCommandAsync(checkCoresCmd);
-        var coresLines = coresRaw.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        
-        bool sbActive = coresLines.Any(l => l.Contains("sing-box") && l.Contains("active"));
-        bool xrActive = coresLines.Any(l => l.Contains("xray") && l.Contains("active"));
-        bool ttActive = coresLines.Any(l => l.Contains("trusttunnel") && l.Contains("active"));
+        // ВНЕДРЕНО: Умный алгоритм с надежной проверкой (foolproof). 
+        // systemctl is-active гарантированно возвращает статусы строго в порядке запроса (sb, xr, tt)
+        string fallback = await localSsh.ExecuteCommandAsync("systemctl is-active sing-box xray trusttunnel 2>/dev/null");
+        var fbLines = fallback.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-        // Если show не выдал имен, пробуем классический is-active
-        if (coresLines.Length < 3)
-        {
-            string fallback = await localSsh.ExecuteCommandAsync("systemctl is-active sing-box xray trusttunnel 2>/dev/null");
-            var fbLines = fallback.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            sbActive = fbLines.Length > 0 && fbLines[0].Trim() == "active";
-            xrActive = fbLines.Length > 1 && fbLines[1].Trim() == "active";
-            ttActive = fbLines.Length > 2 && fbLines[2].Trim() == "active";
-        }
+        bool sbActive = fbLines.Length > 0 && fbLines[0].Trim() == "active";
+        bool xrActive = fbLines.Length > 1 && fbLines[1].Trim() == "active";
+        bool ttActive = fbLines.Length > 2 && fbLines[2].Trim() == "active";
 
         string actualDisplayCore = displayCoreName;
         if (sbActive && xrActive) actualDisplayCore = "Sing-box + Xray";
         else if (sbActive) actualDisplayCore = "Sing-box";
         else if (xrActive) actualDisplayCore = "Xray-core";
-        
-        if (ttActive && !actualDisplayCore.Contains("TrustTunnel")) 
+
+        if (ttActive && !actualDisplayCore.Contains("TrustTunnel"))
             actualDisplayCore = (actualDisplayCore == "TrustTunnel") ? "TrustTunnel" : actualDisplayCore + " + TrustTunnel";
 
         string coreStatusStr = "Stopped";
         if (actualDisplayCore.Contains("Sing-box") && sbActive) coreStatusStr = "Active";
         else if (actualDisplayCore.Contains("Xray") && xrActive) coreStatusStr = "Active";
         else if (actualDisplayCore.Contains("TrustTunnel") && ttActive) coreStatusStr = "Active";
-        else coreStatusStr = "Stopped";
 
         string journalLogs = await localSsh.ExecuteCommandAsync($"journalctl -u {serviceName} -n 5 --no-pager");
         string accessLogs = await GetAccessLogsAsync(localSsh, isSingBox, isTrustTunnel);
@@ -130,7 +119,7 @@ public partial class CabinetViewModel
         {
             UpdateUiAfterCycle(actualDisplayCore, coreStatusStr, coreStats, journalLogs, accessLogs, grepTest);
             bool dbNeedsUpdate = ProcessClientsAfterCycle(trafficStats, activeUsernames, allOnlineStats, trafficBatch, connectionBatch);
-            
+
             if (dbNeedsUpdate && SelectedServer != null)
             {
                 if (isSingBox) _ = _singBoxUserManager.SaveTrafficToDbAsync(ip, Clients);
@@ -138,8 +127,8 @@ public partial class CabinetViewModel
                 else _ = _userManager.SaveTrafficToDbAsync(ip, Clients);
             }
 
-            TotalUsers = Clients.Count; 
-            ActiveUsers = Clients.Count(c => c.ActiveConnections > 0); 
+            TotalUsers = Clients.Count;
+            ActiveUsers = Clients.Count(c => c.ActiveConnections > 0);
             TotalTraffic = FormatBytes(Clients.Sum(c => c.TrafficUsed));
         });
 
