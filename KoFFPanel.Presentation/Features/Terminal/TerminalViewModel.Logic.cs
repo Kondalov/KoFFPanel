@@ -247,29 +247,64 @@ public partial class TerminalViewModel
     <script src=""https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js""></script>
     <script src=""https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js""></script>
     <style>
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: transparent !important; overflow: hidden; }
-        #terminal { height: 100%; width: 100%; padding: 12px 12px 0 12px; box-sizing: border-box; background: transparent !important; }
+        body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: transparent !important; overflow: hidden; }
+        #container { width: 100%; height: 100%; padding: 12px 12px 0 12px; box-sizing: border-box; }
+        #terminal { width: 100%; height: 100%; }
         .xterm, .xterm-viewport, .xterm-screen, .xterm-text-layer, .xterm-canvas-layer { background-color: transparent !important; }
         .xterm-viewport::-webkit-scrollbar { display: none; }
         .xterm-viewport { -ms-overflow-style: none; scrollbar-width: none; }
+        #copyBtn { position: absolute; top: 16px; right: 36px; z-index: 1000; cursor: pointer; padding: 6px; border-radius: 6px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); opacity: 0.4; transition: opacity 0.2s, background 0.2s; display: flex; justify-content: center; align-items: center; }
+        #copyBtn:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+        #copyBtn svg { stroke: #a0aabf; }
     </style>
 </head>
 <body>
-    <div id=""terminal""></div>
+    <div id=""copyBtn"" onclick=""window.copyAllTerminal()"" title=""Скопировать вывод терминала"">
+        <svg width=""18"" height=""18"" viewBox=""0 0 24 24"" fill=""none"" stroke-width=""2"" stroke-linecap=""round"" stroke-linejoin=""round"">
+            <rect x=""9"" y=""9"" width=""13"" height=""13"" rx=""2"" ry=""2""></rect>
+            <path d=""M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1""></path>
+        </svg>
+    </div>
+    <div id=""container""><div id=""terminal""></div></div>
     <script>
         const term = new Terminal({
             allowTransparency: true,
             theme: { background: '#00000000', foreground: '#d4d4d4', cursor: '#569cd6', selectionBackground: 'rgba(38, 79, 120, 0.5)' },
-            cursorBlink: true, fontSize: 15, fontFamily: ""'Cascadia Code', Consolas, 'Courier New', monospace"", scrollback: 5000
+            cursorBlink: true, fontSize: 15, fontFamily: ""'Cascadia Code', Consolas, 'Courier New', monospace"", scrollback: 10000,
+            convertEol: true, windowsMode: true
         });
         const fitAddon = new FitAddon.FitAddon();
         term.loadAddon(fitAddon);
         term.open(document.getElementById('terminal'));
-        function resizeTerminal() { fitAddon.fit(); window.chrome.webview.postMessage({ type: 'resize', cols: term.cols, rows: term.rows }); }
-        setTimeout(resizeTerminal, 100);
+        
         let resizeTimeout;
-        window.addEventListener('resize', () => { clearTimeout(resizeTimeout); resizeTimeout = setTimeout(resizeTerminal, 100); });
+        function resizeTerminal() { 
+            try {
+                fitAddon.fit(); 
+                if (term.cols > 0 && term.rows > 0) {
+                    window.chrome.webview.postMessage({ type: 'resize', cols: term.cols, rows: term.rows }); 
+                }
+            } catch(e) {}
+        }
+        
+        setTimeout(resizeTerminal, 100);
+        
+        const resizeObserver = new ResizeObserver(() => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(resizeTerminal, 50);
+        });
+        resizeObserver.observe(document.getElementById('terminal'));
+
         term.onData(data => { window.chrome.webview.postMessage({ type: 'input', data: data }); });
+        window.copyAllTerminal = function() {
+            let buffer = term.buffer.active;
+            let result = [];
+            for (let i = 0; i < buffer.length; i++) {
+                let line = buffer.getLine(i);
+                if (line) result.push(line.translateToString(true));
+            }
+            window.chrome.webview.postMessage({ type: 'copy', text: result.join('\n') });
+        };
         window.chrome.webview.postMessage({ type: 'ready' });
     </script>
 </body>

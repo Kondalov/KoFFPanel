@@ -62,6 +62,20 @@ public partial class TerminalWindow : Wpf.Ui.Controls.FluentWindow
             _viewModel.NavigateCommand.Execute(remoteFile);
         }
     }
+
+    private void NavigateUp_Click(object sender, MouseButtonEventArgs e)
+    {
+        _viewModel.NavigateCommand.Execute(new RemoteFileItem { Name = "..", IsDirectory = true });
+    }
+
+    private async void CopyTerminal_Click(object sender, RoutedEventArgs e)
+    {
+        await TerminalWebView.ExecuteScriptAsync("if(window.copyAllTerminal) window.copyAllTerminal();");
+        CopyPopup.IsOpen = true;
+        await System.Threading.Tasks.Task.Delay(1500);
+        CopyPopup.IsOpen = false;
+    }
+
     private async void CurrentDirectory_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (e.ClickCount == 2 && !string.IsNullOrEmpty(_viewModel.CurrentDirectory))

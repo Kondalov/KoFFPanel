@@ -180,6 +180,18 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
                     uint rows = root.GetProperty("rows").GetUInt32();
                     _sshService?.ResizeTerminal(cols, rows);
                 }
+                else if (type == "copy" && root.TryGetProperty("text", out var textProp))
+                {
+                    string text = textProp.GetString() ?? "";
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        try
+                        {
+                            System.Windows.Clipboard.SetText(text);
+                        }
+                        catch { }
+                    });
+                }
             }
         } catch { }
     }
@@ -194,7 +206,6 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
                 Files.Clear();
-                if (CurrentDirectory != "/") Files.Add(new RemoteFileItem { Name = "..", IsDirectory = true });
                 foreach (var file in remoteFiles.Where(f => f.Name != "." && f.Name != ".."))
                     Files.Add(new RemoteFileItem { Name = file.Name, IsDirectory = file.IsDir });
             });
