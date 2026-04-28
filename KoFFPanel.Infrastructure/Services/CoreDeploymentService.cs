@@ -174,14 +174,6 @@ echo 'READY|Сервер готов к установке.'
                     if command -v lsof >/dev/null 2>&1; then PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true); if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi; fi
                 ";
                 await ssh.ExecuteCommandAsync(killCmd);
-                
-                if (inbound.Protocol.ToLower() == "hysteria2")
-                {
-                    await ssh.ExecuteCommandAsync($@"
-                        if command -v fuser >/dev/null 2>&1; then {sudoPrefix}fuser -k -9 {inbound.Port + 10000}/udp 2>/dev/null || true; fi
-                        if command -v lsof >/dev/null 2>&1; then PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port + 10000} 2>/dev/null || true); if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi; fi
-                    ");
-                }
             }
 
             await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload && {sudoPrefix}systemctl enable {coreName} --now && {sudoPrefix}systemctl restart {coreName}");
@@ -216,14 +208,6 @@ if command -v ufw >/dev/null 2>&1; then {sudoPrefix}ufw allow {port}/tcp && {sud
 if command -v firewall-cmd >/dev/null 2>&1; then {sudoPrefix}firewall-cmd --add-port={port}/tcp --permanent && {sudoPrefix}firewall-cmd --reload || true; fi
 {sudoPrefix}iptables -I INPUT 1 -p tcp --dport {port} -j ACCEPT || true
 {sudoPrefix}iptables -I INPUT 1 -p udp --dport {port} -j ACCEPT || true";
-
-        if (protocol.ToLower() == "hysteria2")
-        {
-            // Магия Port Forwarding: перехватываем UDP трафик и отправляем его на скрытый порт Hysteria2
-            cmd += $@"
-{sudoPrefix}iptables -t nat -A PREROUTING -p udp --dport {port} -j REDIRECT --to-port {port + 10000} || true
-{sudoPrefix}iptables -I INPUT 1 -p udp --dport {port + 10000} -j ACCEPT || true";
-        }
 
         cmd += $@"
 {sudoPrefix}sh -c 'iptables-save > /etc/iptables/rules.v4' 2>/dev/null || true";
@@ -280,6 +264,11 @@ if curl -sL --retry 3 --connect-timeout 10 ""$DOWNLOAD_URL"" -o sb.tar.gz; then
 fi
 
 if [ -f ""/usr/local/bin/sing-box"" ]; then
+    # Дополнительно ставим xray как утилиту для статистики
+    DOWNLOAD_URL_XRAY=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r "".assets[] | select(.name == \""Xray-linux-64.zip\"") | .browser_download_url"")
+    if [ -n ""$DOWNLOAD_URL_XRAY"" ]; then
+        wget -q ""$DOWNLOAD_URL_XRAY"" -O /tmp/xray_util.zip && unzip -o /tmp/xray_util.zip xray -d /usr/local/bin/ && chmod +x /usr/local/bin/xray
+    fi
     /usr/local/bin/sing-box version > /dev/null 2>&1 && echo 'SUCCESS_INSTALLED' || echo 'FAIL_VERIFY'
 else
     echo 'FAIL_INSTALL'
@@ -417,9 +406,18 @@ WantedBy=multi-user.target";
         var baseConfig = new JsonObject();
         if (core == "sing-box")
         {
-            baseConfig["log"] = new JsonObject { ["level"] = "info" }; baseConfig["inbounds"] = inboundsArray;
+            baseConfig["log"] = new JsonObject { ["level"] = "info" }; 
+            baseConfig["inbounds"] = inboundsArray;
             baseConfig["outbounds"] = new JsonArray { new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, new JsonObject { ["type"] = "block", ["tag"] = "block" } };
             baseConfig["route"] = new JsonObject { ["rules"] = new JsonArray() };
+            baseConfig["experimental"] = new JsonObject 
+            { 
+                ["clash_api"] = new JsonObject 
+                { 
+                    ["external_controller"] = "127.0.0.1:9090",
+                    ["secret"] = "" 
+                }
+            };
         }
         else
         {

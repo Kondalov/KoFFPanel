@@ -3,7 +3,7 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="{Binding WindowTitle}"
-                 Height="520"
+                 Height="680"
                  Width="540"
                  WindowStartupLocation="CenterOwner"
                  WindowBackdropType="None"
@@ -146,6 +146,32 @@
                                     Foreground="White" />
                     </StackPanel>
                 </Grid>
+
+                <!-- СЕКЦИЯ ПРОТОКОЛОВ -->
+                <TextBlock Text="Доступные протоколы"
+                           Foreground="#B3FFFFFF"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Margin="0,0,0,12" />
+                
+                <Border Background="#0DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,10">
+                            <TextBlock Text="VLESS Reality" Foreground="White" VerticalAlignment="Center"/>
+                            <ui:ToggleSwitch HorizontalAlignment="Right" IsChecked="{Binding IsVlessEnabled, Mode=TwoWay}"/>
+                        </Grid>
+                        <Separator Background="#1AFFFFFF" Margin="0,0,0,10"/>
+                        <Grid Margin="0,0,0,10">
+                            <TextBlock Text="Hysteria 2" Foreground="White" VerticalAlignment="Center"/>
+                            <ui:ToggleSwitch HorizontalAlignment="Right" IsChecked="{Binding IsHysteria2Enabled, Mode=TwoWay}"/>
+                        </Grid>
+                        <Separator Background="#1AFFFFFF" Margin="0,0,0,10"/>
+                        <Grid>
+                            <TextBlock Text="TrustTunnel / XHTTP" Foreground="White" VerticalAlignment="Center"/>
+                            <ui:ToggleSwitch HorizontalAlignment="Right" IsChecked="{Binding IsTrustTunnelEnabled, Mode=TwoWay}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
                 <Border Background="#1A00f2ff"
                         BorderBrush="#3300f2ff"

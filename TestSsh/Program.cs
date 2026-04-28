@@ -7,35 +7,27 @@ class Program {
         using var ssh = new SshClient("103.71.22.166", "root", new[] { pk });
         try {
             ssh.Connect();
-            Console.WriteLine("--- READING LOG ---");
-            Console.WriteLine(ssh.RunCommand("cat /tmp/sb_pure.log").Result);
-            Console.WriteLine("--- TEST XRAY ---");
+            Console.WriteLine("--- APPLYING NATIVE HYSTERIA2 FIX ---");
             string script = @"
-cat << 'EOF' > /tmp/xray_pure.json
-{
-  ""inbounds"": [
-    {
-      ""protocol"": ""vless"",
-      ""listen"": ""0.0.0.0"",
-      ""port"": 4443,
-      ""settings"": { ""clients"": [] },
-      ""streamSettings"": {
-        ""network"": ""tcp"",
-        ""security"": ""reality"",
-        ""realitySettings"": { ""show"": false, ""dest"": ""bing.com:443"", ""serverNames"": [""bing.com""], ""privateKey"": """", ""shortIds"": [] }
-      }
-    }
-  ],
-  ""outbounds"": [ { ""protocol"": ""freedom"", ""tag"": ""direct"" } ]
-}
-EOF
-/usr/local/bin/xray -config /tmp/xray_pure.json > /tmp/xray.log 2>&1 &
-PID=$!
-sleep 2
-kill -9 $PID
-cat /tmp/xray.log
+if [ -f /etc/sing-box/config.json ]; then
+    # Меняем listen_port у hysteria2 на 443 (вместо 10443)
+    jq '(.inbounds[] | select(.type == ""hysteria2"")).listen_port = 443' /etc/sing-box/config.json > /tmp/config.json && mv /tmp/config.json /etc/sing-box/config.json
+    
+    # Очищаем костыль с NAT (удаляем все редиректы)
+    iptables -t nat -F PREROUTING
+    
+    # Рестарт
+    systemctl restart sing-box
+    sleep 2
+    systemctl status sing-box --no-pager
+    
+    echo '--- SINGBOX LOGS AFTER FIX ---'
+    journalctl -u sing-box -n 20 --no-pager
+else
+    echo '/etc/sing-box/config.json not found'
+fi
 ";
-            Console.WriteLine(ssh.RunCommand(script).Result);
+            Console.WriteLine(ssh.RunCommand(script.Replace("\r", "")).Result);
         } catch (Exception ex) {
             Console.WriteLine(ex.ToString());
         }

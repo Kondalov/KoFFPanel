@@ -51,11 +51,24 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
     }
 
-    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true)
+    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true)
     {
         try { SshGuard.ThrowIfInvalid(name, null); } catch (Exception ex) { return (false, ex.Message, ""); }
-        if (await _dbContext.Clients.AnyAsync(c => c.Email == name && c.ServerIp == serverIp)) return (false, "Ð£Ð¶Ðµ ÐµÑÑ‚ÑŒ!", "");
-        var newUser = new VpnClient { Email = name, Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, TrafficLimit = limit, ExpiryDate = expiry, IsP2PBlocked = p2p, IsVlessEnabled = true, IsActive = true };
+        if (await _dbContext.Clients.AnyAsync(c => c.Email == name && c.ServerIp == serverIp)) return (false, "Уже есть!", "");
+        
+        var newUser = new VpnClient 
+        { 
+            Email = name, 
+            Uuid = Guid.NewGuid().ToString(), 
+            ServerIp = serverIp, 
+            TrafficLimit = limit, 
+            ExpiryDate = expiry, 
+            IsP2PBlocked = p2p, 
+            IsVlessEnabled = isVless,
+            IsHysteria2Enabled = isHy2,
+            IsTrustTunnelEnabled = isTt,
+            IsActive = true 
+        };
         _dbContext.Clients.Add(newUser); await _dbContext.SaveChangesAsync();
         
         var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
@@ -66,19 +79,19 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
             var res = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
             return (res.IsSuccess, res.Message, (await _dbContext.Clients.FirstOrDefaultAsync(u => u.Uuid == newUser.Uuid))?.VlessLink ?? "");
         }
-        return (false, "ÐžÑˆÐ¸Ð±ÐºÐ° Ñ‡Ñ‚ÐµÐ½Ð¸Ñ ÐºÐ¾Ð½Ñ„Ð¸Ð³Ð° ÑÐµÑ€Ð²ÐµÑ€Ð°", "");
+        return (false, "Ошибка чтения конфига сервера", "");
     }
 
     public async Task<(bool IsSuccess, string Message)> RemoveUserAsync(ISshService ssh, string serverIp, string name)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-        if (await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp) <= 1) return (false, "ÐŸÐ¾ÑÐ»ÐµÐ´Ð½Ð¸Ð¹!");
+        if (await _dbContext.Clients.CountAsync(c => c.ServerIp == serverIp) <= 1) return (false, "Последний!");
         if (user != null) { _dbContext.Clients.Remove(user); await _dbContext.SaveChangesAsync(); }
         
         var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null");
-        if (string.IsNullOrWhiteSpace(rawJson)) return (true, "Ð£Ð´Ð°Ð»ÐµÐ½.");
+        if (string.IsNullOrWhiteSpace(rawJson)) return (true, "Удален.");
         var root = JsonNode.Parse(rawJson);
-        if (root == null) return (true, "Ð£Ð´Ð°Ð»ÐµÐ½.");
+        if (root == null) return (true, "Удален.");
 
         await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -87,22 +100,23 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
     public async Task<(bool IsSuccess, string Message)> ToggleUserStatusAsync(ISshService ssh, string serverIp, string name, bool active)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-        if (user == null) return (false, "ÐÐµÑ‚ Ð² Ð‘Ð”");
+        if (user == null) return (false, "Нет в БД");
         user.IsActive = active; await _dbContext.SaveChangesAsync();
 
         var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
         var root = JsonNode.Parse(rawJson);
-        if (root == null) return (false, "ÐžÑˆÐ¸Ð±ÐºÐ° ÐºÐ¾Ð½Ñ„Ð¸Ð³Ð°");
+        if (root == null) return (false, "Ошибка конфига");
 
         await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true)
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
         if (user == null) return false;
         user.TrafficLimit = limit; user.ExpiryDate = expiry; user.IsP2PBlocked = p2p;
+        user.IsVlessEnabled = isVless; user.IsHysteria2Enabled = isHy2; user.IsTrustTunnelEnabled = isTt;
         await _dbContext.SaveChangesAsync();
 
         var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
@@ -131,6 +145,13 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;
     }
 
-    public async Task<Dictionary<string, long>> GetTrafficStatsAsync(ISshService ssh) => new();
-    public async Task<bool> ResetTrafficAsync(ISshService ssh, string name) => true;
+    public async Task<Dictionary<string, long>> GetTrafficStatsAsync(ISshService ssh)
+    {
+        await Task.CompletedTask; return new Dictionary<string, long>();
+    }
+
+    public async Task<bool> ResetTrafficAsync(ISshService ssh, string name)
+    {
+        await Task.CompletedTask; return true;
+    }
 }

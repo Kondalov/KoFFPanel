@@ -51,7 +51,7 @@ public partial class CabinetViewModel
                     string ip = server.IpAddress ?? "";
 
                     var (success, msg, vlessLink) = IsSingBoxActive()
-                        ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked)
+                        ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled)
                         : await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate);
 
                     if (success)
@@ -152,7 +152,7 @@ public partial class CabinetViewModel
 
             if (window.DataContext is AddClientViewModel vm)
             {
-                vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked);
+                vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked, client.IsVlessEnabled, client.IsHysteria2Enabled, client.IsTrustTunnelEnabled);
 
                 // Открываем окно
                 window.ShowDialog();
@@ -163,7 +163,7 @@ public partial class CabinetViewModel
                     long newLimit = (long)(vm.TrafficLimitGb * 1024L * 1024 * 1024);
 
                     bool success = IsSingBoxActive()
-                        ? await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.IsP2PBlocked)
+                        ? await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled)
                         : await _userManager.UpdateUserLimitsAsync(ip, email, newLimit, vm.ExpiryDate);
 
                     if (success)
@@ -173,6 +173,9 @@ public partial class CabinetViewModel
                         client.ExpiryDate = vm.ExpiryDate;
                         client.Note = vm.Note;
                         client.IsP2PBlocked = vm.IsP2PBlocked;
+                        client.IsVlessEnabled = vm.IsVlessEnabled;
+                        client.IsHysteria2Enabled = vm.IsHysteria2Enabled;
+                        client.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
 
                         // === ИСПРАВЛЕНИЕ: Принудительное сохранение изменений в БД ===
                         var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
@@ -183,6 +186,9 @@ public partial class CabinetViewModel
                             dbClient.ExpiryDate = vm.ExpiryDate;
                             dbClient.Note = vm.Note;
                             dbClient.IsP2PBlocked = vm.IsP2PBlocked;
+                            dbClient.IsVlessEnabled = vm.IsVlessEnabled;
+                            dbClient.IsHysteria2Enabled = vm.IsHysteria2Enabled;
+                            dbClient.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
                             await dbContext.SaveChangesAsync();
                         }
 

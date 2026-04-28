@@ -87,9 +87,9 @@ private_key_path = ""certs/key.pem""";
         }
         else if (protocol == "hysteria2")
         {
-            // ИСПРАВЛЕНИЕ: Смещаем порт Hysteria2 на +10000 (внутренний), чтобы избежать конфликта UDP с VLESS.
-            // Маршрутизация трафика будет осуществляться через iptables PREROUTING на сервере.
-            int internalPort = inboundDb.Port + 10000;
+            // ИСПРАВЛЕНИЕ: Sing-box нативно поддерживает бинд TCP (VLESS) и UDP (Hysteria2) на один порт!
+            // Убираем костыль с iptables PREROUTING и смещением порта.
+            int internalPort = inboundDb.Port;
             return new JsonObject
             {
                 ["type"] = "hysteria2",

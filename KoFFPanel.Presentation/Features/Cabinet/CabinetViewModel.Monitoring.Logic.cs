@@ -218,19 +218,25 @@ public partial class CabinetViewModel
 
         var trafficStats = new Dictionary<string, long>();
         string netBytesCmd = "IFACE=$(ip route | grep default | awk '{print $5}' | head -n1); echo $(( $(cat /sys/class/net/$IFACE/statistics/rx_bytes 2>/dev/null || echo 0) + $(cat /sys/class/net/$IFACE/statistics/tx_bytes 2>/dev/null || echo 0) ))";
+        
         if (long.TryParse((await localSsh.ExecuteCommandAsync(netBytesCmd)).Trim(), out long currentTotalServerBytes))
         {
             if (_previousTotalServerBytes > 0 && currentTotalServerBytes > _previousTotalServerBytes)
             {
                 long delta = currentTotalServerBytes - _previousTotalServerBytes;
-                int count = activeUsernames.Count > 0 ? activeUsernames.Count : 1;
-                long bytesPerUser = delta / count;
-                foreach (var uname in activeUsernames) trafficStats[uname] = (_previousTrafficStats.TryGetValue(uname, out long p) ? p : 0) + bytesPerUser;
+                // Исключаем фоновый трафик системы (например 10KB/сек) если юзеров нет
+                if (activeUsernames.Count > 0 && delta > 10240) 
+                {
+                    long bytesPerUser = delta / activeUsernames.Count;
+                    foreach (var uname in activeUsernames) 
+                    {
+                        trafficStats[uname] = (_previousTrafficStats.TryGetValue(uname, out long p) ? p : 0) + bytesPerUser;
+                    }
+                }
             }
             _previousTotalServerBytes = currentTotalServerBytes;
         }
-        if (isSingBox) await _singBoxUserManager.GetTrafficStatsAsync(localSsh);
-        if (isTrustTunnel) await _trustTunnelUserManager.GetTrafficStatsAsync(localSsh);
+
         return trafficStats;
     }
 
