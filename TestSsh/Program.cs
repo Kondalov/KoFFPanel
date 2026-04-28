@@ -7,12 +7,35 @@ class Program {
         using var ssh = new SshClient("103.71.22.166", "root", new[] { pk });
         try {
             ssh.Connect();
-            Console.WriteLine(ssh.RunCommand("rm -rf /opt/trusttunnel2/vpn.toml /opt/trusttunnel2/hosts.toml /opt/trusttunnel2/rules.toml").Result);
-            Console.WriteLine(ssh.RunCommand("cd /opt/trusttunnel2 && ./setup_wizard -m non-interactive -a 0.0.0.0:5443 -c KOLA:01983 -n vpn.endpoint --lib-settings vpn.toml --hosts-settings hosts.toml --cert-type self-signed").Result);
-            Console.WriteLine("\n==== VPN.TOML ====");
-            Console.WriteLine(ssh.RunCommand("cat /opt/trusttunnel2/vpn.toml").Result);
-            Console.WriteLine("\n==== HOSTS.TOML ====");
-            Console.WriteLine(ssh.RunCommand("cat /opt/trusttunnel2/hosts.toml").Result);
+            Console.WriteLine("--- READING LOG ---");
+            Console.WriteLine(ssh.RunCommand("cat /tmp/sb_pure.log").Result);
+            Console.WriteLine("--- TEST XRAY ---");
+            string script = @"
+cat << 'EOF' > /tmp/xray_pure.json
+{
+  ""inbounds"": [
+    {
+      ""protocol"": ""vless"",
+      ""listen"": ""0.0.0.0"",
+      ""port"": 4443,
+      ""settings"": { ""clients"": [] },
+      ""streamSettings"": {
+        ""network"": ""tcp"",
+        ""security"": ""reality"",
+        ""realitySettings"": { ""show"": false, ""dest"": ""bing.com:443"", ""serverNames"": [""bing.com""], ""privateKey"": """", ""shortIds"": [] }
+      }
+    }
+  ],
+  ""outbounds"": [ { ""protocol"": ""freedom"", ""tag"": ""direct"" } ]
+}
+EOF
+/usr/local/bin/xray -config /tmp/xray_pure.json > /tmp/xray.log 2>&1 &
+PID=$!
+sleep 2
+kill -9 $PID
+cat /tmp/xray.log
+";
+            Console.WriteLine(ssh.RunCommand(script).Result);
         } catch (Exception ex) {
             Console.WriteLine(ex.ToString());
         }

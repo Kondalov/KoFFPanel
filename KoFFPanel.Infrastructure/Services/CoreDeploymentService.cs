@@ -153,7 +153,7 @@ echo 'READY|Сервер готов к установке.'
             foreach (var inbound in profile.Inbounds)
             {
                 await LogStep($"Открытие порта {inbound.Port} ({inbound.Protocol})...");
-                await SafeOpenPortAsync(ssh, inbound.Port, sudoPrefix);
+                await SafeOpenPortAsync(ssh, inbound.Port, inbound.Protocol, sudoPrefix);
             }
 
             await LogStep("[5/7] Развертывание файлов конфигурации...");
@@ -164,6 +164,26 @@ echo 'READY|Сервер готов к установке.'
             _profileRepository.UpdateProfile(profile);
 
             await LogStep("[7/7] Запуск службы и проверка статуса...");
+
+            // ИСПРАВЛЕНИЕ: Жестко освобождаем порты перед запуском, так как зависшие UDP сокеты от старых процессов ядра часто вызывают 'bind: address already in use'
+            foreach (var inbound in profile.Inbounds)
+            {
+                await LogStep($"Очистка возможных зависших процессов на порту {inbound.Port}...");
+                string killCmd = $@"
+                    if command -v fuser >/dev/null 2>&1; then {sudoPrefix}fuser -k -9 {inbound.Port}/tcp 2>/dev/null || true; {sudoPrefix}fuser -k -9 {inbound.Port}/udp 2>/dev/null || true; fi
+                    if command -v lsof >/dev/null 2>&1; then PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true); if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi; fi
+                ";
+                await ssh.ExecuteCommandAsync(killCmd);
+                
+                if (inbound.Protocol.ToLower() == "hysteria2")
+                {
+                    await ssh.ExecuteCommandAsync($@"
+                        if command -v fuser >/dev/null 2>&1; then {sudoPrefix}fuser -k -9 {inbound.Port + 10000}/udp 2>/dev/null || true; fi
+                        if command -v lsof >/dev/null 2>&1; then PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port + 10000} 2>/dev/null || true); if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi; fi
+                    ");
+                }
+            }
+
             await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload && {sudoPrefix}systemctl enable {coreName} --now && {sudoPrefix}systemctl restart {coreName}");
             
             // Даем время на запуск
@@ -188,14 +208,24 @@ echo 'READY|Сервер готов к установке.'
         }
     }
 
-    private async Task SafeOpenPortAsync(ISshService ssh, int port, string sudoPrefix)
+    private async Task SafeOpenPortAsync(ISshService ssh, int port, string protocol, string sudoPrefix)
     {
         // ИСПРАВЛЕНИЕ: Жестко вставляем ACCEPT на ПЕРВУЮ позицию в INPUT, чтобы обойти любой UFW/Firewalld
         string cmd = $@"
 if command -v ufw >/dev/null 2>&1; then {sudoPrefix}ufw allow {port}/tcp && {sudoPrefix}ufw allow {port}/udp || true; fi
 if command -v firewall-cmd >/dev/null 2>&1; then {sudoPrefix}firewall-cmd --add-port={port}/tcp --permanent && {sudoPrefix}firewall-cmd --reload || true; fi
 {sudoPrefix}iptables -I INPUT 1 -p tcp --dport {port} -j ACCEPT || true
-{sudoPrefix}iptables -I INPUT 1 -p udp --dport {port} -j ACCEPT || true
+{sudoPrefix}iptables -I INPUT 1 -p udp --dport {port} -j ACCEPT || true";
+
+        if (protocol.ToLower() == "hysteria2")
+        {
+            // Магия Port Forwarding: перехватываем UDP трафик и отправляем его на скрытый порт Hysteria2
+            cmd += $@"
+{sudoPrefix}iptables -t nat -A PREROUTING -p udp --dport {port} -j REDIRECT --to-port {port + 10000} || true
+{sudoPrefix}iptables -I INPUT 1 -p udp --dport {port + 10000} -j ACCEPT || true";
+        }
+
+        cmd += $@"
 {sudoPrefix}sh -c 'iptables-save > /etc/iptables/rules.v4' 2>/dev/null || true";
 
         await ssh.ExecuteCommandAsync(cmd);
@@ -224,39 +254,71 @@ cd /tmp && rm -rf /tmp/xray_install
     private async Task<(bool IsSuccess, string Log)> InstallSingBoxInternalAsync(ISshService ssh, string targetVersion, string sudoPrefix)
     {
         string script = @"
-apt-get update -q && apt-get install -y curl wget tar jq >/dev/null 2>&1
-DOWNLOAD_URL=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r "".assets[].browser_download_url"" | grep -i ""linux"" | grep -E ""amd64|x86_64"" | grep ""tar.gz"" | head -n 1)
-if [ -z ""$DOWNLOAD_URL"" ]; then echo 'FAIL_INSTALL'; exit 1; fi
+export DEBIAN_FRONTEND=noninteractive
+# Делаем обновление некритичным, так как репозитории могут временно сбоить
+apt-get update -q || true
+apt-get install -y curl wget tar jq >/dev/null 2>&1 || true
+
+ARCH=$(uname -m)
+case ""$ARCH"" in
+    x86_64) DL_ARCH=""amd64"" ;;
+    aarch64) DL_ARCH=""arm64"" ;;
+    *) echo ""FAIL_ARCH: $ARCH""; exit 1 ;;
+esac
+
+TAG=$(curl -sL --connect-timeout 5 https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r "".tag_name"" 2>/dev/null)
+if [ -z ""$TAG"" ] || [ ""$TAG"" == ""null"" ]; then TAG=""v1.13.11""; fi
+
+DOWNLOAD_URL=""https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${TAG#v}-linux-${DL_ARCH}.tar.gz""
+
 rm -rf /tmp/singbox_install && mkdir -p /tmp/singbox_install && cd /tmp/singbox_install
-wget -q ""$DOWNLOAD_URL"" -O sb.tar.gz
-if ! tar -xzf sb.tar.gz --strip-components=1; then echo 'FAIL_INSTALL'; exit 1; fi
-chmod +x * 2>/dev/null || true
-if [ -f ""sing-box"" ]; then mv sing-box /usr/local/bin/sing-box; fi
-if command -v sing-box >/dev/null 2>&1; then echo 'SUCCESS_INSTALLED'; else echo 'FAIL_INSTALL'; fi
+if curl -sL --retry 3 --connect-timeout 10 ""$DOWNLOAD_URL"" -o sb.tar.gz; then
+    if tar -xzf sb.tar.gz --strip-components=1; then
+        chmod +x sing-box 2>/dev/null || true
+        mv sing-box /usr/local/bin/sing-box
+    fi
+fi
+
+if [ -f ""/usr/local/bin/sing-box"" ]; then
+    /usr/local/bin/sing-box version > /dev/null 2>&1 && echo 'SUCCESS_INSTALLED' || echo 'FAIL_VERIFY'
+else
+    echo 'FAIL_INSTALL'
+fi
 cd /tmp && rm -rf /tmp/singbox_install
 ".Replace("\r", "");
 
         string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
-        string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(3));
-        return (log.Contains("SUCCESS_INSTALLED") || log.Contains("installed") || log.Contains("already"), log);
+        string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(5));
+        return (log.Contains("SUCCESS_INSTALLED"), log);
     }
 
     private async Task<(bool IsSuccess, string Log)> InstallTrustTunnelInternalAsync(ISshService ssh, string targetVersion, string sudoPrefix)
     {
         string script = @"
-apt-get update -q && apt-get install -y curl wget tar jq >/dev/null 2>&1
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -q || true
+apt-get install -y curl wget tar jq >/dev/null 2>&1 || true
+
 DOWNLOAD_URL=$(curl -s https://api.github.com/repos/TrustTunnel/TrustTunnel/releases/latest | jq -r "".assets[].browser_download_url"" | grep -i ""linux"" | grep -E ""amd64|x86_64"" | grep ""tar.gz"" | grep -v ""dbgsym"" | grep -v ""debug"" | head -n 1)
-if [ -z ""$DOWNLOAD_URL"" ]; then echo 'failed'; exit 1; fi
-mkdir -p /opt/trusttunnel2 && cd /opt/trusttunnel2
-wget -q ""$DOWNLOAD_URL"" -O tt.tar.gz
-if ! tar -xzf tt.tar.gz --strip-components=1; then echo 'failed'; exit 1; fi
-rm tt.tar.gz
-chmod +x setup_wizard trusttunnel_endpoint 2>/dev/null || true
-if [ -f ""trusttunnel_endpoint"" ]; then echo 'success'; else echo 'failed'; fi
+if [ -z ""$DOWNLOAD_URL"" ]; then echo 'failed_download_url'; exit 1; fi
+
+rm -rf /opt/trusttunnel2 && mkdir -p /opt/trusttunnel2 && cd /opt/trusttunnel2
+if curl -sL --retry 3 --connect-timeout 10 ""$DOWNLOAD_URL"" -o tt.tar.gz; then
+    if tar -xzf tt.tar.gz --strip-components=1; then
+        chmod +x setup_wizard trusttunnel_endpoint 2>/dev/null || true
+        rm tt.tar.gz
+    fi
+fi
+
+if [ -f ""/opt/trusttunnel2/trusttunnel_endpoint"" ]; then 
+    echo 'success'
+else 
+    echo 'failed_binary_missing'
+fi
 ".Replace("\r", "");
 
         string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
-        string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(3));
+        string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(5));
         return (log.Contains("success"), log);
     }
 
@@ -274,13 +336,21 @@ if [ -f ""trusttunnel_endpoint"" ]; then echo 'success'; else echo 'failed'; fi
     {
         var inbound = profile.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == "trusttunnel");
         if (inbound == null) return;
-        var settings = JsonNode.Parse(inbound.SettingsJson);
-        string sni = settings?["sni"]?.ToString() ?? "vpn.endpoint";
+        var settingsNode = JsonNode.Parse(inbound.SettingsJson) as JsonObject;
+        string sni = settingsNode?["sni"]?.ToString() ?? "vpn.endpoint";
 
         // Получаем переданные креды
         var ttProtocolInfo = protocols.FirstOrDefault(p => p.Builder.ProtocolType.ToLower() == "trusttunnel");
         string username = string.IsNullOrWhiteSpace(ttProtocolInfo.TtUsername) ? "ADMIN" : ttProtocolInfo.TtUsername;
         string password = string.IsNullOrWhiteSpace(ttProtocolInfo.TtPassword) ? Guid.NewGuid().ToString("N").Substring(0, 16) : ttProtocolInfo.TtPassword;
+
+        // ИСПРАВЛЕНИЕ: Сохраняем креды в SettingsJson для корректного отображения в окне доступа
+        if (settingsNode != null)
+        {
+            settingsNode["username"] = username;
+            settingsNode["password"] = password;
+            inbound.SettingsJson = settingsNode.ToJsonString();
+        }
 
         // Создаем или обновляем пользователя в БД для синхронизации
         using (var db = new KoFFPanel.Infrastructure.Data.AppDbContext())
@@ -367,11 +437,17 @@ WantedBy=multi-user.target";
         string serviceData = $@"[Unit]
 Description={bin} Service
 After=network.target network-online.target
+
 [Service]
 User=root
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
 ExecStart={exec}
+ExecStopPost=/bin/sleep 2
 Restart=on-failure
 RestartSec=5
+LimitNOFILE=infinity
+
 [Install]
 WantedBy=multi-user.target";
 

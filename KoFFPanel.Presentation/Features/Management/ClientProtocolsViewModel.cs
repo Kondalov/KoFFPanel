@@ -128,7 +128,21 @@ public partial class ClientProtocolsViewModel : ObservableObject
         TtUsername = client.Email;
         TtPassword = client.Uuid;
 
-        if (serverHasTrustTunnel) ExtractTrustTunnelSettingsSafe(inbounds);
+        if (serverHasTrustTunnel) 
+        {
+            ExtractTrustTunnelSettingsSafe(inbounds);
+            
+            // ИСПРАВЛЕНИЕ: Если это ADMIN или специальный пользователь TrustTunnel, берем креды из настроек инбаунда
+            var ttInbound = inbounds.FirstOrDefault(i => i.Protocol.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase));
+            if (ttInbound != null && !string.IsNullOrWhiteSpace(ttInbound.SettingsJson))
+            {
+                try {
+                    var ttSettings = System.Text.Json.JsonDocument.Parse(ttInbound.SettingsJson).RootElement;
+                    if (ttSettings.TryGetProperty("username", out var u)) TtUsername = u.GetString() ?? TtUsername;
+                    if (ttSettings.TryGetProperty("password", out var p)) TtPassword = p.GetString() ?? TtPassword;
+                } catch { }
+            }
+        }
         else SetDefaultTrustTunnelSettings();
     }
 

@@ -23,56 +23,71 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
         {
             string prepareScript = $$"""
             export DEBIAN_FRONTEND=noninteractive
-            apt-get update -q && apt-get install -y curl jq lsof openssl tar gzip >> /var/log/singbox_install.log 2>&1
+            echo "1. Обновление системы..."
+            apt-get update -q || true
+            apt-get install -y curl jq lsof openssl tar gzip >/dev/null 2>&1 || true
             
-            echo "1. Остановка конфликтующих служб..."
-            systemctl stop sing-box xray v2ray 2>/dev/null || true
-            systemctl disable sing-box xray 2>/dev/null || true
+            echo "2. Остановка конфликтующих служб..."
+            systemctl stop sing-box xray v2ray trusttunnel 2>/dev/null || true
+            systemctl disable sing-box xray trusttunnel 2>/dev/null || true
             
-            echo "2. Освобождение порта {{vpnPort}}..."
+            echo "3. Очистка порта {{vpnPort}}..."
             PIDS=$(lsof -t -i:{{vpnPort}} || true)
             if [ -n "$PIDS" ]; then kill -9 $PIDS 2>/dev/null || true; fi
-            
-            echo "3. Полная зачистка старых бинарников..."
-            rm -rf /usr/local/bin/sing-box /etc/sing-box /etc/systemd/system/sing-box.service
-            mkdir -p /etc/sing-box /var/log/sing-box
             
             echo "4. Определение архитектуры..."
             ARCH=$(uname -m)
             case "$ARCH" in
               x86_64) DL_ARCH="amd64" ;;
               aarch64) DL_ARCH="arm64" ;;
-              *) echo "ERROR_ARCH"; exit 0 ;;
+              armv7l) DL_ARCH="armv7" ;;
+              *) echo "ERROR_ARCH: $ARCH"; exit 1 ;;
             esac
             
+            echo "5. Поиск версии..."
             TAG=$(curl -sL --connect-timeout 5 https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name 2>/dev/null)
-            if [ -z "$TAG" ] || [ "$TAG" == "null" ]; then TAG="v1.13.6"; fi
+            if [ -z "$TAG" ] || [ "$TAG" == "null" ]; then TAG="v1.13.11"; fi
             
             URL="https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${TAG#v}-linux-${DL_ARCH}.tar.gz"
             
-            echo "5. Скачивание ядра Sing-box ($TAG)..."
-            curl -sL --connect-timeout 10 --max-time 120 -o /tmp/sb.tar.gz "$URL"
+            echo "6. Скачивание..."
+            curl -sL --retry 3 --connect-timeout 10 -o /tmp/sb.tar.gz "$URL"
             
-            if [ ! -s /tmp/sb.tar.gz ] || ! gzip -t /tmp/sb.tar.gz 2>/dev/null; then
+            if [ ! -s /tmp/sb.tar.gz ]; then
                 echo "ERROR_DOWNLOAD: $URL"
-                exit 0
+                exit 1
             fi
             
-            echo "6. Распаковка архива..."
-            tar -xzf /tmp/sb.tar.gz -C /tmp/
-            mv /tmp/sing-box-*/sing-box /usr/local/bin/
-            chmod +x /usr/local/bin/sing-box
-            rm -rf /tmp/sb.tar.gz /tmp/sing-box-*
+            echo "7. Распаковка..."
+            rm -rf /tmp/sb_extracted && mkdir -p /tmp/sb_extracted
+            tar -xzf /tmp/sb.tar.gz -C /tmp/sb_extracted --strip-components=1
             
-            echo "SUCCESS_PREPARE"
+            if [ ! -f /tmp/sb_extracted/sing-box ]; then
+                echo "ERROR_EXTRACT"
+                exit 1
+            fi
+            
+            mv /tmp/sb_extracted/sing-box /usr/local/bin/
+            chmod +x /usr/local/bin/sing-box
+            
+            echo "8. Верификация..."
+            if /usr/local/bin/sing-box version > /dev/null 2>&1; then
+                echo "SUCCESS_PREPARE"
+            else
+                echo "ERROR_VERIFY"
+                exit 1
+            fi
+            
+            mkdir -p /etc/sing-box /var/log/sing-box
+            rm -rf /tmp/sb.tar.gz /tmp/sb_extracted
             """;
 
             string safeScriptBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(prepareScript.Replace("\r", "")));
-            var prepResult = await ssh.ExecuteCommandAsync($"echo '{safeScriptBase64}' | base64 -d | bash", TimeSpan.FromMinutes(3));
+            var prepResult = await ssh.ExecuteCommandAsync($"echo '{safeScriptBase64}' | base64 -d | bash", TimeSpan.FromMinutes(5));
 
-            if (prepResult.Contains("ERROR_ARCH")) return (false, "Ошибка: Архитектура сервера не поддерживается Sing-box.", null);
-            if (prepResult.Contains("ERROR_DOWNLOAD")) return (false, $"Ошибка скачивания архива ядра.\nЛог: {prepResult.Trim()}", null);
-            if (!prepResult.Contains("SUCCESS_PREPARE")) return (false, $"Сбой инсталлятора (сервер оборвал скрипт).\nВывод: {prepResult.Trim()}", null);
+            if (prepResult.Contains("ERROR_ARCH")) return (false, $"Ошибка: Архитектура {prepResult} не поддерживается Sing-box.", null);
+            if (prepResult.Contains("ERROR_DOWNLOAD")) return (false, $"Ошибка скачивания архива ядра. Проверьте соединение.", null);
+            if (!prepResult.Contains("SUCCESS_PREPARE")) return (false, $"Сбой инсталлятора.\nВывод: {prepResult.Trim()}", null);
 
             string finalUuid = existingUuid, finalPriv = existingPrivKey, finalPub = existingPubKey, finalSid = existingShortId;
 
@@ -131,6 +146,7 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
             AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
             ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
             ExecReload=/bin/kill -HUP $MAINPID
+            ExecStopPost=/bin/sleep 2
             Restart=on-failure
             RestartSec=10
             LimitNOFILE=infinity

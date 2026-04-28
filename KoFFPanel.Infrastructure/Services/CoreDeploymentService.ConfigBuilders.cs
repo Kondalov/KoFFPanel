@@ -87,12 +87,15 @@ private_key_path = ""certs/key.pem""";
         }
         else if (protocol == "hysteria2")
         {
+            // ИСПРАВЛЕНИЕ: Смещаем порт Hysteria2 на +10000 (внутренний), чтобы избежать конфликта UDP с VLESS.
+            // Маршрутизация трафика будет осуществляться через iptables PREROUTING на сервере.
+            int internalPort = inboundDb.Port + 10000;
             return new JsonObject
             {
                 ["type"] = "hysteria2",
                 ["tag"] = inboundDb.Tag,
                 ["listen"] = "0.0.0.0",
-                ["listen_port"] = inboundDb.Port,
+                ["listen_port"] = internalPort,
                 ["users"] = new JsonArray(),
                 ["tls"] = new JsonObject
                 {
