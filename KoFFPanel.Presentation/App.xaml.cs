@@ -16,8 +16,22 @@ public partial class App : System.Windows.Application
         Services = services.BuildServiceProvider();
     }
 
-    private void OnStartup(object sender, StartupEventArgs e)
+    private async void OnStartup(object sender, StartupEventArgs e)
     {
+        // 1. Инициализация базы данных и оптимизация (WAL, Integrity Check)
+        using (var scope = Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<Infrastructure.Data.AppDbContext>();
+            dbContext.InitializeDatabaseOptimization();
+        }
+
+        // 2. Запуск фоновых сервисов (Бэкап и Буфер логов)
+        var hostedServices = Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>();
+        foreach (var service in hostedServices)
+        {
+            await service.StartAsync(System.Threading.CancellationToken.None);
+        }
+
         var mainWindow = Services.GetRequiredService<CabinetWindow>();
         mainWindow.Show();
     }
