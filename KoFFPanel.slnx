@@ -3,5 +3,7 @@
   <Project Path="KoFFPanel.Domain/KoFFPanel.Domain.csproj" />
   <Project Path="KoFFPanel.Infrastructure/KoFFPanel.Infrastructure.csproj" />
   <Project Path="KoFFPanel.Presentation/KoFFPanel.Presentation.csproj" />
-  <Project Path="KoFFPanel.Tests/KoFFPanel.Tests.csproj" />
+  <Project Path="KoFFPanel.Tests/KoFFPanel.Tests.csproj">
+    <Build Solution="Debug|*" Project="false" />
+  </Project>
 </Solution>

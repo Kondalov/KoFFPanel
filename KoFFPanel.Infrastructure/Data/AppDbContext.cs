@@ -39,6 +39,10 @@ public class AppDbContext : DbContext
         }
     }
 
+    /// <summary>
+    /// Конфигурация контекста базы данных.
+    /// </summary>
+    /// <param name="optionsBuilder">Построитель опций контекста базы данных.</param>
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "koffpanel_users.db");
