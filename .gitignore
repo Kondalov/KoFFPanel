@@ -361,3 +361,4 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/KoFFPanel.Presentation/MasterPassword_DO_NOT_SHARE.txt

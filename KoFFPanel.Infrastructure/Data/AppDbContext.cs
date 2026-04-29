@@ -45,12 +45,11 @@ public class AppDbContext : DbContext
     /// <param name="optionsBuilder">Построитель опций контекста базы данных.</param>
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "koffpanel_users.db");
+        // 2026 STABILITY FIX: Используем AppContext.BaseDirectory для гарантии совпадения путей
+        string dbPath = Path.Combine(AppContext.BaseDirectory, "koffpanel_users.db");
+        System.Diagnostics.Debug.WriteLine($"[DB-CONFIG] Target Path: {dbPath}");
 
-        // === 2026 MODERNIZATION: Master Password Management ===
         string dbPassword = MasterKeyService.Instance.GetMasterPassword();
-
-        // Формируем строку подключения с поддержкой SQLCipher и пулом соединений
         optionsBuilder.UseSqlite($"Data Source={dbPath};Password={dbPassword};Pooling=True;");
     }
 
