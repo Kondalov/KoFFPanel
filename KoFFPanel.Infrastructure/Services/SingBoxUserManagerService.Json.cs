@@ -53,6 +53,8 @@ public partial class SingBoxUserManagerService
         {
             foreach (var u in dbUsers) u.TrustTunnelLink = "TrustTunnel не установлен!";
         }
+
+        await ApplyP2PRulesAsync(root, serverIp);
         await _dbContext.SaveChangesAsync();
     }
 

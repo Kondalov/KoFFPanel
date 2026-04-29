@@ -19,7 +19,8 @@ namespace KoFFPanel.Presentation.Features.Cabinet;
 
 public partial class CabinetViewModel
 {
-    private bool IsSingBoxActive() => CoreTitleLabel != null && CoreTitleLabel.Contains("Sing-box", StringComparison.OrdinalIgnoreCase);
+    private bool IsSingBoxActive() => SelectedServer?.CoreType == "sing-box";
+    private bool IsTrustTunnelActive() => SelectedServer?.CoreType == "trusttunnel";
 
     [RelayCommand]
     private async Task GenerateRealityConfigAsync() { await Task.CompletedTask; }
@@ -50,9 +51,20 @@ public partial class CabinetViewModel
                     long limit = (long)(vm.TrafficLimitGb * 1024L * 1024 * 1024);
                     string ip = server.IpAddress ?? "";
 
-                    var (success, msg, vlessLink) = IsSingBoxActive()
-                        ? await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled)
-                        : await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate);
+                    bool success; string msg; string vlessLink;
+
+                    if (IsSingBoxActive())
+                    {
+                        (success, msg, vlessLink) = await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled);
+                    }
+                    else if (IsTrustTunnelActive())
+                    {
+                        (success, msg, vlessLink) = await _trustTunnelUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked);
+                    }
+                    else
+                    {
+                        (success, msg, vlessLink) = await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked);
+                    }
 
                     if (success)
                     {
@@ -90,21 +102,16 @@ public partial class CabinetViewModel
         string ip = server.IpAddress ?? "";
         ServerStatus = $"Удаление {email}...";
 
-        var (success, msg) = IsSingBoxActive()
-            ? await _singBoxUserManager.RemoveUserAsync(ssh, ip, email)
-            : await _userManager.RemoveUserAsync(ssh, ip, email);
+        bool success; string msg;
+        if (IsSingBoxActive()) (success, msg) = await _singBoxUserManager.RemoveUserAsync(ssh, ip, email);
+        else if (IsTrustTunnelActive()) (success, msg) = await _trustTunnelUserManager.RemoveUserAsync(ssh, ip, email);
+        else (success, msg) = await _userManager.RemoveUserAsync(ssh, ip, email);
 
         if (success)
         {
             System.Windows.Application.Current.Dispatcher.Invoke(() => Clients.Remove(client));
             await _subscriptionService.DeleteUserSubscriptionAsync(ssh, uuid);
 
-            // === ИСПРАВЛЕНИЕ: Физическое удаление из БД ===
-            try {
-                var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
-                var dbClient = dbContext.Clients.FirstOrDefault(c => c.Uuid == uuid && c.ServerIp == ip);
-                if (dbClient != null) { dbContext.Clients.Remove(dbClient); await dbContext.SaveChangesAsync(); }
-            } catch (Exception ex) { _logger?.Log("DB-DELETE-ERR", ex.Message); }
             ServerStatus = $"Онлайн (Клиент {email} успешно удален)";
         }
         else ServerStatus = $"Ошибка удаления: {msg}";
@@ -122,9 +129,10 @@ public partial class CabinetViewModel
         string ip = server.IpAddress ?? "";
         ServerStatus = $"{(newState ? "Активация" : "Деактивация")} {email}...";
 
-        var (success, msg) = IsSingBoxActive()
-            ? await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, newState)
-            : await _userManager.ToggleUserStatusAsync(ssh, ip, email, newState);
+        bool success; string msg;
+        if (IsSingBoxActive()) (success, msg) = await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, newState);
+        else if (IsTrustTunnelActive()) (success, msg) = await _trustTunnelUserManager.ToggleUserStatusAsync(ssh, ip, email, newState);
+        else (success, msg) = await _userManager.ToggleUserStatusAsync(ssh, ip, email, newState);
 
         if (success)
         {
@@ -162,9 +170,19 @@ public partial class CabinetViewModel
                 {
                     long newLimit = (long)(vm.TrafficLimitGb * 1024L * 1024 * 1024);
 
-                    bool success = IsSingBoxActive()
-                        ? await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled)
-                        : await _userManager.UpdateUserLimitsAsync(ip, email, newLimit, vm.ExpiryDate);
+                    bool success;
+                    if (IsSingBoxActive())
+                    {
+                        success = await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled);
+                    }
+                    else if (IsTrustTunnelActive())
+                    {
+                        success = await _trustTunnelUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.IsP2PBlocked);
+                    }
+                    else
+                    {
+                        success = await _userManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled);
+                    }
 
                     if (success)
                     {
@@ -176,21 +194,6 @@ public partial class CabinetViewModel
                         client.IsVlessEnabled = vm.IsVlessEnabled;
                         client.IsHysteria2Enabled = vm.IsHysteria2Enabled;
                         client.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
-
-                        // === ИСПРАВЛЕНИЕ: Принудительное сохранение изменений в БД ===
-                        var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
-                        var dbClient = dbContext.Clients.FirstOrDefault(c => c.Email == email && c.ServerIp == ip);
-                        if (dbClient != null)
-                        {
-                            dbClient.TrafficLimit = newLimit;
-                            dbClient.ExpiryDate = vm.ExpiryDate;
-                            dbClient.Note = vm.Note;
-                            dbClient.IsP2PBlocked = vm.IsP2PBlocked;
-                            dbClient.IsVlessEnabled = vm.IsVlessEnabled;
-                            dbClient.IsHysteria2Enabled = vm.IsHysteria2Enabled;
-                            dbClient.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
-                            await dbContext.SaveChangesAsync();
-                        }
 
                         ServerStatus = "Онлайн (Лимиты обновлены)";
                     }
@@ -253,25 +256,41 @@ public partial class CabinetViewModel
 
             vm.SaveCallback = async (updatedClient) =>
             {
-                await _userManager.SaveTrafficToDbAsync(ip, Clients);
-
+                ServerStatus = $"Сохранение настроек {updatedClient.Email}...";
+                string ip = server.IpAddress ?? "";
+                
+                // === 2026 MODERNIZATION: Полная синхронизация ===
+                // Передаем весь список клиентов в менеджер, он сам обновит БД и конфиг ядра
+                bool syncSuccess;
                 if (IsSingBoxActive() && _currentMonitoringSsh != null)
                 {
-                    await _singBoxUserManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients);
+                    syncSuccess = await _singBoxUserManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients);
                 }
-
-                var activeLinks = new List<string>();
-                if (updatedClient.IsVlessEnabled && !string.IsNullOrEmpty(updatedClient.VlessLink) && updatedClient.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.VlessLink);
-                if (updatedClient.IsHysteria2Enabled && !string.IsNullOrEmpty(updatedClient.Hysteria2Link) && updatedClient.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.Hysteria2Link);
-                if (updatedClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(updatedClient.TrustTunnelLink) && updatedClient.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.TrustTunnelLink);
-
-                if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
+                else if (_currentMonitoringSsh != null)
                 {
-                    await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, updatedClient.Uuid ?? "", activeLinks);
+                    syncSuccess = await _userManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients);
                 }
+                else syncSuccess = false;
 
-                await LoadUsersAsync();
-                ServerStatus = $"Онлайн (Настройки для {updatedClient.Email} сохранены)";
+                if (syncSuccess)
+                {
+                    var activeLinks = new List<string>();
+                    if (updatedClient.IsVlessEnabled && !string.IsNullOrEmpty(updatedClient.VlessLink) && updatedClient.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.VlessLink);
+                    if (updatedClient.IsHysteria2Enabled && !string.IsNullOrEmpty(updatedClient.Hysteria2Link) && updatedClient.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.Hysteria2Link);
+                    if (updatedClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(updatedClient.TrustTunnelLink) && updatedClient.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.TrustTunnelLink);
+
+                    if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
+                    {
+                        await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, updatedClient.Uuid ?? "", activeLinks);
+                    }
+
+                    await LoadUsersAsync();
+                    ServerStatus = $"Онлайн (Настройки для {updatedClient.Email} сохранены)";
+                }
+                else
+                {
+                    ServerStatus = "Ошибка синхронизации с ядром.";
+                }
             };
         }
         window.ShowDialog();

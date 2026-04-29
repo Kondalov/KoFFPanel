@@ -167,7 +167,7 @@
                                            Foreground="White"
                                            VerticalAlignment="Center" />
                                 <ui:ToggleSwitch HorizontalAlignment="Right"
-                                                 IsChecked="{Binding IsVlessEnabled, Mode=TwoWay}" />
+                                                 IsChecked="{Binding IsVlessEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </Grid>
                             <Separator Background="#1AFFFFFF"
                                        Margin="0,0,0,10" />
@@ -176,7 +176,7 @@
                                            Foreground="White"
                                            VerticalAlignment="Center" />
                                 <ui:ToggleSwitch HorizontalAlignment="Right"
-                                                 IsChecked="{Binding IsHysteria2Enabled, Mode=TwoWay}" />
+                                                 IsChecked="{Binding IsHysteria2Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </Grid>
                             <Separator Background="#1AFFFFFF"
                                        Margin="0,0,0,10" />
@@ -185,7 +185,7 @@
                                            Foreground="White"
                                            VerticalAlignment="Center" />
                                 <ui:ToggleSwitch HorizontalAlignment="Right"
-                                                 IsChecked="{Binding IsTrustTunnelEnabled, Mode=TwoWay}" />
+                                                 IsChecked="{Binding IsTrustTunnelEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </Grid>
                         </StackPanel>
                     </Border>

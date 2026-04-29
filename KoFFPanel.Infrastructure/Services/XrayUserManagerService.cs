@@ -152,7 +152,7 @@ public partial class XrayUserManagerService : IXrayUserManagerService
                 "domainStrategy": "AsIs",
                 "rules": [
                   { "inboundTag": ["api"], "outboundTag": "api", "type": "field" },
-                  { "type": "field", "protocol": ["bittorrent"], "outboundTag": "torrent-logger" },
+                  { "type": "field", "protocol": ["bittorrent"], "outboundTag": "block" },
                   { 
                     "type": "field", 
                     "domain": [
@@ -163,7 +163,7 @@ public partial class XrayUserManagerService : IXrayUserManagerService
                       "domain:tapochek.net",
                       "keyword:torrent"
                     ], 
-                    "outboundTag": "torrent-logger" 
+                    "outboundTag": "block" 
                   }
                 ]
               }
@@ -210,12 +210,12 @@ EOF";
         }
     }
 
-    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true)
+    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false)
     {
         try { SshGuard.ThrowIfInvalid(email, null); } catch (Exception ex) { return (false, ex.Message, ""); }
         if (await _dbContext.Clients.AnyAsync(c => c.Email == email && c.ServerIp == serverIp)) return (false, "Ð£Ð¶Ðµ ÐµÑÑ‚ÑŒ!", "");
 
-        // Ð˜Ð¡ÐŸÐ ÐÐ’Ð›Ð•ÐÐ˜Ð•: Ð”Ð»Ñ Xray ÑÐµÑ€Ð²Ð¸ÑÐ° Ð²ÐºÐ»ÑŽÑ‡Ð°ÐµÐ¼ Ð¿Ð¾ ÑƒÐ¼Ð¾Ð»Ñ‡Ð°Ð½Ð¸ÑŽ Ð¢ÐžÐ›Ð¬ÐšÐž VLESS.
+        // Ð˜Ð¡ÐŸÐ ÐÐ’Ð›Ð•ÐÐ˜Ð•: Ð˜ÑÐ¿Ð¾Ð»ÑŒÐ·ÑƒÐµÐ¼ Ð¿ÐµÑ€ÐµÐ´Ð°Ð½Ð½Ñ‹Ðµ Ñ„Ð»Ð°Ð³Ð¸ Ð¿Ñ€Ð¾Ñ‚Ð¾ÐºÐ¾Ð»Ð¾Ð²
         var user = new VpnClient 
         { 
             Email = email, 
@@ -226,9 +226,9 @@ EOF";
             ExpiryDate = expiry, 
             IsActive = true, 
             IsP2PBlocked = isP2PBlocked, 
-            IsVlessEnabled = true, 
-            IsHysteria2Enabled = false, 
-            IsTrustTunnelEnabled = false 
+            IsVlessEnabled = isVless, 
+            IsHysteria2Enabled = isHy2, 
+            IsTrustTunnelEnabled = isTt 
         };
         _dbContext.Clients.Add(user); await _dbContext.SaveChangesAsync();
 
@@ -301,11 +301,32 @@ EOF";
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(string serverIp, string email, long limit, DateTime? expiry)
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
         if (user == null) return false;
-        user.TrafficLimit = limit; user.ExpiryDate = expiry; await _dbContext.SaveChangesAsync(); return true;
+
+        user.TrafficLimit = limit; 
+        user.ExpiryDate = expiry;
+        user.IsP2PBlocked = isP2PBlocked;
+        user.IsVlessEnabled = isVless;
+        user.IsHysteria2Enabled = isHy2;
+        user.IsTrustTunnelEnabled = isTt;
+
+        await _dbContext.SaveChangesAsync();
+
+        if (ssh.IsConnected)
+        {
+            var rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json");
+            var root = JsonNode.Parse(rawJson);
+            if (root != null)
+            {
+                await RebuildInboundsAsync(root, serverIp, ssh);
+                var res = await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                return res.IsSuccess;
+            }
+        }
+        return true;
     }
 
     public async Task SaveTrafficToDbAsync(string ip, IEnumerable<VpnClient> clients)
@@ -315,15 +336,38 @@ EOF";
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> dbUsers)
+    public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> clients)
     {
         try {
+            string serverIp = clients.FirstOrDefault()?.ServerIp ?? "";
+            if (string.IsNullOrEmpty(serverIp)) return false;
+
+            // Сначала актуализируем БД из переданного списка
+            var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+            foreach (var client in clients)
+            {
+                var dbUser = dbUsers.FirstOrDefault(u => u.Email == client.Email);
+                if (dbUser != null)
+                {
+                    dbUser.IsVlessEnabled = client.IsVlessEnabled;
+                    dbUser.IsHysteria2Enabled = client.IsHysteria2Enabled;
+                    dbUser.IsTrustTunnelEnabled = client.IsTrustTunnelEnabled;
+                    dbUser.IsP2PBlocked = client.IsP2PBlocked;
+                    dbUser.IsActive = client.IsActive;
+                    dbUser.TrafficLimit = client.TrafficLimit;
+                    dbUser.ExpiryDate = client.ExpiryDate;
+                    dbUser.Note = client.Note;
+                }
+            }
+            await _dbContext.SaveChangesAsync();
+
+            if (!ssh.IsConnected) return true;
+
             var rawJson = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json");
             var root = JsonNode.Parse(rawJson);
             if (root == null) return false;
 
-            string ip = dbUsers.FirstOrDefault()?.ServerIp ?? "";
-            if (!string.IsNullOrEmpty(ip)) await RebuildInboundsAsync(root, ip, ssh);
+            await RebuildInboundsAsync(root, serverIp, ssh);
             return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;
         } catch { return false; }
     }

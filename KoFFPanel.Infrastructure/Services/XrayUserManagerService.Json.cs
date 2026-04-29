@@ -47,6 +47,8 @@ public partial class XrayUserManagerService
             }
         }
 
+        await ApplyP2PRulesAsync(root, dbUsers);
+
         // Если Reality не найден в конфиге, помечаем это в ссылках
         if (!hasReality) 
         {
@@ -63,6 +65,40 @@ public partial class XrayUserManagerService
             if (!hasXHttp) u.TrustTunnelLink = "TrustTunnel не активен (установлен Xray-Reality)";
         }
         await _dbContext.SaveChangesAsync();
+    }
+
+    private async Task ApplyP2PRulesAsync(JsonNode root, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers)
+    {
+        var rules = root["routing"]?["rules"]?.AsArray();
+        if (rules == null) return;
+
+        // Удаляем старые правила блокировки торрентов
+        var toRemove = rules.Where(r => r?["outboundTag"]?.ToString() == "block" && (r?["protocol"]?.ToString().Contains("bittorrent") == true || r?["domain"] != null)).ToList();
+        foreach (var r in toRemove) rules.Remove(r);
+
+        var blockedUsers = dbUsers.Where(u => u.IsP2PBlocked).Select(u => u.Email).ToList();
+        if (blockedUsers.Any())
+        {
+            var userNode = JsonValue.Create(blockedUsers);
+            
+            // Правило для протокола BitTorrent
+            rules.Add(new JsonObject 
+            { 
+                ["type"] = "field", 
+                ["user"] = userNode.DeepClone(), 
+                ["protocol"] = new JsonArray("bittorrent"), 
+                ["outboundTag"] = "block" 
+            });
+
+            // Правило для доменов
+            rules.Add(new JsonObject 
+            { 
+                ["type"] = "field", 
+                ["user"] = userNode.DeepClone(), 
+                ["domain"] = new JsonArray("domain:nnmclub.to", "domain:rutracker.org", "domain:rutor.info", "domain:kinozal.tv", "domain:tapochek.net", "keyword:torrent"), 
+                ["outboundTag"] = "block" 
+            });
+        }
     }
 
     private async Task UpdateXrayLinksAsync(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string serverIp, ISshService ssh, bool isQuic)

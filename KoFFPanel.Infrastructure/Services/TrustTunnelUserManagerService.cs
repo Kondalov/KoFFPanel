@@ -63,7 +63,7 @@ public class TrustTunnelUserManagerService : ITrustTunnelUserManagerService
         return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
     }
 
-    public async Task<(bool IsSuccess, string Message, string TrustTunnelLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long trafficLimitBytes, DateTime? expiryDate, bool isP2PBlocked = true)
+    public async Task<(bool IsSuccess, string Message, string TrustTunnelLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long trafficLimitBytes, DateTime? expiryDate, bool isP2PBlocked = true, bool isVless = false, bool isHy2 = false, bool isTt = true)
     {
         try
         {
@@ -78,9 +78,9 @@ public class TrustTunnelUserManagerService : ITrustTunnelUserManagerService
                 TrafficLimit = trafficLimitBytes,
                 ExpiryDate = expiryDate,
                 IsP2PBlocked = isP2PBlocked,
-                IsVlessEnabled = false,
-                IsHysteria2Enabled = false,
-                IsTrustTunnelEnabled = true
+                IsVlessEnabled = isVless,
+                IsHysteria2Enabled = isHy2,
+                IsTrustTunnelEnabled = isTt
             };
 
             _dbContext.Clients.Add(newUser);
@@ -131,12 +131,17 @@ public class TrustTunnelUserManagerService : ITrustTunnelUserManagerService
         catch (Exception ex) { return (false, $"Ошибка статуса: {ex.Message}"); }
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, bool isP2PBlocked = true)
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, bool isP2PBlocked = true, bool isVless = false, bool isHy2 = false, bool isTt = true)
     {
         var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
         if (dbUser == null) return false;
 
-        dbUser.TrafficLimit = newLimitBytes; dbUser.ExpiryDate = newExpiryDate; dbUser.IsP2PBlocked = isP2PBlocked;
+        dbUser.TrafficLimit = newLimitBytes; 
+        dbUser.ExpiryDate = newExpiryDate; 
+        dbUser.IsP2PBlocked = isP2PBlocked;
+        dbUser.IsVlessEnabled = isVless;
+        dbUser.IsHysteria2Enabled = isHy2;
+        dbUser.IsTrustTunnelEnabled = isTt;
 
         try
         {
@@ -155,16 +160,37 @@ public class TrustTunnelUserManagerService : ITrustTunnelUserManagerService
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> dbUsers)
+    public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> clients)
     {
         try
         {
-            string serverIp = dbUsers.FirstOrDefault()?.ServerIp ?? "";
-            if (!string.IsNullOrEmpty(serverIp))
+            string serverIp = clients.FirstOrDefault()?.ServerIp ?? "";
+            if (string.IsNullOrEmpty(serverIp)) return false;
+
+            // Сначала актуализируем БД из переданного списка
+            var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+            foreach (var client in clients)
+            {
+                var dbUser = dbUsers.FirstOrDefault(u => u.Email == client.Email);
+                if (dbUser != null)
+                {
+                    dbUser.IsVlessEnabled = client.IsVlessEnabled;
+                    dbUser.IsHysteria2Enabled = client.IsHysteria2Enabled;
+                    dbUser.IsTrustTunnelEnabled = client.IsTrustTunnelEnabled;
+                    dbUser.IsP2PBlocked = client.IsP2PBlocked;
+                    dbUser.IsActive = client.IsActive;
+                    dbUser.TrafficLimit = client.TrafficLimit;
+                    dbUser.ExpiryDate = client.ExpiryDate;
+                    dbUser.Note = client.Note;
+                }
+            }
+            await _dbContext.SaveChangesAsync();
+
+            if (ssh.IsConnected)
             {
                 await RebuildCredentialsAsync(ssh, serverIp);
+                await ssh.ExecuteCommandAsync("systemctl restart trusttunnel");
             }
-            await ssh.ExecuteCommandAsync("systemctl restart trusttunnel");
             _logger.Log("USER-SYNC", "Синхронизация TrustTunnel завершена");
             return true;
         }

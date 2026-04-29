@@ -134,15 +134,40 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> dbUsers)
+    public async Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> clients)
     {
-        var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
-        var root = JsonNode.Parse(rawJson);
-        if (root == null) return false;
+        try {
+            string serverIp = clients.FirstOrDefault()?.ServerIp ?? "";
+            if (string.IsNullOrEmpty(serverIp)) return false;
 
-        string ip = dbUsers.FirstOrDefault()?.ServerIp ?? "";
-        if (!string.IsNullOrEmpty(ip)) { await RebuildInboundsAsync(root, ip); await ApplyP2PRulesAsync(root, ip); }
-        return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;
+            // Сначала актуализируем БД из переданного списка
+            var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+            foreach (var client in clients)
+            {
+                var dbUser = dbUsers.FirstOrDefault(u => u.Email == client.Email);
+                if (dbUser != null)
+                {
+                    dbUser.IsVlessEnabled = client.IsVlessEnabled;
+                    dbUser.IsHysteria2Enabled = client.IsHysteria2Enabled;
+                    dbUser.IsTrustTunnelEnabled = client.IsTrustTunnelEnabled;
+                    dbUser.IsP2PBlocked = client.IsP2PBlocked;
+                    dbUser.IsActive = client.IsActive;
+                    dbUser.TrafficLimit = client.TrafficLimit;
+                    dbUser.ExpiryDate = client.ExpiryDate;
+                    dbUser.Note = client.Note;
+                }
+            }
+            await _dbContext.SaveChangesAsync();
+
+            if (!ssh.IsConnected) return true;
+
+            var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+            var root = JsonNode.Parse(rawJson);
+            if (root == null) return false;
+
+            await RebuildInboundsAsync(root, serverIp);
+            return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;
+        } catch { return false; }
     }
 
     public async Task<Dictionary<string, long>> GetTrafficStatsAsync(ISshService ssh)
