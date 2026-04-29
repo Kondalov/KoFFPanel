@@ -315,7 +315,7 @@ fi
     {
         try {
             var settings = JsonNode.Parse(existingDb.SettingsJson);
-            string cp = settings?["certPath"]?.ToString(); string kp = settings?["keyPath"]?.ToString();
+            string? cp = settings?["certPath"]?.ToString(); string? kp = settings?["keyPath"]?.ToString();
             if (!string.IsNullOrWhiteSpace(cp) && !string.IsNullOrWhiteSpace(kp))
                 await ssh.ExecuteCommandAsync($@"if [ ! -f ""{cp}"" ] || [ ! -f ""{kp}"" ]; then mkdir -p $(dirname ""{cp}""); openssl ecparam -genkey -name prime256v1 -out ""{kp}""; openssl req -new -x509 -days 36500 -key ""{kp}"" -out ""{cp}"" -subj ""/CN=google.com""; fi");
         } catch { }

@@ -14,78 +14,33 @@ public class ClientAnalyticsService : IClientAnalyticsService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAppLogger _logger;
+    private readonly LogBufferService _logBuffer;
 
-    public ClientAnalyticsService(IServiceScopeFactory scopeFactory, IAppLogger logger)
+    public ClientAnalyticsService(IServiceScopeFactory scopeFactory, IAppLogger logger, LogBufferService logBuffer)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _logBuffer = logBuffer;
     }
 
     public async Task SaveBatchAsync(string serverIp, Dictionary<string, long> trafficDeltas, List<(string Email, string Ip, string Country)> connections, List<(string Email, string ViolationType)> violations)
     {
         if (!trafficDeltas.Any() && !connections.Any() && !violations.Any()) return;
 
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        // 2026 MODERNIZATION: Вместо прямого сохранения в БД, кидаем в асинхронный буфер.
+        // Это мгновенно освобождает поток UI/Логики и предотвращает Database Locked.
+        var entry = new VpnLogEntry(serverIp, trafficDeltas, connections, violations);
 
-        // Строго отсекаем время, оставляем только дату для идеального поиска
-        var today = DateTime.Today;
-
-        try
+        if (_logBuffer.TryWrite(entry))
         {
-            _logger.Log("ANALYTICS-DB", $"[START] Сохранение батча. Трафик: {trafficDeltas.Count}, IP: {connections.Count}, Нарушения: {violations.Count}");
-
-            // 1. Умное сохранение трафика
-            foreach (var t in trafficDeltas)
-            {
-                var log = await db.TrafficLogs.FirstOrDefaultAsync(x => x.ServerIp == serverIp && x.Email == t.Key && x.Date.Year == today.Year && x.Date.Month == today.Month && x.Date.Day == today.Day);
-                if (log != null)
-                {
-                    log.BytesUsed += t.Value;
-                }
-                else
-                {
-                    db.TrafficLogs.Add(new ClientTrafficLog { ServerIp = serverIp, Email = t.Key, Date = today, BytesUsed = t.Value });
-                    _logger.Log("ANALYTICS-DB", $"Создана новая запись трафика для {t.Key} на дату {today:yyyy-MM-dd}");
-                }
-            }
-
-            // 2. Умное сохранение подключений (Устройств)
-            foreach (var c in connections)
-            {
-                var log = await db.ConnectionLogs.FirstOrDefaultAsync(x => x.ServerIp == serverIp && x.Email == c.Email && x.IpAddress == c.Ip);
-                if (log != null)
-                {
-                    log.LastSeen = DateTime.Now;
-                    if (log.Country == "??" && c.Country != "??") log.Country = c.Country; // Обновляем локацию, если она появилась
-                }
-                else
-                {
-                    db.ConnectionLogs.Add(new ClientConnectionLog { ServerIp = serverIp, Email = c.Email, IpAddress = c.Ip, Country = c.Country, FirstSeen = DateTime.Now, LastSeen = DateTime.Now });
-                    _logger.Log("ANALYTICS-DB", $"Зафиксирован новый IP {c.Ip} для пользователя {c.Email}");
-                }
-            }
-
-            // 3. Запись нарушений (защита от спама - 1 раз в час)
-            var oneHourAgo = DateTime.Now.AddHours(-1);
-            foreach (var v in violations)
-            {
-                // Используем AsNoTracking для быстрого поиска (по правилам Senior чек-листа)
-                var recentViol = await db.ViolationLogs.AsNoTracking().FirstOrDefaultAsync(x => x.ServerIp == serverIp && x.Email == v.Email && x.ViolationType == v.ViolationType && x.Date > oneHourAgo);
-                if (recentViol == null)
-                {
-                    db.ViolationLogs.Add(new ClientViolationLog { ServerIp = serverIp, Email = v.Email, Date = DateTime.Now, ViolationType = v.ViolationType });
-                    _logger.Log("ANALYTICS-DB", $"🚨 Зафиксировано новое нарушение для {v.Email}: {v.ViolationType}");
-                }
-            }
-
-            await db.SaveChangesAsync();
-            _logger.Log("ANALYTICS-DB", "[SUCCESS] Батч успешно записан в базу.");
+            _logger.Log("ANALYTICS-ASYNC", $"Батч ({trafficDeltas.Count} записей) отправлен в очередь на сохранение.");
         }
-        catch (Exception ex)
+        else
         {
-            _logger.Log("ANALYTICS-ERR", $"КРИТИЧЕСКАЯ Ошибка сохранения: {ex.Message}");
+            _logger.Log("ANALYTICS-ASYNC-WARN", "Очередь логов переполнена! Данные могут быть потеряны.");
         }
+
+        await Task.CompletedTask;
     }
 
     public async Task<List<ClientTrafficLog>> GetTrafficLogsAsync(string serverIp, string email, int days = 30)

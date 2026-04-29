@@ -28,7 +28,15 @@ public static class DependencyInjection
         services.AddTransient<IXrayConfiguratorService, XrayConfiguratorService>();
         services.AddTransient<IXrayUserManagerService, XrayUserManagerService>();
         services.AddDbContext<Infrastructure.Data.AppDbContext>(ServiceLifetime.Transient);
-        services.AddTransient<IDatabaseBackupService, DatabaseBackupService>();
+
+        // 2026 MODERNIZATION: Регистрация новых сервисов БД
+        services.AddSingleton<LogBufferService>();
+        services.AddHostedService(sp => sp.GetRequiredService<LogBufferService>());
+        
+        services.AddSingleton<DatabaseBackupService>();
+        services.AddSingleton<IDatabaseBackupService>(sp => sp.GetRequiredService<DatabaseBackupService>());
+        services.AddHostedService(sp => sp.GetRequiredService<DatabaseBackupService>());
+
         services.AddTransient<ISubscriptionService, SubscriptionService>();
 
         services.AddHttpClient("BotApiClient", client =>

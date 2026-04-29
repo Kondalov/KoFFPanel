@@ -229,9 +229,8 @@ echo 'ERROR_ALL_FAILED'
                             bool configChanged = false;
                             foreach (var rule in rules)
                             {
-                                if (rule?["outboundTag"]?.ToString() == "torrent-logger" && rule["domain"] != null)
+                                if (rule?["outboundTag"]?.ToString() == "torrent-logger" && rule["domain"] is JsonArray domains)
                                 {
-                                    var domains = rule["domain"].AsArray();
                                     bool hasGeosite = false;
                                     foreach (var d in domains)
                                     {

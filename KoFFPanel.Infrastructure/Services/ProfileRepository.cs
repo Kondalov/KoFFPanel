@@ -22,7 +22,7 @@ public class ProfileRepository : IProfileRepository
         _dbFilePath = Path.Combine(_appDataFolder, "ProfilesDB.json");
     }
 
-    // === ZERO TRUST: Расшифровка паролей при загрузке ===
+    // === 2026 MODERNIZATION: Расшифровка паролей через Master Password (Портативно) ===
     public List<VpnProfile> LoadProfiles()
     {
         if (!File.Exists(_dbFilePath)) return new List<VpnProfile>();
@@ -31,22 +31,24 @@ public class ProfileRepository : IProfileRepository
             string json = File.ReadAllText(_dbFilePath);
             var profiles = JsonSerializer.Deserialize<List<VpnProfile>>(json) ?? new List<VpnProfile>();
 
+            string masterKey = MasterKeyService.Instance.GetMasterPassword();
+
             foreach (var p in profiles)
             {
-                if (!string.IsNullOrEmpty(p.Password) && p.Password.StartsWith("DPAPI:", StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrEmpty(p.Password)) continue;
+
+                if (p.Password.StartsWith("AES:", StringComparison.OrdinalIgnoreCase))
                 {
                     try
                     {
-                        string b64 = p.Password.Substring(6);
-                        byte[] encryptedBytes = Convert.FromBase64String(b64);
-                        byte[] decryptedBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
-                        p.Password = System.Text.Encoding.UTF8.GetString(decryptedBytes);
+                        p.Password = DecryptString(p.Password.Substring(4), masterKey);
                     }
-                    catch
-                    {
-                        // Если файл перенесли на другой ПК или под другого пользователя Windows
-                        p.Password = "";
-                    }
+                    catch { p.Password = ""; }
+                }
+                else if (p.Password.StartsWith("DPAPI:", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Оставляем пустой пароль для старых DPAPI записей, т.к. мы ушли от привязки к Windows
+                    p.Password = "";
                 }
             }
             return profiles;
@@ -54,26 +56,23 @@ public class ProfileRepository : IProfileRepository
         catch { return new List<VpnProfile>(); }
     }
 
-    // === ZERO TRUST: Шифрование паролей перед записью на диск ===
+    // === 2026 MODERNIZATION: Шифрование через Master Password ===
     public void SaveProfiles(List<VpnProfile> profiles)
     {
         Directory.CreateDirectory(_appDataFolder);
 
-        // УМНЫЙ АЛГОРИТМ: Создаем глубокую копию списка (Клон).
-        // Если мы зашифруем пароли напрямую в profiles, они зашифруются в оперативной памяти UI, 
-        // и юзер увидит в текстовом поле абракадабру "DPAPI:...".
         var jsonCopy = JsonSerializer.Serialize(profiles);
         var safeProfiles = JsonSerializer.Deserialize<List<VpnProfile>>(jsonCopy) ?? new List<VpnProfile>();
 
+        string masterKey = MasterKeyService.Instance.GetMasterPassword();
+
         foreach (var p in safeProfiles)
         {
-            if (!string.IsNullOrEmpty(p.Password) && !p.Password.StartsWith("DPAPI:", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrEmpty(p.Password) && !p.Password.StartsWith("AES:", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
-                    byte[] plainBytes = System.Text.Encoding.UTF8.GetBytes(p.Password);
-                    byte[] encryptedBytes = ProtectedData.Protect(plainBytes, null, DataProtectionScope.CurrentUser);
-                    p.Password = "DPAPI:" + Convert.ToBase64String(encryptedBytes);
+                    p.Password = "AES:" + EncryptString(p.Password, masterKey);
                 }
                 catch { }
             }
@@ -81,6 +80,43 @@ public class ProfileRepository : IProfileRepository
 
         string finalJson = JsonSerializer.Serialize(safeProfiles, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_dbFilePath, finalJson);
+    }
+
+    private string EncryptString(string text, string key)
+    {
+        // В 2026 используем простой и надежный AES для локальных паролей
+        using var aes = Aes.Create();
+        var keyBytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key));
+        aes.Key = keyBytes;
+        aes.GenerateIV();
+
+        using var encryptor = aes.CreateEncryptor();
+        using var ms = new MemoryStream();
+        ms.Write(aes.IV, 0, aes.IV.Length);
+        using (var cs = new CryptoStream(ms, encryptor, CryptoStreamMode.Write))
+        using (var sw = new StreamWriter(cs))
+        {
+            sw.Write(text);
+        }
+        return Convert.ToBase64String(ms.ToArray());
+    }
+
+    private string DecryptString(string cipherText, string key)
+    {
+        byte[] fullCipher = Convert.FromBase64String(cipherText);
+        using var aes = Aes.Create();
+        var keyBytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key));
+        aes.Key = keyBytes;
+
+        byte[] iv = new byte[aes.BlockSize / 8];
+        Array.Copy(fullCipher, 0, iv, 0, iv.Length);
+        aes.IV = iv;
+
+        using var decryptor = aes.CreateDecryptor();
+        using var ms = new MemoryStream(fullCipher, iv.Length, fullCipher.Length - iv.Length);
+        using var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read);
+        using var sr = new StreamReader(cs);
+        return sr.ReadToEnd();
     }
 
     public void AddProfile(VpnProfile profile)
