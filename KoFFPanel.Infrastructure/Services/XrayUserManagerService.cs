@@ -25,12 +25,15 @@ public partial class XrayUserManagerService : IXrayUserManagerService
 
     public async Task<List<VpnClient>> GetUsersAsync(ISshService ssh, string serverIp)
     {
-        // === MODERN 2026: SOURCE OF TRUTH ===
-        // База данных - единственный источник. Никакого клонирования с других серверов.
+        // === MODERN 2026: DEBUG TRACE ===
+        System.Diagnostics.Debug.WriteLine($"[DB-QUERY] Searching for users with IP: '{serverIp}'");
+        
         var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+        System.Diagnostics.Debug.WriteLine($"[DB-QUERY] Found in DB: {dbUsers.Count} users.");
 
         if (dbUsers.Count == 0)
         {
+            System.Diagnostics.Debug.WriteLine($"[DB-QUERY] DB empty for this IP! Creating default ADMIN...");
             var admin = new VpnClient { Email = "ADMIN", Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true };
             _dbContext.Clients.Add(admin); await _dbContext.SaveChangesAsync();
             dbUsers.Add(admin);
