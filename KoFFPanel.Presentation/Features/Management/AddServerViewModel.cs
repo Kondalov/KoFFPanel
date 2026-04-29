@@ -5,6 +5,7 @@ using KoFFPanel.Domain.Entities;
 using MaxMind.GeoIP2;
 using System;
 using System.IO;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace KoFFPanel.Presentation.Features.Management;
@@ -116,21 +117,48 @@ public partial class AddServerViewModel : ObservableObject
     [RelayCommand]
     private void Save()
     {
-        if (string.IsNullOrWhiteSpace(IpAddress) || string.IsNullOrWhiteSpace(Name))
+        StatusMessage = "";
+        // === SMART VALIDATION (PROTECTION FROM ERRORS) ===
+        if (string.IsNullOrWhiteSpace(Name))
         {
-            StatusMessage = "Заполните Название и IP-адрес!";
+            StatusMessage = "❌ Введите название сервера!";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(IpAddress))
+        {
+            StatusMessage = "❌ Введите IP-адрес!";
             return;
         }
 
         string cleanIp = IpAddress.Trim();
+        // Regex для валидации IPv4
+        string ipPattern = @"^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$";
+        if (!Regex.IsMatch(cleanIp, ipPattern) && cleanIp != "localhost")
+        {
+            StatusMessage = "❌ Некорректный формат IP-адреса!";
+            return;
+        }
+
+        if (Port < 1 || Port > 65535)
+        {
+            StatusMessage = "❌ Порт должен быть от 1 до 65535!";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Username))
+        {
+            StatusMessage = "❌ Введите имя пользователя!";
+            return;
+        }
 
         var profileToSave = new VpnProfile
         {
             Id = IsEditMode ? _editingServerId : Guid.NewGuid().ToString(),
-            Name = Name,
+            Name = Name.Trim(),
             IpAddress = cleanIp,
-            Port = Port <= 0 ? 22 : Port,
-            Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username,
+            Port = Port,
+            Username = Username.Trim(),
             Password = Password ?? string.Empty,
             KeyPath = KeyPath ?? string.Empty
             // Примечание: Для связи страны с профилем, если в VpnProfile нет поля Country, оно читается напрямую из карточки, 

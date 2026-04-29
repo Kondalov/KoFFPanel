@@ -34,7 +34,7 @@ public class DatabaseArchitectureTests : IDisposable
     }
 
     [Fact]
-    public void MasterKeyService_ShouldGenerateAndPersistAESKey()
+    public void MasterKeyService_ShouldReturnFixedKey()
     {
         // Act
         string key1 = MasterKeyService.Instance.GetMasterPassword();
@@ -43,9 +43,7 @@ public class DatabaseArchitectureTests : IDisposable
         // Assert
         Assert.False(string.IsNullOrWhiteSpace(key1));
         Assert.Equal(key1, key2);
-        
-        string fileContent = File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MasterPassword_DO_NOT_SHARE.txt")).Trim();
-        Assert.Equal(key1, fileContent);
+        Assert.Equal("KoFF_Fixed_Master_Key_2026_!!_Safe", key1);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
+using System.Text.RegularExpressions;
 
 namespace KoFFPanel.Presentation.Features.Management;
 
@@ -11,16 +12,15 @@ public partial class AddClientViewModel : ObservableObject
     [ObservableProperty] private DateTime? _expiryDate = null;
     [ObservableProperty] private string _note = "";
 
-    // Флаги протоколов
-    [ObservableProperty] private bool _isVlessEnabled = true;
-    [ObservableProperty] private bool _isHysteria2Enabled = true;
-    [ObservableProperty] private bool _isTrustTunnelEnabled = true;
-
-    // НОВОЕ СВОЙСТВО: Флаг блокировки торрентов (По умолчанию включено для безопасности сервера)
-    [ObservableProperty] private bool _isP2PBlocked = true;
+    // Внутренние флаги (скрыты из UI для упрощения)
+    public bool IsVlessEnabled { get; set; } = true;
+    public bool IsHysteria2Enabled { get; set; } = true;
+    public bool IsTrustTunnelEnabled { get; set; } = true;
+    public bool IsP2PBlocked { get; set; } = true;
 
     [ObservableProperty] private string _windowTitle = "Добавить пользователя";
     [ObservableProperty] private string _actionButtonText = "Создать";
+    [ObservableProperty] private string _statusMessage = "";
 
     public bool IsEditMode { get; private set; } = false;
     public bool IsSuccess { get; private set; } = false;
@@ -35,11 +35,13 @@ public partial class AddClientViewModel : ObservableObject
         TrafficLimitGb = 0;
         ExpiryDate = DateTime.Now.AddMonths(1);
         Note = "";
-        IsP2PBlocked = true;
         
+        IsP2PBlocked = true;
         IsVlessEnabled = true;
         IsHysteria2Enabled = true;
         IsTrustTunnelEnabled = true;
+        
+        StatusMessage = "";
     }
 
     // Обновленный метод загрузки с учетом P2P флага и протоколов
@@ -54,17 +56,44 @@ public partial class AddClientViewModel : ObservableObject
         TrafficLimitGb = (int)(currentLimitBytes / 1024 / 1024 / 1024);
         ExpiryDate = currentExpiry;
         Note = currentNote ?? "";
-        IsP2PBlocked = isP2pBlocked;
         
+        IsP2PBlocked = isP2pBlocked;
         IsVlessEnabled = isVless;
         IsHysteria2Enabled = isHy2;
         IsTrustTunnelEnabled = isTt;
+        
+        StatusMessage = "";
     }
 
     [RelayCommand]
     private void Save()
     {
-        if (string.IsNullOrWhiteSpace(ClientName)) return;
+        StatusMessage = "";
+        // === SMART VALIDATION (PROTECTION FROM ERRORS) ===
+        if (string.IsNullOrWhiteSpace(ClientName))
+        {
+            StatusMessage = "❌ Имя пользователя обязательно!";
+            return;
+        }
+
+        // Регулярное выражение: только латиница, цифры, подчеркивания и тире
+        if (!Regex.IsMatch(ClientName, "^[a-zA-Z0-9_-]+$"))
+        {
+            StatusMessage = "❌ Только латиница и цифры!";
+            return;
+        }
+
+        if (TrafficLimitGb < 0)
+        {
+            StatusMessage = "❌ Лимит не может быть отрицательным!";
+            return;
+        }
+
+        if (ExpiryDate.HasValue && ExpiryDate.Value < DateTime.Today && !IsEditMode)
+        {
+            StatusMessage = "❌ Дата истечения не может быть в прошлом!";
+            return;
+        }
 
         IsSuccess = true;
         CloseAction?.Invoke();
