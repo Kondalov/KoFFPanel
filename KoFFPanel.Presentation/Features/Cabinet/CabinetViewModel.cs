@@ -208,8 +208,20 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         SelectedServer = (lastSelectedId != null && Servers.Any(s => s.Id == lastSelectedId)) ? Servers.First(s => s.Id == lastSelectedId) : Servers.FirstOrDefault();
     }
 
+    private string? _lastConnectionKey;
+
     partial void OnSelectedServerChanged(VpnProfile? value)
     {
+        string? currentConnectionKey = value == null ? null : $"{value.Id}|{value.IpAddress}|{value.Port}|{value.Username}|{value.Password}|{value.KeyPath}";
+
+        if (currentConnectionKey == _lastConnectionKey)
+        {
+            // Если данные подключения не изменились, не перезапускаем цикл мониторинга
+            _logger.Log("CABINET", "Выбран тот же сервер, пропуск перезапуска мониторинга.");
+            return;
+        }
+
+        _lastConnectionKey = currentConnectionKey;
         StopMonitoring();
         CpuUsage = 0; RamUsage = 0; SsdUsage = 0; PingMs = 0; Uptime = "N/A"; LoadAverage = "0.0"; NetworkSpeed = "0 Mbps";
         XrayProcesses = 0; TcpConnections = 0; SynRecv = 0; XrayStatus = "Ожидание..."; XrayLogs = "Ожидание логов...";

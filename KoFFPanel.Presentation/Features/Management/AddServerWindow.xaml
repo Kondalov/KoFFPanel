@@ -5,12 +5,16 @@
                  Title="{Binding WindowTitle}"
                  MinWidth="440"
                  MinHeight="650"
+                 Width="500"
+                 Height="700"
                  WindowStartupLocation="CenterScreen"
                  WindowBackdropType="None"
                  Background="#0a0a0a"
-                 ExtendsContentIntoTitleBar="True">
+                 ExtendsContentIntoTitleBar="True"
+                 ResizeMode="CanResize">
 
     <ui:FluentWindow.Resources>
+        <!-- (Rest of resources unchanged) -->
         <Style x:Key="NeonTestBtnStyle"
                TargetType="ui:Button"
                BasedOn="{StaticResource {x:Type ui:Button}}">
@@ -209,394 +213,366 @@
         </Style>
     </ui:FluentWindow.Resources>
 
-    <Grid>
-        <Grid.Background>
-            <RadialGradientBrush GradientOrigin="0.8,0.2"
-                                 Center="0.8,0.2"
-                                 RadiusX="0.5"
-                                 RadiusY="0.5">
-                <GradientStop Color="#1A00f2ff"
-                              Offset="0.0" />
-                <GradientStop Color="#000a0a0a"
-                              Offset="1.0" />
-            </RadialGradientBrush>
-        </Grid.Background>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="16,36,16,16">
+            <Border Background="#E614141E"
+                    CornerRadius="20"
+                    BorderThickness="1"
+                    BorderBrush="#1AFFFFFF">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000"
+                                      BlurRadius="40"
+                                      ShadowDepth="15"
+                                      Opacity="0.5" />
+                </Border.Effect>
+            </Border>
 
-        <Grid>
-            <Grid.Background>
-                <RadialGradientBrush GradientOrigin="0.2,0.8"
-                                     Center="0.2,0.8"
-                                     RadiusX="0.6"
-                                     RadiusY="0.6">
-                    <GradientStop Color="#1A7000ff"
-                                  Offset="0.0" />
-                    <GradientStop Color="#000a0a0a"
-                                  Offset="1.0" />
-                </RadialGradientBrush>
-            </Grid.Background>
+            <Border Background="#E614141E"
+                    CornerRadius="20"
+                    BorderThickness="1"
+                    BorderBrush="#1AFFFFFF"
+                    ClipToBounds="True">
+                <Grid>
+                    <Border Height="3"
+                            VerticalAlignment="Top"
+                            CornerRadius="20,20,0,0">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0"
+                                                 EndPoint="1,0">
+                                <GradientStop Color="#00ff88"
+                                              Offset="0" />
+                                <GradientStop Color="#00f2ff"
+                                              Offset="0.5" />
+                                <GradientStop Color="#7000ff"
+                                              Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
+                    </Border>
 
-        <Viewbox Stretch="Uniform">
-            <Grid Width="460" Height="620" Margin="16,36,16,16">
-                <Border Background="#E614141E"
-                        CornerRadius="20"
-                        BorderThickness="1"
-                        BorderBrush="#1AFFFFFF">
-                    <Border.Effect>
-                        <DropShadowEffect Color="#000000"
-                                          BlurRadius="40"
-                                          ShadowDepth="15"
-                                          Opacity="0.5" />
-                    </Border.Effect>
-                </Border>
+                    <StackPanel Margin="24">
 
-                <Border Background="#E614141E"
-                        CornerRadius="20"
-                        BorderThickness="1"
-                        BorderBrush="#1AFFFFFF"
-                        ClipToBounds="True">
-                    <Grid>
-                        <Border Height="3"
-                                VerticalAlignment="Top"
-                                CornerRadius="20,20,0,0">
+                        <Grid Margin="0,0,0,24">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border Width="48"
+                                    Height="48"
+                                    CornerRadius="12"
+                                    BorderBrush="#4D00ff88"
+                                    BorderThickness="1"
+                                    Margin="0,0,16,0">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0"
+                                                         EndPoint="1,1">
+                                        <GradientStop Color="#2600ff88"
+                                                      Offset="0" />
+                                        <GradientStop Color="#2600f2ff"
+                                                      Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <TextBlock Text="🖥️"
+                                           FontSize="22"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center" />
+                            </Border>
+
+                            <StackPanel Grid.Column="1"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="{Binding WindowTitle}"
+                                           FontSize="20"
+                                           FontWeight="ExtraBold">
+                                    <TextBlock.Foreground>
+                                        <LinearGradientBrush StartPoint="0,0"
+                                                             EndPoint="1,1">
+                                            <GradientStop Color="#FFFFFF"
+                                                          Offset="0" />
+                                            <GradientStop Color="#00ff88"
+                                                          Offset="1" />
+                                        </LinearGradientBrush>
+                                    </TextBlock.Foreground>
+                                </TextBlock>
+                                <TextBlock Text="Подключите новый сервер через SSH"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="12"
+                                           Margin="0,2,0,0" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Margin="0,0,0,12">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,6">
+                                <TextBlock Text="📝"
+                                           Margin="0,0,6,0"
+                                           Opacity="0.7"
+                                           FontSize="12" />
+                                <TextBlock Text="НАЗВАНИЕ В СПИСКЕ"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                        Background="#0DFFFFFF"
+                                        Foreground="White"
+                                        BorderBrush="#1AFFFFFF"
+                                        Padding="12,8"
+                                        FontSize="13" />
+                        </StackPanel>
+
+                        <StackPanel Margin="0,0,0,12">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,6">
+                                <TextBlock Text="🌐"
+                                           Margin="0,0,6,0"
+                                           Opacity="0.7"
+                                           FontSize="12" />
+                                <TextBlock Text="IP-АДРЕС СЕРВЕРА"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ui:TextBox Text="{Binding IpAddress, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="Например: 94.51.232.108"
+                                        Background="#0DFFFFFF"
+                                        Foreground="White"
+                                        BorderBrush="#1AFFFFFF"
+                                        Padding="12,8"
+                                        FontSize="13" />
+                        </StackPanel>
+
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="100" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <Grid Margin="0,0,0,6">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="👤"
+                                                   Margin="0,0,6,0"
+                                                   Opacity="0.7"
+                                                   FontSize="12" />
+                                        <TextBlock Text="ПОЛЬЗОВАТЕЛЬ"
+                                                   Foreground="#B3FFFFFF"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBlock Text="(root)"
+                                               Foreground="#66FFFFFF"
+                                               FontSize="11"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                                <ui:TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"
+                                            Background="#0DFFFFFF"
+                                            Foreground="White"
+                                            BorderBrush="#1AFFFFFF"
+                                            Padding="12,8"
+                                            FontSize="13" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2">
+                                <Grid Margin="0,0,0,6">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="🔌"
+                                                   Margin="0,0,6,0"
+                                                   Opacity="0.7"
+                                                   FontSize="12" />
+                                        <TextBlock Text="ПОРТ"
+                                                   Foreground="#B3FFFFFF"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBlock Text="(22)"
+                                               Foreground="#66FFFFFF"
+                                               FontSize="11"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                                <ui:TextBox Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"
+                                            Background="#0DFFFFFF"
+                                            Foreground="White"
+                                            BorderBrush="#1AFFFFFF"
+                                            Padding="12,8"
+                                            FontSize="13" />
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Margin="0,0,0,16">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,6">
+                                <TextBlock Text="🔒"
+                                           Margin="0,0,6,0"
+                                           Opacity="0.7"
+                                           FontSize="12" />
+                                <TextBlock Text="ПАРОЛЬ (ИЛИ PASSPHRASE ДЛЯ КЛЮЧА)"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ui:PasswordBox Password="{Binding Password, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            PlaceholderText="Введите пароль или passphrase..."
+                                            Background="#0DFFFFFF"
+                                            Foreground="White"
+                                            BorderBrush="#1AFFFFFF"
+                                            Padding="12,8"
+                                            FontSize="13" />
+                        </StackPanel>
+
+                        <Border Height="1"
+                                Margin="0,0,0,16">
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0"
                                                      EndPoint="1,0">
-                                    <GradientStop Color="#00ff88"
+                                    <GradientStop Color="#00FFFFFF"
                                                   Offset="0" />
-                                    <GradientStop Color="#00f2ff"
+                                    <GradientStop Color="#1AFFFFFF"
                                                   Offset="0.5" />
-                                    <GradientStop Color="#7000ff"
+                                    <GradientStop Color="#00FFFFFF"
                                                   Offset="1" />
                                 </LinearGradientBrush>
                             </Border.Background>
                         </Border>
 
-                        <StackPanel Margin="24">
-
-                            <Grid Margin="0,0,0,24">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-
-                                <Border Width="48"
-                                        Height="48"
-                                        CornerRadius="12"
-                                        BorderBrush="#4D00ff88"
-                                        BorderThickness="1"
-                                        Margin="0,0,16,0">
-                                    <Border.Background>
-                                        <LinearGradientBrush StartPoint="0,0"
-                                                             EndPoint="1,1">
-                                            <GradientStop Color="#2600ff88"
-                                                          Offset="0" />
-                                            <GradientStop Color="#2600f2ff"
-                                                          Offset="1" />
-                                        </LinearGradientBrush>
-                                    </Border.Background>
-                                    <TextBlock Text="🖥️"
-                                               FontSize="22"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center" />
-                                </Border>
-
-                                <StackPanel Grid.Column="1"
-                                            VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding WindowTitle}"
-                                               FontSize="20"
-                                               FontWeight="ExtraBold">
-                                        <TextBlock.Foreground>
-                                            <LinearGradientBrush StartPoint="0,0"
-                                                                 EndPoint="1,1">
-                                                <GradientStop Color="#FFFFFF"
-                                                              Offset="0" />
-                                                <GradientStop Color="#00ff88"
-                                                              Offset="1" />
-                                            </LinearGradientBrush>
-                                        </TextBlock.Foreground>
-                                    </TextBlock>
-                                    <TextBlock Text="Подключите новый сервер через SSH"
-                                               Foreground="#B3FFFFFF"
-                                               FontSize="12"
-                                               Margin="0,2,0,0" />
-                                </StackPanel>
-                            </Grid>
-
-                            <StackPanel Margin="0,0,0,12">
-                                <StackPanel Orientation="Horizontal"
-                                            Margin="0,0,0,6">
-                                    <TextBlock Text="📝"
-                                               Margin="0,0,6,0"
-                                               Opacity="0.7"
-                                               FontSize="12" />
-                                    <TextBlock Text="НАЗВАНИЕ В СПИСКЕ"
-                                               Foreground="#B3FFFFFF"
-                                               FontSize="11"
-                                               FontWeight="SemiBold"
-                                               VerticalAlignment="Center" />
-                                </StackPanel>
-                                <ui:TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
-                                            Background="#0DFFFFFF"
-                                            Foreground="White"
-                                            BorderBrush="#1AFFFFFF"
-                                            Padding="12,8"
-                                            FontSize="13" />
+                        <StackPanel Margin="0,0,0,20">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,6">
+                                <TextBlock Text="🔑"
+                                           Margin="0,0,6,0"
+                                           Opacity="0.7"
+                                           FontSize="12" />
+                                <TextBlock Text="ПУТЬ К ПРИВАТНОМУ КЛЮЧУ"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
                             </StackPanel>
-
-                            <StackPanel Margin="0,0,0,12">
-                                <StackPanel Orientation="Horizontal"
-                                            Margin="0,0,0,6">
-                                    <TextBlock Text="🌐"
-                                               Margin="0,0,6,0"
-                                               Opacity="0.7"
-                                               FontSize="12" />
-                                    <TextBlock Text="IP-АДРЕС СЕРВЕРА"
-                                               Foreground="#B3FFFFFF"
-                                               FontSize="11"
-                                               FontWeight="SemiBold"
-                                               VerticalAlignment="Center" />
-                                </StackPanel>
-                                <ui:TextBox Text="{Binding IpAddress, UpdateSourceTrigger=PropertyChanged}"
-                                            PlaceholderText="Например: 94.51.232.108"
-                                            Background="#0DFFFFFF"
-                                            Foreground="White"
-                                            BorderBrush="#1AFFFFFF"
-                                            Padding="12,8"
-                                            FontSize="13" />
-                            </StackPanel>
-
-                            <Grid Margin="0,0,0,12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="12" />
-                                    <ColumnDefinition Width="100" />
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel Grid.Column="0">
-                                    <Grid Margin="0,0,0,6">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="👤"
-                                                       Margin="0,0,6,0"
-                                                       Opacity="0.7"
-                                                       FontSize="12" />
-                                            <TextBlock Text="ПОЛЬЗОВАТЕЛЬ"
-                                                       Foreground="#B3FFFFFF"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" />
-                                        </StackPanel>
-                                        <TextBlock Text="(root)"
-                                                   Foreground="#66FFFFFF"
-                                                   FontSize="11"
-                                                   HorizontalAlignment="Right"
-                                                   VerticalAlignment="Center" />
-                                    </Grid>
-                                    <ui:TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}"
-                                                Background="#0DFFFFFF"
-                                                Foreground="White"
-                                                BorderBrush="#1AFFFFFF"
-                                                Padding="12,8"
-                                                FontSize="13" />
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="2">
-                                    <Grid Margin="0,0,0,6">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="🔌"
-                                                       Margin="0,0,6,0"
-                                                       Opacity="0.7"
-                                                       FontSize="12" />
-                                            <TextBlock Text="ПОРТ"
-                                                       Foreground="#B3FFFFFF"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" />
-                                        </StackPanel>
-                                        <TextBlock Text="(22)"
-                                                   Foreground="#66FFFFFF"
-                                                   FontSize="11"
-                                                   HorizontalAlignment="Right"
-                                                   VerticalAlignment="Center" />
-                                    </Grid>
-                                    <ui:TextBox Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"
-                                                Background="#0DFFFFFF"
-                                                Foreground="White"
-                                                BorderBrush="#1AFFFFFF"
-                                                Padding="12,8"
-                                                FontSize="13" />
-                                </StackPanel>
-                            </Grid>
-
-                            <StackPanel Margin="0,0,0,16">
-                                <StackPanel Orientation="Horizontal"
-                                            Margin="0,0,0,6">
-                                    <TextBlock Text="🔒"
-                                               Margin="0,0,6,0"
-                                               Opacity="0.7"
-                                               FontSize="12" />
-                                    <TextBlock Text="ПАРОЛЬ (ИЛИ PASSPHRASE ДЛЯ КЛЮЧА)"
-                                               Foreground="#B3FFFFFF"
-                                               FontSize="11"
-                                               FontWeight="SemiBold"
-                                               VerticalAlignment="Center" />
-                                </StackPanel>
-                                <ui:PasswordBox Password="{Binding Password, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                PlaceholderText="Введите пароль или passphrase..."
-                                                Background="#0DFFFFFF"
-                                                Foreground="White"
-                                                BorderBrush="#1AFFFFFF"
-                                                Padding="12,8"
-                                                FontSize="13" />
-                            </StackPanel>
-
-                            <Border Height="1"
-                                    Margin="0,0,0,16">
-                                <Border.Background>
-                                    <LinearGradientBrush StartPoint="0,0"
-                                                         EndPoint="1,0">
-                                        <GradientStop Color="#00FFFFFF"
-                                                      Offset="0" />
-                                        <GradientStop Color="#1AFFFFFF"
-                                                      Offset="0.5" />
-                                        <GradientStop Color="#00FFFFFF"
-                                                      Offset="1" />
-                                    </LinearGradientBrush>
-                                </Border.Background>
-                            </Border>
-
-                            <StackPanel Margin="0,0,0,20">
-                                <StackPanel Orientation="Horizontal"
-                                            Margin="0,0,0,6">
-                                    <TextBlock Text="🔑"
-                                               Margin="0,0,6,0"
-                                               Opacity="0.7"
-                                               FontSize="12" />
-                                    <TextBlock Text="ПУТЬ К ПРИВАТНОМУ КЛЮЧУ"
-                                               Foreground="#B3FFFFFF"
-                                               FontSize="11"
-                                               FontWeight="SemiBold"
-                                               VerticalAlignment="Center" />
-                                </StackPanel>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="8" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <ui:TextBox Grid.Column="0"
-                                                Text="{Binding KeyPath, UpdateSourceTrigger=PropertyChanged}"
-                                                PlaceholderText="Выберите файл ключа..."
-                                                Background="#0DFFFFFF"
-                                                Foreground="White"
-                                                BorderBrush="#1AFFFFFF"
-                                                Padding="12,8"
-                                                FontSize="13"
-                                                IsReadOnly="True" />
-
-                                    <ui:Button Grid.Column="2"
-                                               Command="{Binding BrowseKeyCommand}"
-                                               Style="{StaticResource NeonBrowseBtnStyle}">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="📁"
-                                                       Margin="0,0,6,0"
-                                                       FontSize="12" />
-                                            <TextBlock Text="Обзор..."
-                                                       FontWeight="SemiBold"
-                                                       FontSize="13" />
-                                        </StackPanel>
-                                    </ui:Button>
-                                </Grid>
-                            </StackPanel>
-
-                            <StackPanel Margin="0,0,0,24">
-                                <ui:Button Command="{Binding CheckConnectionCommand}"
-                                           IsEnabled="{Binding IsNotChecking}"
-                                           HorizontalAlignment="Stretch"
-                                           Style="{StaticResource NeonTestBtnStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="🔍"
-                                                   Margin="0,0,8,0"
-                                                   FontSize="14" />
-                                        <TextBlock Text="Проверить SSH-подключение"
-                                                   FontWeight="SemiBold"
-                                                   FontSize="13" />
-                                    </StackPanel>
-                                </ui:Button>
-
-                                <Border Margin="0,10,0,0"
-                                        Background="#1A00ff88"
-                                        BorderBrush="#4D00ff88"
-                                        BorderThickness="1"
-                                        CornerRadius="6"
-                                        Padding="10,6">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="Visibility"
-                                                    Value="Visible" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding StatusMessage}"
-                                                             Value="">
-                                                    <Setter Property="Visibility"
-                                                            Value="Collapsed" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding StatusMessage}"
-                                                             Value="{x:Null}">
-                                                    <Setter Property="Visibility"
-                                                            Value="Collapsed" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
-                                    <TextBlock Text="{Binding StatusMessage}"
-                                               Foreground="#00ff88"
-                                               TextWrapping="Wrap"
-                                               HorizontalAlignment="Center"
-                                               FontWeight="SemiBold"
-                                               FontSize="12" />
-                                </Border>
-                            </StackPanel>
-
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="16" />
+                                    <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <ui:TextBox Grid.Column="0"
+                                            Text="{Binding KeyPath, UpdateSourceTrigger=PropertyChanged}"
+                                            PlaceholderText="Выберите файл ключа..."
+                                            Background="#0DFFFFFF"
+                                            Foreground="White"
+                                            BorderBrush="#1AFFFFFF"
+                                            Padding="12,8"
+                                            FontSize="13"
+                                            IsReadOnly="True" />
 
-                                <ui:Button Grid.Column="1"
-                                           Command="{Binding CancelCommand}"
-                                           Style="{StaticResource NeonCancelBtnStyle}">
+                                <ui:Button Grid.Column="2"
+                                           Command="{Binding BrowseKeyCommand}"
+                                           Style="{StaticResource NeonBrowseBtnStyle}">
                                     <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="✕"
+                                        <TextBlock Text="📁"
                                                    Margin="0,0,6,0"
                                                    FontSize="12" />
-                                        <TextBlock Text="Отмена"
+                                        <TextBlock Text="Обзор..."
                                                    FontWeight="SemiBold"
                                                    FontSize="13" />
                                     </StackPanel>
                                 </ui:Button>
-
-                                <ui:Button Grid.Column="3"
-                                           Command="{Binding SaveCommand}"
-                                           Style="{StaticResource NeonSaveBtnStyle}">
-                                    <StackPanel Orientation="Horizontal">
-                                        <TextBlock Text="💾"
-                                                   Margin="0,0,6,0"
-                                                   FontSize="12" />
-                                        <TextBlock Text="Сохранить"
-                                                   FontWeight="ExtraBold"
-                                                   Foreground="#13151b"
-                                                   FontSize="13" />
-                                    </StackPanel>
-                                </ui:Button>
                             </Grid>
-
                         </StackPanel>
-                    </Grid>
-                </Border>
-            </Grid>
-        </Viewbox>
+
+                        <StackPanel Margin="0,0,0,24">
+                            <ui:Button Command="{Binding CheckConnectionCommand}"
+                                       IsEnabled="{Binding IsNotChecking}"
+                                       HorizontalAlignment="Stretch"
+                                       Style="{StaticResource NeonTestBtnStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="🔍"
+                                               Margin="0,0,8,0"
+                                               FontSize="14" />
+                                    <TextBlock Text="Проверить SSH-подключение"
+                                               FontWeight="SemiBold"
+                                               FontSize="13" />
+                                </StackPanel>
+                            </ui:Button>
+
+                            <Border Margin="0,10,0,0"
+                                    Background="#1A00ff88"
+                                    BorderBrush="#4D00ff88"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="10,6">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility"
+                                                Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding StatusMessage}"
+                                                         Value="">
+                                                <Setter Property="Visibility"
+                                                        Value="Collapsed" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding StatusMessage}"
+                                                         Value="{x:Null}">
+                                                <Setter Property="Visibility"
+                                                        Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding StatusMessage}"
+                                           Foreground="#00ff88"
+                                           TextWrapping="Wrap"
+                                           HorizontalAlignment="Center"
+                                           FontWeight="SemiBold"
+                                           FontSize="12" />
+                            </Border>
+                        </StackPanel>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <ui:Button Grid.Column="1"
+                                       Command="{Binding CancelCommand}"
+                                       Style="{StaticResource NeonCancelBtnStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="✕"
+                                               Margin="0,0,6,0"
+                                               FontSize="12" />
+                                    <TextBlock Text="Отмена"
+                                               FontWeight="SemiBold"
+                                               FontSize="13" />
+                                </StackPanel>
+                            </ui:Button>
+
+                            <ui:Button Grid.Column="3"
+                                       Command="{Binding SaveCommand}"
+                                       Style="{StaticResource NeonSaveBtnStyle}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="💾"
+                                               Margin="0,0,6,0"
+                                               FontSize="12" />
+                                    <TextBlock Text="Сохранить"
+                                               FontWeight="ExtraBold"
+                                               Foreground="#13151b"
+                                               FontSize="13" />
+                                </StackPanel>
+                            </ui:Button>
+                        </Grid>
+
+                    </StackPanel>
+                </Grid>
+            </Border>
         </Grid>
-    </Grid>
+    </ScrollViewer>
 </ui:FluentWindow>

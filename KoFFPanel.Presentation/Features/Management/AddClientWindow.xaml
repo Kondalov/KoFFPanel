@@ -3,13 +3,13 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="{Binding WindowTitle}"
-                 Height="680"
+                 MinHeight="680"
                  Width="540"
                  WindowStartupLocation="CenterOwner"
                  WindowBackdropType="None"
                  Background="#0a0a0a"
                  ExtendsContentIntoTitleBar="True"
-                 ResizeMode="NoResize">
+                 ResizeMode="CanResize">
 
     <Border BorderThickness="0,3,0,0">
         <Border.BorderBrush>
@@ -24,99 +24,220 @@
             </LinearGradientBrush>
         </Border.BorderBrush>
 
-        <Grid Margin="32,20,32,28">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Margin="32,20,32,28">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0"
-                        Orientation="Horizontal"
-                        Margin="0,0,0,24"
-                        VerticalAlignment="Center">
-                <Border Width="48"
-                        Height="48"
-                        CornerRadius="14"
-                        Margin="0,0,16,0"
-                        BorderThickness="1"
-                        BorderBrush="#4Dff00aa">
-                    <Border.Background>
-                        <LinearGradientBrush StartPoint="0,0"
-                                             EndPoint="1,1">
-                            <GradientStop Color="#26ff00aa"
-                                          Offset="0" />
-                            <GradientStop Color="#267000ff"
-                                          Offset="1" />
-                        </LinearGradientBrush>
-                    </Border.Background>
-                    <TextBlock Text="👤"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               FontSize="20" />
-                </Border>
-                <TextBlock Text="{Binding WindowTitle}"
-                           Foreground="White"
-                           FontSize="24"
-                           FontWeight="ExtraBlack"
-                           VerticalAlignment="Center" />
-            </StackPanel>
-
-            <StackPanel Grid.Row="1">
-                <StackPanel Margin="0,0,0,16">
-                    <StackPanel Orientation="Horizontal"
-                                Margin="0,0,0,8">
+                <StackPanel Grid.Row="0"
+                            Orientation="Horizontal"
+                            Margin="0,0,0,24"
+                            VerticalAlignment="Center">
+                    <Border Width="48"
+                            Height="48"
+                            CornerRadius="14"
+                            Margin="0,0,16,0"
+                            BorderThickness="1"
+                            BorderBrush="#4Dff00aa">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0"
+                                                 EndPoint="1,1">
+                                <GradientStop Color="#26ff00aa"
+                                              Offset="0" />
+                                <GradientStop Color="#267000ff"
+                                              Offset="1" />
+                            </LinearGradientBrush>
+                        </Border.Background>
                         <TextBlock Text="👤"
-                                   FontSize="14"
-                                   Foreground="#B3FFFFFF"
-                                   Margin="0,0,8,0" />
-                        <TextBlock Text="Имя пользователя"
-                                   Foreground="#B3FFFFFF"
-                                   FontSize="13"
-                                   FontWeight="SemiBold" />
-                        <TextBlock Text="(Только латиница/цифры)"
-                                   Foreground="#59FFFFFF"
-                                   FontSize="12"
-                                   Margin="8,0,0,0"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                    <ui:TextBox Text="{Binding ClientName, UpdateSourceTrigger=PropertyChanged}"
-                                PlaceholderText="Например: Kostya_Phone"
-                                Foreground="White"
-                                FontWeight="Bold"
-                                Background="#0DFFFFFF"
-                                BorderBrush="#1AFFFFFF"
-                                FontSize="15"
-                                Padding="14,10"
-                                Height="44"
-                                IsReadOnly="{Binding IsEditMode}" />
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontSize="20" />
+                    </Border>
+                    <TextBlock Text="{Binding WindowTitle}"
+                               Foreground="White"
+                               FontSize="24"
+                               FontWeight="ExtraBlack"
+                               VerticalAlignment="Center" />
                 </StackPanel>
 
-                <Grid Margin="0,0,0,16">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="16" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <StackPanel Grid.Column="0">
+                <StackPanel Grid.Row="1">
+                    <StackPanel Margin="0,0,0,16">
                         <StackPanel Orientation="Horizontal"
                                     Margin="0,0,0,8">
-                            <TextBlock Text="📊"
+                            <TextBlock Text="👤"
                                        FontSize="14"
                                        Foreground="#B3FFFFFF"
                                        Margin="0,0,8,0" />
-                            <TextBlock Text="Лимит"
+                            <TextBlock Text="Имя пользователя"
                                        Foreground="#B3FFFFFF"
                                        FontSize="13"
                                        FontWeight="SemiBold" />
-                            <TextBlock Text="(ГБ, 0 = Безлимит)"
+                            <TextBlock Text="(Только латиница/цифры)"
                                        Foreground="#59FFFFFF"
                                        FontSize="12"
                                        Margin="8,0,0,0"
                                        VerticalAlignment="Center" />
                         </StackPanel>
-                        <ui:TextBox Text="{Binding TrafficLimitGb, UpdateSourceTrigger=PropertyChanged}"
+                        <ui:TextBox Text="{Binding ClientName, UpdateSourceTrigger=PropertyChanged}"
+                                    PlaceholderText="Например: Kostya_Phone"
+                                    Foreground="White"
+                                    FontWeight="Bold"
+                                    Background="#0DFFFFFF"
+                                    BorderBrush="#1AFFFFFF"
+                                    FontSize="15"
+                                    Padding="14,10"
+                                    Height="44"
+                                    IsReadOnly="{Binding IsEditMode}" />
+                    </StackPanel>
+
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,8">
+                                <TextBlock Text="📊"
+                                           FontSize="14"
+                                           Foreground="#B3FFFFFF"
+                                           Margin="0,0,8,0" />
+                                <TextBlock Text="Лимит"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="13"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="(ГБ, 0 = Безлимит)"
+                                           Foreground="#59FFFFFF"
+                                           FontSize="12"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ui:TextBox Text="{Binding TrafficLimitGb, UpdateSourceTrigger=PropertyChanged}"
+                                        Foreground="White"
+                                        FontWeight="Bold"
+                                        Background="#0DFFFFFF"
+                                        BorderBrush="#1AFFFFFF"
+                                        FontSize="15"
+                                        Padding="14,10"
+                                        Height="44" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,8">
+                                <TextBlock Text="📅"
+                                           FontSize="14"
+                                           Foreground="#B3FFFFFF"
+                                           Margin="0,0,8,0" />
+                                <TextBlock Text="Истекает"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="13"
+                                           FontWeight="SemiBold" />
+                            </StackPanel>
+                            <DatePicker SelectedDate="{Binding ExpiryDate}"
+                                        FontSize="15"
+                                        FontWeight="Bold"
+                                        Height="44"
+                                        Background="#0DFFFFFF"
+                                        Foreground="White" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- СЕКЦИЯ ПРОТОКОЛОВ -->
+                    <TextBlock Text="Доступные протоколы"
+                               Foreground="#B3FFFFFF"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,12" />
+
+                    <Border Background="#0DFFFFFF"
+                            BorderBrush="#1AFFFFFF"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="12"
+                            Margin="0,0,0,16">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,10">
+                                <TextBlock Text="VLESS Reality"
+                                           Foreground="White"
+                                           VerticalAlignment="Center" />
+                                <ui:ToggleSwitch HorizontalAlignment="Right"
+                                                 IsChecked="{Binding IsVlessEnabled, Mode=TwoWay}" />
+                            </Grid>
+                            <Separator Background="#1AFFFFFF"
+                                       Margin="0,0,0,10" />
+                            <Grid Margin="0,0,0,10">
+                                <TextBlock Text="Hysteria 2"
+                                           Foreground="White"
+                                           VerticalAlignment="Center" />
+                                <ui:ToggleSwitch HorizontalAlignment="Right"
+                                                 IsChecked="{Binding IsHysteria2Enabled, Mode=TwoWay}" />
+                            </Grid>
+                            <Separator Background="#1AFFFFFF"
+                                       Margin="0,0,0,10" />
+                            <Grid>
+                                <TextBlock Text="TrustTunnel / XHTTP"
+                                           Foreground="White"
+                                           VerticalAlignment="Center" />
+                                <ui:ToggleSwitch HorizontalAlignment="Right"
+                                                 IsChecked="{Binding IsTrustTunnelEnabled, Mode=TwoWay}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#1A00f2ff"
+                            BorderBrush="#3300f2ff"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="16,12"
+                            Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0"
+                                        VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal"
+                                            Margin="0,0,0,4">
+                                    <TextBlock Text="🛡️"
+                                               FontSize="14"
+                                               Margin="0,0,8,0" />
+                                    <TextBlock Text="Блокировать Торренты (P2P)"
+                                               Foreground="White"
+                                               FontSize="14"
+                                               FontWeight="Bold" />
+                                </StackPanel>
+                                <TextBlock Text="Защищает сервер от DMCA жалоб (рекомендуется)"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="11"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                            <ui:ToggleSwitch Grid.Column="1"
+                                             IsChecked="{Binding IsP2PBlocked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,0,0,8">
+                            <TextBlock Text="📝"
+                                       FontSize="14"
+                                       Foreground="#B3FFFFFF"
+                                       Margin="0,0,8,0" />
+                            <TextBlock Text="Заметка"
+                                       Foreground="#B3FFFFFF"
+                                       FontSize="13"
+                                       FontWeight="SemiBold" />
+                        </StackPanel>
+                        <ui:TextBox Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}"
+                                    PlaceholderText="Контакт, Telegram, устройство..."
                                     Foreground="White"
                                     FontWeight="Bold"
                                     Background="#0DFFFFFF"
@@ -125,143 +246,40 @@
                                     Padding="14,10"
                                     Height="44" />
                     </StackPanel>
-
-                    <StackPanel Grid.Column="2">
-                        <StackPanel Orientation="Horizontal"
-                                    Margin="0,0,0,8">
-                            <TextBlock Text="📅"
-                                       FontSize="14"
-                                       Foreground="#B3FFFFFF"
-                                       Margin="0,0,8,0" />
-                            <TextBlock Text="Истекает"
-                                       Foreground="#B3FFFFFF"
-                                       FontSize="13"
-                                       FontWeight="SemiBold" />
-                        </StackPanel>
-                        <DatePicker SelectedDate="{Binding ExpiryDate}"
-                                    FontSize="15"
-                                    FontWeight="Bold"
-                                    Height="44"
-                                    Background="#0DFFFFFF"
-                                    Foreground="White" />
-                    </StackPanel>
-                </Grid>
-
-                <!-- СЕКЦИЯ ПРОТОКОЛОВ -->
-                <TextBlock Text="Доступные протоколы"
-                           Foreground="#B3FFFFFF"
-                           FontSize="13"
-                           FontWeight="SemiBold"
-                           Margin="0,0,0,12" />
-                
-                <Border Background="#0DFFFFFF" BorderBrush="#1AFFFFFF" BorderThickness="1" CornerRadius="12" Padding="12" Margin="0,0,0,16">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,10">
-                            <TextBlock Text="VLESS Reality" Foreground="White" VerticalAlignment="Center"/>
-                            <ui:ToggleSwitch HorizontalAlignment="Right" IsChecked="{Binding IsVlessEnabled, Mode=TwoWay}"/>
-                        </Grid>
-                        <Separator Background="#1AFFFFFF" Margin="0,0,0,10"/>
-                        <Grid Margin="0,0,0,10">
-                            <TextBlock Text="Hysteria 2" Foreground="White" VerticalAlignment="Center"/>
-                            <ui:ToggleSwitch HorizontalAlignment="Right" IsChecked="{Binding IsHysteria2Enabled, Mode=TwoWay}"/>
-                        </Grid>
-                        <Separator Background="#1AFFFFFF" Margin="0,0,0,10"/>
-                        <Grid>
-                            <TextBlock Text="TrustTunnel / XHTTP" Foreground="White" VerticalAlignment="Center"/>
-                            <ui:ToggleSwitch HorizontalAlignment="Right" IsChecked="{Binding IsTrustTunnelEnabled, Mode=TwoWay}"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-
-                <Border Background="#1A00f2ff"
-                        BorderBrush="#3300f2ff"
-                        BorderThickness="1"
-                        CornerRadius="12"
-                        Padding="16,12"
-                        Margin="0,0,0,16">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0"
-                                    VerticalAlignment="Center">
-                            <StackPanel Orientation="Horizontal"
-                                        Margin="0,0,0,4">
-                                <TextBlock Text="🛡️"
-                                           FontSize="14"
-                                           Margin="0,0,8,0" />
-                                <TextBlock Text="Блокировать Торренты (P2P)"
-                                           Foreground="White"
-                                           FontSize="14"
-                                           FontWeight="Bold" />
-                            </StackPanel>
-                            <TextBlock Text="Защищает сервер от DMCA жалоб (рекомендуется)"
-                                       Foreground="#B3FFFFFF"
-                                       FontSize="11"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                        <ui:ToggleSwitch Grid.Column="1"
-                                         IsChecked="{Binding IsP2PBlocked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                         VerticalAlignment="Center" />
-                    </Grid>
-                </Border>
-
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal"
-                                Margin="0,0,0,8">
-                        <TextBlock Text="📝"
-                                   FontSize="14"
-                                   Foreground="#B3FFFFFF"
-                                   Margin="0,0,8,0" />
-                        <TextBlock Text="Заметка"
-                                   Foreground="#B3FFFFFF"
-                                   FontSize="13"
-                                   FontWeight="SemiBold" />
-                    </StackPanel>
-                    <ui:TextBox Text="{Binding Note, UpdateSourceTrigger=PropertyChanged}"
-                                PlaceholderText="Контакт, Telegram, устройство..."
-                                Foreground="White"
-                                FontWeight="Bold"
-                                Background="#0DFFFFFF"
-                                BorderBrush="#1AFFFFFF"
-                                FontSize="15"
-                                Padding="14,10"
-                                Height="44" />
                 </StackPanel>
-            </StackPanel>
 
-            <StackPanel Grid.Row="2"
-                        Orientation="Horizontal"
-                        HorizontalAlignment="Right"
-                        Margin="0,24,0,0">
-                <ui:Button Command="{Binding CancelCommand}"
-                           Content="Отмена"
-                           Background="#1AFFFFFF"
-                           Foreground="#B3FFFFFF"
-                           BorderThickness="1"
-                           BorderBrush="#33FFFFFF"
-                           Padding="24,12"
-                           Cursor="Hand"
-                           Margin="0,0,12,0" />
-                <ui:Button Command="{Binding SaveCommand}"
-                           Content="{Binding ActionButtonText}"
-                           Foreground="Black"
-                           FontWeight="Bold"
-                           BorderThickness="0"
-                           Padding="32,12"
-                           Cursor="Hand">
-                    <ui:Button.Background>
-                        <LinearGradientBrush StartPoint="0,0"
-                                             EndPoint="1,1">
-                            <GradientStop Color="#ffaa00"
-                                          Offset="0" />
-                            <GradientStop Color="#ff8800"
-                                          Offset="1" />
-                        </LinearGradientBrush>
-                    </ui:Button.Background>
-                </ui:Button>
-            </StackPanel>
-        </Grid>
+                <StackPanel Grid.Row="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            Margin="0,24,0,0">
+                    <ui:Button Command="{Binding CancelCommand}"
+                               Content="Отмена"
+                               Background="#1AFFFFFF"
+                               Foreground="#B3FFFFFF"
+                               BorderThickness="1"
+                               BorderBrush="#33FFFFFF"
+                               Padding="24,12"
+                               Cursor="Hand"
+                               Margin="0,0,12,0" />
+                    <ui:Button Command="{Binding SaveCommand}"
+                               Content="{Binding ActionButtonText}"
+                               Foreground="Black"
+                               FontWeight="Bold"
+                               BorderThickness="0"
+                               Padding="32,12"
+                               Cursor="Hand">
+                        <ui:Button.Background>
+                            <LinearGradientBrush StartPoint="0,0"
+                                                 EndPoint="1,1">
+                                <GradientStop Color="#ffaa00"
+                                              Offset="0" />
+                                <GradientStop Color="#ff8800"
+                                              Offset="1" />
+                            </LinearGradientBrush>
+                        </ui:Button.Background>
+                    </ui:Button>
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
     </Border>
 </ui:FluentWindow>

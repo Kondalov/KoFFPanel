@@ -242,7 +242,7 @@ public partial class CabinetViewModel
 
     private void UpdateUiAfterCycle(string displayCoreName, string coreStatusStr, CoreStatusInfo coreStats, string journalLogs, string accessLogs, string grepTest)
     {
-        CoreTitleLabel = $"Ядро ({displayCoreName})";
+        ActiveCoreTitle = $"Ядро ({displayCoreName})";
         XrayStatus = coreStatusStr; XrayVersion = coreStats.Version; XrayConfigStatus = coreStats.ConfigStatus;
         XrayLastError = coreStats.LastError; XrayUptime = coreStats.Uptime;
         XrayLogs = $"=== СИСТЕМНЫЙ ЖУРНАЛ ===\n{journalLogs.Trim()}\n\n=== ACCESS.LOG ===\n{accessLogs.Trim()}\n\n=== ТЕСТ ПАРСЕРА ===\n{grepTest.Trim()}";

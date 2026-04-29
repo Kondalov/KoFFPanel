@@ -118,6 +118,19 @@ public partial class CabinetViewModel
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             UpdateUiAfterCycle(actualDisplayCore, coreStatusStr, coreStats, journalLogs, accessLogs, grepTest);
+
+            if (SelectedServer != null)
+            {
+                // ФИКС: Умный алгоритм актуализации ядра в БД (foolproof)
+                string detectedCoreType = sbActive ? "sing-box" : (ttActive ? "trusttunnel" : "xray");
+                if (SelectedServer.CoreType != detectedCoreType)
+                {
+                    _logger.Log("MONITORING", $"[FOOLPROOF] Обнаружено расхождение ядра! БД: {SelectedServer.CoreType}, Реал: {detectedCoreType}. Обновляем...");
+                    SelectedServer.CoreType = detectedCoreType;
+                    _profileRepository.UpdateProfile(SelectedServer);
+                }
+            }
+
             bool dbNeedsUpdate = ProcessClientsAfterCycle(trafficStats, activeUsernames, allOnlineStats, trafficBatch, connectionBatch);
 
             if (dbNeedsUpdate && SelectedServer != null)
