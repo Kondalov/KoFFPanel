@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddTransient<ISingBoxConfiguratorService, SingBoxConfiguratorService>();
         services.AddTransient<ISingBoxUserManagerService, SingBoxUserManagerService>();
         services.AddTransient<ITrustTunnelUserManagerService, TrustTunnelUserManagerService>();
+        services.AddTransient<IMarzbanMigrationService, MarzbanMigrationService>();
         
         services.AddTransient<IServerSelectionService, ServerSelectionService>();
         services.AddTransient<ISmartPortValidator, SmartPortValidator>();

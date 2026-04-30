@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.Messaging;
 using System.Linq;
+using Microsoft.EntityFrameworkCore;
 using KoFFPanel.Presentation.Features.Bot;
 using KoFFPanel.Presentation.Messages;
 using KoFFPanel.Presentation.Features.Cabinet;
@@ -25,6 +26,7 @@ public partial class BotViewModel : ObservableObject
     private readonly IAppLogger _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IMarzbanMigrationService _migrationService;
 
     [ObservableProperty] private string _botIpAddress = "127.0.0.1";
     [ObservableProperty] private string _botPort = "5000";
@@ -48,11 +50,12 @@ public partial class BotViewModel : ObservableObject
 
     private readonly string _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bot_config.json");
 
-    public BotViewModel(IAppLogger logger, IServiceProvider serviceProvider, IHttpClientFactory httpClientFactory)
+    public BotViewModel(IAppLogger logger, IServiceProvider serviceProvider, IHttpClientFactory httpClientFactory, IMarzbanMigrationService migrationService)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
         _httpClientFactory = httpClientFactory;
+        _migrationService = migrationService;
 
         _nightlyTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(30) };
         _nightlyTimer.Tick += (s, e) => SafeFireAndForget(() => SmartNightlyRoutineAsync(false));
@@ -320,7 +323,7 @@ public partial class BotViewModel : ObservableObject
             var allClients = new List<LegacyUserDto>();
 
             foreach (var c in cabinetVm.Clients)
-                allClients.Add(new LegacyUserDto { Uuid = c.Uuid ?? "", Email = c.Email ?? "", ServerIp = c.ServerIp ?? "", TrafficLimitBytes = c.TrafficLimit, ExpiryDate = c.ExpiryDate });
+                allClients.Add(new LegacyUserDto { Uuid = c.Uuid ?? "", Email = c.Email ?? "", ServerIp = c.ServerIp ?? "", TrafficLimitBytes = c.TrafficLimit, ReffererId = c.ReffererId, ExpiryDate = c.ExpiryDate });
 
             var req = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/legacy/sync")) { Content = JsonContent.Create(allClients) };
             req.Headers.Add("X-API-KEY", ApiSecret);
@@ -333,5 +336,63 @@ public partial class BotViewModel : ObservableObject
             MessageBox.Show($"Ошибка выгрузки базы: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally { IsSyncing = false; await HeartbeatCheckAsync(); }
+    }
+
+    [RelayCommand]
+    private async Task MigrateFromMarzbanAsync()
+    {
+        string marzbanPath = @"C:\Users\Nikolay\OneDrive\Документы\ShareX\Screenshots\2026-04\TESTS\backup_2026-04-30_12-00-01\marzban_db.sql";
+        string botPath = @"C:\Users\Nikolay\OneDrive\Документы\ShareX\Screenshots\2026-04\TESTS\backup_2026-04-30_12-00-01\bot_db.sql";
+
+        var cabinetVm = _serviceProvider.GetRequiredService<CabinetViewModel>();
+        string serverIp = cabinetVm.SelectedServer?.IpAddress ?? "103.71.22.166";
+
+        var result = MessageBox.Show($"Вы уверены, что хотите запустить миграцию пользователей из Marzban для сервера {serverIp}?\n\nПуть к Marzban: {marzbanPath}", 
+            "Подтверждение миграции", MessageBoxButton.YesNo, MessageBoxImage.Question);
+
+        if (result != MessageBoxResult.Yes) return;
+
+        IsSyncing = true;
+        string oldStatus = BotStatus;
+        BotStatus = "Миграция БД...";
+
+        try
+        {
+            var (isSuccess, message) = await _migrationService.MigrateAsync(marzbanPath, botPath, serverIp);
+
+            if (isSuccess)
+            {
+                MessageBox.Show(message + "\n\nВсе реферальные связи сохранены в базе и будут переданы в бота при выгрузке.", "Миграция завершена", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                // Обновляем список клиентов в UI
+                await System.Windows.Application.Current.Dispatcher.InvokeAsync(async () => {
+                    if (cabinetVm.SelectedServer != null)
+                    {
+                        // Перезагружаем список пользователей для выбранного сервера
+                        var userManager = _serviceProvider.GetRequiredService<IXrayUserManagerService>();
+                        var ssh = _serviceProvider.GetRequiredService<ISshService>();
+                        // Если SSH не подключен, просто перечитаем из БД
+                        var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                        var updatedUsers = await dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+                        
+                        cabinetVm.Clients.Clear();
+                        foreach (var user in updatedUsers) cabinetVm.Clients.Add(user);
+                    }
+                });
+            }
+            else
+            {
+                MessageBox.Show(message, "Ошибка миграции", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Критическая ошибка: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsSyncing = false;
+            BotStatus = oldStatus;
+        }
     }
 }

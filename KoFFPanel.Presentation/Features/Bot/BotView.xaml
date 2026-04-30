@@ -361,6 +361,35 @@
                     </StackPanel>
                 </Border>
 
+                <Border Style="{StaticResource MetricCardStyle}">
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0,0,0,15">
+                            <ui:SymbolIcon Symbol="DatabaseArrowRight24"
+                                           Foreground="#00ffcc"
+                                           FontSize="20"
+                                           Margin="0,0,10,0" />
+                            <TextBlock Text="Миграция из Marzban"
+                                       Foreground="#B3FFFFFF"
+                                       FontWeight="SemiBold"
+                                       FontSize="16" />
+                        </StackPanel>
+                        <TextBlock Text="Перенос пользователей из дампов Marzban и старого бота"
+                                   Foreground="#80FFFFFF"
+                                   FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,20" />
+                        <ui:Button Command="{Binding MigrateFromMarzbanCommand}"
+                                   Content="ЗАПУСТИТЬ МИГРАЦИЮ"
+                                   HorizontalAlignment="Left"
+                                   Padding="20,12"
+                                   Background="#1A00ffcc"
+                                   Foreground="#00ffcc"
+                                   BorderBrush="#4D00ffcc"
+                                   ToolTip="Импорт пользователей из SQL дампов" />
+                    </StackPanel>
+                </Border>
+
             </UniformGrid>
         </Grid>
     </Grid>

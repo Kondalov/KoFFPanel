@@ -148,6 +148,13 @@ public class VpnClient : INotifyPropertyChanged
         }
     }
 
+    private long? _reffererId;
+    public long? ReffererId
+    {
+        get => _reffererId;
+        set { _reffererId = value; OnPropertyChanged(); }
+    }
+
     private string _note = "";
     public string Note
     {
