@@ -449,6 +449,28 @@
                                         FontSize="13" />
                         </StackPanel>
 
+                        <StackPanel Margin="0,0,0,16">
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,0,0,6">
+                                <TextBlock Text="🌍"
+                                           Margin="0,0,6,0"
+                                           Opacity="0.7"
+                                           FontSize="12" />
+                                <TextBlock Text="ДОМЕН ДЛЯ ПОДКЛЮЧЕНИЯ (NODE)"
+                                           Foreground="#B3FFFFFF"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <ui:TextBox Text="{Binding ConnectionNode, UpdateSourceTrigger=PropertyChanged}"
+                                        PlaceholderText="Например: node.partherhr.ru (скроет IP)"
+                                        Background="#0DFFFFFF"
+                                        Foreground="White"
+                                        BorderBrush="#1AFFFFFF"
+                                        Padding="12,8"
+                                        FontSize="13" />
+                        </StackPanel>
+
                         <Border Height="1"
                                 Margin="0,0,0,16">
                             <Border.Background>

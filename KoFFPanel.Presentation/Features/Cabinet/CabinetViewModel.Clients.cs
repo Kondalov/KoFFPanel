@@ -14,6 +14,7 @@ using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
+using Microsoft.EntityFrameworkCore;
 
 namespace KoFFPanel.Presentation.Features.Cabinet;
 
@@ -274,14 +275,21 @@ public partial class CabinetViewModel
 
                 if (syncSuccess)
                 {
-                    var activeLinks = new List<string>();
-                    if (updatedClient.IsVlessEnabled && !string.IsNullOrEmpty(updatedClient.VlessLink) && updatedClient.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.VlessLink);
-                    if (updatedClient.IsHysteria2Enabled && !string.IsNullOrEmpty(updatedClient.Hysteria2Link) && updatedClient.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.Hysteria2Link);
-                    if (updatedClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(updatedClient.TrustTunnelLink) && updatedClient.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(updatedClient.TrustTunnelLink);
-
-                    if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
+                    // ИСПРАВЛЕНИЕ: Берем свежие ссылки из БД после генерации, чтобы не отправлять старые (с IP) на сервер
+                    var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                    var freshClient = freshContext.Clients.AsNoTracking().FirstOrDefault(c => c.Uuid == updatedClient.Uuid);
+                    
+                    if (freshClient != null)
                     {
-                        await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, updatedClient.Uuid ?? "", activeLinks);
+                        var activeLinks = new List<string>();
+                        if (freshClient.IsVlessEnabled && !string.IsNullOrEmpty(freshClient.VlessLink) && freshClient.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(freshClient.VlessLink);
+                        if (freshClient.IsHysteria2Enabled && !string.IsNullOrEmpty(freshClient.Hysteria2Link) && freshClient.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(freshClient.Hysteria2Link);
+                        if (freshClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(freshClient.TrustTunnelLink) && freshClient.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(freshClient.TrustTunnelLink);
+
+                        if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
+                        {
+                            await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, freshClient.Uuid ?? "", activeLinks);
+                        }
                     }
 
                     await LoadUsersAsync();

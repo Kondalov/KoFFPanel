@@ -47,7 +47,7 @@ public class SubscriptionService : ISubscriptionService
             await ssh.ExecuteCommandAsync($"{s} chown -R $USER:$USER /var/www/xray-sub");
             await ssh.ExecuteCommandAsync($"{s} chmod -R 755 /var/www/xray-sub");
 
-            // УЛУЧШЕННЫЙ СКРИПТ: Добавлена обработка ошибок и логирование
+            // УЛУЧШЕННЫЙ СКРИПТ: Добавлена обработка ошибок, логирование и ping endpoint для проверки маршрутизации
             string pyScript = @"
 import http.server, socketserver, os, sys
 
@@ -55,6 +55,15 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         try:
             p = self.path.strip('/')
+            
+            # ИСПРАВЛЕНИЕ: Добавлен эндпоинт для 'умной проверки' маршрутизации
+            if p == 'ping':
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'KoFFPanel-OK')
+                return
+                
             if not p or '/' in p:
                 self.send_error(404, 'Not Found')
                 return

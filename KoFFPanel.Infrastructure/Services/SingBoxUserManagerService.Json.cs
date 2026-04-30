@@ -20,6 +20,9 @@ public partial class SingBoxUserManagerService
         var inbounds = root?["inbounds"]?.AsArray();
         if (inbounds == null) return;
 
+        var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
+        string displayServer = !string.IsNullOrWhiteSpace(profile?.ConnectionNode) ? profile.ConnectionNode.Trim() : serverIp;
+
         bool hasReality = false, hasHy2 = false, hasXHttp = false;
         foreach (var inboundNode in inbounds) {
             var type = inboundNode?["type"]?.ToString();
@@ -38,15 +41,14 @@ public partial class SingBoxUserManagerService
                 foreach (var u in dbUsers.Where(u => u.IsActive && ((!isQuic && u.IsVlessEnabled) || (isQuic && u.IsTrustTunnelEnabled))))
                     usersArray.Add(isQuic ? new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid } : new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid, ["flow"] = "xtls-rprx-vision" });
                 inbound["users"] = usersArray;
-                UpdateVlessLinks(inbound, dbUsers, serverIp, isQuic);
-            } else if (type == "hysteria2") UpdateHysteria2Links(inbound, dbUsers, serverIp);
+                UpdateVlessLinks(inbound, dbUsers, displayServer, serverIp, isQuic);
+            } else if (type == "hysteria2") UpdateHysteria2Links(inbound, dbUsers, displayServer);
         }
 
         if (!hasReality) foreach (var u in dbUsers) u.VlessLink = "VLESS не установлен!";
         if (!hasHy2) foreach (var u in dbUsers) u.Hysteria2Link = "Hysteria 2 не установлен!";
 
         // ИСПРАВЛЕНИЕ: Не затираем TrustTunnelLink, если он установлен как отдельный протокол
-        var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
         bool hasAnyTrustTunnel = hasXHttp || (profile?.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel") ?? false);
         
         if (!hasAnyTrustTunnel) 
@@ -58,9 +60,9 @@ public partial class SingBoxUserManagerService
         await _dbContext.SaveChangesAsync();
     }
 
-    private void UpdateVlessLinks(JsonObject inbound, List<VpnClient> dbUsers, string serverIp, bool isQuic)
+    private void UpdateVlessLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer, string serverIp, bool isQuic)
     {
-        string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
         string sni = inbound["tls"]?["server_name"]?.ToString() ?? "google.com";
         int port = (int?)inbound["listen_port"] ?? (isQuic ? 4433 : 443);
 
@@ -85,9 +87,9 @@ public partial class SingBoxUserManagerService
         }
     }
 
-    private void UpdateHysteria2Links(JsonObject inbound, List<VpnClient> dbUsers, string serverIp)
+    private void UpdateHysteria2Links(JsonObject inbound, List<VpnClient> dbUsers, string displayServer)
     {
-        string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
         int port = (int?)inbound["listen_port"] ?? 8443;
         
         // ИСПРАВЛЕНИЕ: Fallback для SNI должен быть bing.com, как в генераторе сертификатов Hysteria2Builder.cs

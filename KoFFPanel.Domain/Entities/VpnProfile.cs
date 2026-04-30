@@ -23,6 +23,9 @@ public class VpnProfile
     // ИСПРАВЛЕНИЕ: Кастомный домен для подписки (например, https://link.partherhr.ru)
     public string? CustomDomain { get; set; }
 
+    // ИСПРАВЛЕНИЕ: Маскировочный домен узла для клиентских подключений (например, node.partherhr.ru)
+    public string? ConnectionNode { get; set; }
+
     // === LEGACY DATA (For migration only) ===
     public int VpnPort { get; set; } = 443;
     public string Uuid { get; set; } = "";

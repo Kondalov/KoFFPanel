@@ -67,7 +67,9 @@ public partial class CabinetViewModel
                 var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                 var updatedUsers = freshContext.Clients.AsNoTracking().Where(c => c.ServerIp == ip).ToList();
 
-                foreach (var client in Clients)
+                // ИСПРАВЛЕНИЕ: Итерируемся по свежим данным из БД (updatedUsers), а не по старым из памяти (Clients),
+                // чтобы на сервер подписок отправлялись актуальные ссылки с правильным маскировочным доменом.
+                foreach (var client in updatedUsers)
                 {
                     var links = new List<string>();
                     if (client.IsTrustTunnelEnabled && !string.IsNullOrEmpty(client.TrustTunnelLink) && client.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TrustTunnelLink);

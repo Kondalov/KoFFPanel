@@ -14,6 +14,9 @@ public class SingBoxInstallResult
 
     // ИСПРАВЛЕНИЕ: Поддержка кастомного домена
     public string? CustomDomain { get; set; }
+    
+    // ИСПРАВЛЕНИЕ: Поддержка кастомного узла для подключения
+    public string? ConnectionNode { get; set; }
 
     public string HttpLink
     {
@@ -29,6 +32,8 @@ public class SingBoxInstallResult
         }
     }
 
-    public string VlessLink => $"vless://{Uuid}@{IpAddress}:{Port}?type=tcp&security=reality&pbk={PublicKey}&fp=chrome&sni={Sni}&sid={ShortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#SingBox_{IpAddress}";
-    public string ClientJson => SingBoxRealityConfigTemplate.GenerateClientConfig(IpAddress, Port, Uuid, Sni, PublicKey, ShortId);
+    public string DisplayServer => !string.IsNullOrWhiteSpace(ConnectionNode) ? ConnectionNode.Trim() : IpAddress;
+
+    public string VlessLink => $"vless://{Uuid}@{DisplayServer}:{Port}?type=tcp&security=reality&pbk={PublicKey}&fp=chrome&sni={Sni}&sid={ShortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#SingBox_{IpAddress}";
+    public string ClientJson => SingBoxRealityConfigTemplate.GenerateClientConfig(DisplayServer, Port, Uuid, Sni, PublicKey, ShortId);
 }

@@ -18,7 +18,8 @@ public class XrayInstallStrategy : ICoreInstallStrategy
         string existingPrivKey = "",
         string existingPubKey = "",
         string existingShortId = "",
-        string customDomain = "")
+        string customDomain = "",
+        string connectionNode = "")
     {
         try
         {

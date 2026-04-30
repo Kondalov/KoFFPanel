@@ -101,10 +101,10 @@ public partial class XrayUserManagerService
         }
     }
 
-    private async Task UpdateXrayLinksAsync(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string serverIp, ISshService ssh, bool isQuic)
+    private async Task UpdateXrayLinksAsync(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string displayServer, ISshService ssh, bool isQuic)
     {
         int port = (int?)inbound["port"] ?? (isQuic ? 4433 : 443);
-        string safeIp = serverIp.Contains(':') && !serverIp.StartsWith('[') ? $"[{serverIp}]" : serverIp;
+        string safeIp = displayServer.Contains(':') && !displayServer.StartsWith('[') ? $"[{displayServer}]" : displayServer;
 
         if (!isQuic)
         {
