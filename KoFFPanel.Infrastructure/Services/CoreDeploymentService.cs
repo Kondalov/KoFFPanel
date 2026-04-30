@@ -15,18 +15,20 @@ public partial class CoreDeploymentService : ICoreDeploymentService
 {
     private readonly IAppLogger _logger;
     private readonly IProfileRepository _profileRepository;
+    private readonly ISubscriptionService _subscriptionService;
 
-    public CoreDeploymentService(IAppLogger logger, IProfileRepository profileRepository)
+    public CoreDeploymentService(IAppLogger logger, IProfileRepository profileRepository, ISubscriptionService subscriptionService)
     {
         _logger = logger;
         _profileRepository = profileRepository;
+        _subscriptionService = subscriptionService;
     }
 
     public async Task<(bool IsSuccess, string Message)> RunPreFlightChecksAsync(ISshService ssh)
     {
         if (!ssh.IsConnected) return (false, "Нет SSH подключения");
 
-        // === ИСПРАВЛЕНИЕ: Синхронизация времени (КРИТИЧНО ДЛЯ REALITY) и проверка прав ===
+        // === ИСПРАВЛЕНИЕ: Синхронизация времени и установка утилит для очистки портов ===
         string checkScript = @"
 if [ ""$EUID"" -ne 0 ]; then 
     if ! command -v sudo >/dev/null 2>&1; then 
@@ -36,14 +38,16 @@ if [ ""$EUID"" -ne 0 ]; then
         echo 'ERROR|Пользователь не состоит в группе sudo или wheel. Нет прав для установки.'; exit 0; 
     fi
 fi
-if ! command -v systemctl >/dev/null 2>&1; then echo 'ERROR|Сервер не поддерживает systemd (требуется для служб).'; exit 0; fi
-if ! command -v curl >/dev/null 2>&1; then echo 'ERROR|Пакет curl не установлен.'; exit 0; fi
+if ! command -v systemctl >/dev/null 2>&1; then echo 'ERROR|Сервер не поддерживает systemd.'; exit 0; fi
 
-# ЗАЩИТА ОТ ДУРАКА: Синхронизация времени. Рассинхрон > 2 минут вызывает глухой Тайм-аут в XTLS-Reality!
 SUDO_CMD=""""
 if [ ""$EUID"" -ne 0 ]; then SUDO_CMD=""sudo""; fi
+
+# Установка необходимых утилит (psmisc для fuser, lsof для очистки портов)
+$SUDO_CMD apt-get update -q && $SUDO_CMD DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget unzip jq psmisc lsof chrony tzdata >/dev/null 2>&1 || true
+
+# Синхронизация времени
 $SUDO_CMD timedatectl set-ntp true 2>/dev/null || true
-$SUDO_CMD apt-get update -q && $SUDO_CMD DEBIAN_FRONTEND=noninteractive apt-get install -y chrony tzdata >/dev/null 2>&1 || true
 $SUDO_CMD systemctl restart chrony 2>/dev/null || true
 
 echo 'READY|Сервер готов к установке.'
@@ -87,15 +91,37 @@ echo 'READY|Сервер готов к установке.'
 
             string coreName = coreType.ToLower();
 
-            await LogStep("[1/7] Подготовка файловой системы и остановка служб...");
+            await LogStep("[1/7] Подготовка файловой системы и остановка служб (Smart Cleanup)...");
+            _logger.Log("DEPLOY-DEBUG", $"Текущий домен подписки: {(string.IsNullOrEmpty(profile.CustomDomain) ? "НЕ ЗАДАН (будет HTTP)" : profile.CustomDomain)}");
+
             if (coreName == "trusttunnel")
             {
-                await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl stop trusttunnel 2>/dev/null; {sudoPrefix}systemctl disable trusttunnel 2>/dev/null; {sudoPrefix}killall -9 trusttunnel trusttunnel_endpoint 2>/dev/null; {sudoPrefix}rm -rf /etc/trusttunnel /opt/trusttunnel /opt/trusttunnel2; {sudoPrefix}mkdir -p /opt/trusttunnel2");
+                await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl stop trusttunnel 2>/dev/null; {sudoPrefix}systemctl disable trusttunnel 2>/dev/null; {sudoPrefix}pkill -9 trusttunnel 2>/dev/null; {sudoPrefix}pkill -9 trusttunnel_endpoint 2>/dev/null; {sudoPrefix}rm -rf /etc/trusttunnel /opt/trusttunnel /opt/trusttunnel2; {sudoPrefix}mkdir -p /opt/trusttunnel2");
                 profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() == "trusttunnel");
             }
             else
             {
-                await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl stop sing-box xray 2>/dev/null; {sudoPrefix}systemctl disable sing-box xray 2>/dev/null; {sudoPrefix}killall -9 sing-box xray 2>/dev/null; {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray; {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray");
+                // ИСПРАВЛЕНИЕ: Максимально агрессивная очистка. Останавливаем, отключаем, убиваем процессы, ЧИСТИМ DOCKER и чистим порты.
+                string cleanupCmd = $@"
+                    {sudoPrefix}systemctl stop sing-box xray 2>/dev/null || true
+                    {sudoPrefix}systemctl disable sing-box xray 2>/dev/null || true
+                    {sudoPrefix}pkill -9 sing-box 2>/dev/null || true
+                    {sudoPrefix}pkill -9 xray 2>/dev/null || true
+                    
+                    # ЗАЩИТА ОТ ДУРАКА: Если ядро запущено в Docker, оно тоже может занимать порты
+                    if command -v docker >/dev/null 2>&1; then
+                        {sudoPrefix}docker ps -q --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
+                        {sudoPrefix}docker ps -aq --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker rm 2>/dev/null || true
+                        # Также убиваем контейнеры, слушающие порт 443 напрямую
+                        {sudoPrefix}docker ps -q | xargs -i {sudoPrefix}docker inspect -f '{{{{.Id}}}} {{{{.HostConfig.PortBindings}}}}' {{}} | grep ':443' | awk '{{print $1}}' | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
+                    fi
+
+                    {sudoPrefix}fuser -k -9 443/tcp 443/udp 8080/tcp 2>/dev/null || true
+                    {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray
+                    {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray
+                    sleep 1
+                ";
+                await ssh.ExecuteCommandAsync(cleanupCmd);
 
                 if (coreName == "xray")
                 {
@@ -160,18 +186,21 @@ echo 'READY|Сервер готов к установке.'
             if (coreType.ToLower() == "trusttunnel") await DeployTrustTunnelConfigAsync(ssh, profile, sudoPrefix, protocols);
             else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
 
-            await LogStep("[6/7] Сохранение состояния в базу данных...");
+            await LogStep("[6/7] Настройка микросервиса подписок (HTTPS Ready)...");
+            await _subscriptionService.InitializeServerAsync(ssh);
             _profileRepository.UpdateProfile(profile);
 
             await LogStep("[7/7] Запуск службы и проверка статуса...");
 
-            // ИСПРАВЛЕНИЕ: Жестко освобождаем порты перед запуском, так как зависшие UDP сокеты от старых процессов ядра часто вызывают 'bind: address already in use'
+            // ИСПРАВЛЕНИЕ: Жестко освобождаем порты перед запуском
             foreach (var inbound in profile.Inbounds)
             {
                 await LogStep($"Очистка возможных зависших процессов на порту {inbound.Port}...");
                 string killCmd = $@"
-                    if command -v fuser >/dev/null 2>&1; then {sudoPrefix}fuser -k -9 {inbound.Port}/tcp 2>/dev/null || true; {sudoPrefix}fuser -k -9 {inbound.Port}/udp 2>/dev/null || true; fi
-                    if command -v lsof >/dev/null 2>&1; then PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true); if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi; fi
+                    {sudoPrefix}fuser -k -9 {inbound.Port}/tcp 2>/dev/null || true
+                    {sudoPrefix}fuser -k -9 {inbound.Port}/udp 2>/dev/null || true
+                    PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true)
+                    if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi
                 ";
                 await ssh.ExecuteCommandAsync(killCmd);
             }

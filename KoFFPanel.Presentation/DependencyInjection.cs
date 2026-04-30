@@ -37,7 +37,7 @@ public static class DependencyInjection
         services.AddSingleton<IDatabaseBackupService>(sp => sp.GetRequiredService<DatabaseBackupService>());
         services.AddHostedService(sp => sp.GetRequiredService<DatabaseBackupService>());
 
-        services.AddTransient<ISubscriptionService, SubscriptionService>();
+        services.AddSingleton<ISubscriptionService, SubscriptionService>();
 
         services.AddHttpClient("BotApiClient", client =>
         {

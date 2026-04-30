@@ -10,7 +10,7 @@ class Program {
         }
         string command = string.Join(" ", args);
         var pk = new PrivateKeyFile(@"C:\Users\Nikolay\.ssh\id_ed25519", "01983");
-        using var ssh = new SshClient("103.71.22.166", "root", new[] { pk });
+        using var ssh = new SshClient("185.94.167.194", "root", new[] { pk });
         try {
             ssh.Connect();
             var cmd = ssh.CreateCommand(command);
