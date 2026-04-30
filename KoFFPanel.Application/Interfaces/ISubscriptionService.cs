@@ -11,4 +11,5 @@ public interface ISubscriptionService
     Task<bool> UpdateUserSubscriptionAsync(ISshService ssh, string uuid, IEnumerable<string> links);
     Task<bool> DeleteUserSubscriptionAsync(ISshService ssh, string uuid);
     string GetSubscriptionUrl(string serverIp, string uuid);
+    void SetCustomDomain(string domain);
 }

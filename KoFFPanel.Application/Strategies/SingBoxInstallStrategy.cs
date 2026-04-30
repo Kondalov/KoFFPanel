@@ -17,7 +17,8 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
         string existingUuid = "",
         string existingPrivKey = "",
         string existingPubKey = "",
-        string existingShortId = "")
+        string existingShortId = "",
+        string customDomain = "")
     {
         try
         {
@@ -120,7 +121,8 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
                 ShortId = finalSid,
                 IpAddress = ipAddress,
                 Port = vpnPort,
-                Sni = sni
+                Sni = sni,
+                CustomDomain = customDomain
             };
 
             string configJson = SingBoxRealityConfigTemplate.GenerateServerConfig(vpnPort, result.Uuid, sni, result.PrivateKey, result.ShortId);

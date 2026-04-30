@@ -17,7 +17,8 @@ public class XrayInstallStrategy : ICoreInstallStrategy
         string existingUuid = "",
         string existingPrivKey = "",
         string existingPubKey = "",
-        string existingShortId = "")
+        string existingShortId = "",
+        string customDomain = "")
     {
         try
         {
@@ -81,7 +82,8 @@ public class XrayInstallStrategy : ICoreInstallStrategy
                 ShortId = finalSid,
                 IpAddress = ipAddress,
                 Port = vpnPort,
-                Sni = sni
+                Sni = sni,
+                CustomDomain = customDomain
             };
 
             string configJson = XrayRealityConfigTemplate.Generate("IPv4", vpnPort, result.Uuid, sni, result.PrivateKey, result.ShortId);

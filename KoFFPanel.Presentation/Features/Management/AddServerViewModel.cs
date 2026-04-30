@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
@@ -27,6 +27,7 @@ public partial class AddServerViewModel : ObservableObject
     [ObservableProperty] private string _username = "root";
     [ObservableProperty] private string _password = "";
     [ObservableProperty] private string _keyPath = "";
+    [ObservableProperty] private string _customDomain = "";
 
     [ObservableProperty] private string _statusMessage = "";
 
@@ -55,6 +56,7 @@ public partial class AddServerViewModel : ObservableObject
         Username = profile.Username;
         Password = profile.Password;
         KeyPath = profile.KeyPath;
+        CustomDomain = profile.CustomDomain ?? "";
     }
 
     [RelayCommand]
@@ -132,9 +134,8 @@ public partial class AddServerViewModel : ObservableObject
             Port = Port <= 0 ? 22 : Port,
             Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username,
             Password = Password ?? string.Empty,
-            KeyPath = KeyPath ?? string.Empty
-            // Примечание: Для связи страны с профилем, если в VpnProfile нет поля Country, оно читается напрямую из карточки, 
-            // либо ты можешь добавить public string CountryCode { get; set; } в VpnProfile.
+            KeyPath = KeyPath ?? string.Empty,
+            CustomDomain = string.IsNullOrWhiteSpace(CustomDomain) ? null : CustomDomain.Trim()
         };
 
         if (IsEditMode)

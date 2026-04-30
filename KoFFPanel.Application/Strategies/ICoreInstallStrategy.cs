@@ -13,5 +13,6 @@ public interface ICoreInstallStrategy
         string existingUuid = "",
         string existingPrivKey = "",
         string existingPubKey = "",
-        string existingShortId = "");
-}
+        string existingShortId = "",
+        string customDomain = "");
+        }

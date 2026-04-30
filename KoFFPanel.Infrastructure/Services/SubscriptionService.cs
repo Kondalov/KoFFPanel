@@ -9,10 +9,26 @@ namespace KoFFPanel.Infrastructure.Services;
 public class SubscriptionService : ISubscriptionService
 {
     private readonly IAppLogger _logger;
+    private string? _customDomain;
 
     public SubscriptionService(IAppLogger logger)
     {
         _logger = logger;
+    }
+
+    public void SetCustomDomain(string domain)
+    {
+        if (string.IsNullOrWhiteSpace(domain))
+        {
+            _customDomain = null;
+            return;
+        }
+
+        _customDomain = domain.Trim().TrimEnd('/');
+        if (!_customDomain.StartsWith("http"))
+        {
+            _customDomain = "https://" + _customDomain;
+        }
     }
 
     public async Task<bool> InitializeServerAsync(ISshService ssh)
@@ -20,47 +36,61 @@ public class SubscriptionService : ISubscriptionService
         if (!ssh.IsConnected) return false;
         try
         {
-            _logger.Log("SUB", "Настройка кастомного Python-микросервиса подписок...");
+            _logger.Log("SUB", "Настройка кастомного Python-микросервиса подписок (HTTPS Ready)...");
             string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
 
             await ssh.ExecuteCommandAsync($"{s} fuser -k 8080/tcp 2>/dev/null || true");
             await ssh.ExecuteCommandAsync($"if command -v ufw >/dev/null 2>&1; then {s} ufw allow 8080/tcp || true; fi");
             await ssh.ExecuteCommandAsync($"{s} iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT || true");
-            await ssh.ExecuteCommandAsync($"{s} sh -c 'iptables-save > /etc/iptables/rules.v4' 2>/dev/null || true");
 
             await ssh.ExecuteCommandAsync($"{s} mkdir -p /var/www/xray-sub");
             await ssh.ExecuteCommandAsync($"{s} chown -R $USER:$USER /var/www/xray-sub");
             await ssh.ExecuteCommandAsync($"{s} chmod -R 755 /var/www/xray-sub");
 
-            // ИСПРАВЛЕНИЕ: Кастомный BaseHTTPRequestHandler. Успешно отдает файлы без расширений (UUID).
+            // УЛУЧШЕННЫЙ СКРИПТ: Добавлена обработка ошибок и логирование
             string pyScript = @"
-import http.server, socketserver, os
+import http.server, socketserver, os, sys
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        p = self.path.strip('/')
-        if not p or '/' in p:
-            self.send_response(404)
-            self.end_headers()
-            return
-        fpath = '/var/www/xray-sub/' + p
-        if os.path.isfile(fpath):
-            with open(fpath, 'rb') as f:
-                d = f.read()
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/plain; charset=utf-8')
-            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-            self.send_header('profile-update-interval', '24')
-            self.send_header('profile-title', 'KoFFPanel')
-            self.end_headers()
-            self.wfile.write(d)
-        else:
-            self.send_response(404)
-            self.end_headers()
+        try:
+            p = self.path.strip('/')
+            if not p or '/' in p:
+                self.send_error(404, 'Not Found')
+                return
+            
+            fpath = os.path.join('/var/www/xray-sub/', p)
+            if os.path.isfile(fpath):
+                with open(fpath, 'rb') as f:
+                    content = f.read()
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.send_header('Content-Length', str(len(content)))
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                self.send_header('profile-update-interval', '24')
+                self.send_header('profile-title', 'KoFFPanel')
+                self.send_header('subscription-userinfo', 'upload=0; download=0; total=0; expire=0')
+                self.end_headers()
+                self.wfile.write(content)
+            else:
+                self.send_error(404, 'File Not Found')
+        except Exception as e:
+            print(f'Error handling request: {e}')
+            self.send_error(500, 'Internal Server Error')
+
+    def log_message(self, format, *args):
+        # Тихий режим для уменьшения логов в системном журнале
+        pass
 
 socketserver.TCPServer.allow_reuse_address = True
-with socketserver.ThreadingTCPServer(('', 8080), H) as d:
-    d.serve_forever()
+try:
+    with socketserver.ThreadingTCPServer(('', 8080), H) as d:
+        print('Starting subscription server on port 8080...')
+        d.serve_forever()
+except Exception as e:
+    print(f'Fatal server error: {e}')
+    sys.exit(1)
 ".Replace("\r", "");
 
             string b64Py = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(pyScript));
@@ -99,7 +129,6 @@ WantedBy=multi-user.target";
         {
             string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
 
-            // ИСПРАВЛЕНИЕ ЛОГИКИ: Жесткая проверка статуса!
             string checkSvc = (await ssh.ExecuteCommandAsync("systemctl is-active koff-sub")).Trim();
             if (checkSvc != "active")
             {
@@ -113,8 +142,7 @@ WantedBy=multi-user.target";
                 : string.Join("\n", validLinks) + "\n";
 
             string finalBase64Payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(combinedLinks));
-            _logger.Log("DEEP-TRACE", $"Base64 Payload сгенерирован. Длина: {finalBase64Payload.Length}");
-
+            
             string tempPath = $"/var/www/xray-sub/{uuid}.tmp";
             string finalPath = $"/var/www/xray-sub/{uuid}";
 
@@ -145,6 +173,10 @@ WantedBy=multi-user.target";
 
     public string GetSubscriptionUrl(string serverIp, string uuid)
     {
+        if (!string.IsNullOrEmpty(_customDomain))
+        {
+            return $"{_customDomain}/{uuid}";
+        }
         return $"http://{serverIp}:8080/{uuid}";
     }
 }

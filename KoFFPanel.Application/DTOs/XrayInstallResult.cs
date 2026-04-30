@@ -10,8 +10,23 @@ public class XrayInstallResult
     public int Port { get; set; }
     public string Sni { get; set; } = "";
 
-    // ССЫЛКА ПОДПИСКИ (Использует динамический порт)
-    public string HttpLink => $"http://{IpAddress}:{Port}/{Uuid}";
+    // ИСПРАВЛЕНИЕ: Поддержка кастомного домена
+    public string? CustomDomain { get; set; }
+
+    // ССЫЛКА ПОДПИСКИ
+    public string HttpLink
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(CustomDomain))
+            {
+                string domain = CustomDomain.Trim().TrimEnd('/');
+                if (!domain.StartsWith("http")) domain = "https://" + domain;
+                return $"{domain}/{Uuid}";
+            }
+            return $"http://{IpAddress}:8080/{Uuid}";
+        }
+    }
 
     // VLESS ССЫЛКА
     public string VlessLink => $"vless://{Uuid}@{IpAddress}:{Port}?type=tcp&security=reality&pbk={PublicKey}&fp=chrome&sni={Sni}&sid={ShortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel_{IpAddress}";
