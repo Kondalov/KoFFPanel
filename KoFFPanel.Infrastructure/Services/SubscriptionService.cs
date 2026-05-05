@@ -39,9 +39,13 @@ public class SubscriptionService : ISubscriptionService
             _logger.Log("SUB", "Настройка кастомного Python-микросервиса подписок (HTTPS Ready)...");
             string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
 
+            // Чистим порты перед запуском
             await ssh.ExecuteCommandAsync($"{s} fuser -k 8080/tcp 2>/dev/null || true");
-            await ssh.ExecuteCommandAsync($"if command -v ufw >/dev/null 2>&1; then {s} ufw allow 8080/tcp || true; fi");
+            
+            // Настройка Firewall
+            await ssh.ExecuteCommandAsync($"if command -v ufw >/dev/null 2>&1; then {s} ufw allow 8080/tcp || true; {s} ufw allow 80/tcp || true; fi");
             await ssh.ExecuteCommandAsync($"{s} iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT || true");
+            await ssh.ExecuteCommandAsync($"{s} iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT || true");
 
             await ssh.ExecuteCommandAsync($"{s} mkdir -p /var/www/xray-sub");
             await ssh.ExecuteCommandAsync($"{s} chown -R $USER:$USER /var/www/xray-sub");
@@ -121,6 +125,60 @@ WantedBy=multi-user.target";
             await ssh.ExecuteCommandAsync($"echo '{b64Svc}' | base64 -d | {s} tee /etc/systemd/system/koff-sub.service >/dev/null");
 
             await ssh.ExecuteCommandAsync($"{s} systemctl daemon-reload && {s} systemctl enable koff-sub --now && {s} systemctl restart koff-sub");
+
+            // === УМНАЯ НАСТРОЙКА REVERSE PROXY (Cloudflare Compatible) ===
+            if (!string.IsNullOrEmpty(_customDomain))
+            {
+                try
+                {
+                    var uri = new Uri(_customDomain);
+                    string host = uri.Host;
+                    _logger.Log("SUB", $"Настройка Nginx Proxy для домена {host}...");
+
+                    string nginxProxy = $@"server {{
+    listen 80;
+    server_name {host};
+    location / {{
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }}
+}}";
+                    string b64Nginx = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(nginxProxy));
+                    
+                    // Скрипт автоматизации Nginx: проверка наличия, исправление конфига hash_bucket, удаление старых конфигов
+                    string nginxSetupCmd = $@"
+if command -v nginx >/dev/null 2>&1; then
+    # Исправление лимитов имен доменов
+    if ! grep -q 'server_names_hash_bucket_size' /etc/nginx/nginx.conf; then
+        {s} sed -i '/http {{/a \        server_names_hash_bucket_size 64;' /etc/nginx/nginx.conf
+    else
+        {s} sed -i 's/#\s*server_names_hash_bucket_size.*/server_names_hash_bucket_size 64;/g' /etc/nginx/nginx.conf
+    fi
+
+    # Удаление старых конфликтующих конфигов (защита от мусора)
+    {s} rm -f /etc/nginx/sites-enabled/xray_sub /etc/nginx/sites-available/xray_sub
+
+    # Установка нового прокси-конфига
+    echo '{b64Nginx}' | base64 -d | {s} tee /etc/nginx/sites-available/koff-sub-proxy >/dev/null
+    {s} ln -sf /etc/nginx/sites-available/koff-sub-proxy /etc/nginx/sites-enabled/
+    
+    # Проверка и перезагрузка
+    if {s} nginx -t; then
+        {s} systemctl restart nginx
+    else
+        _logger.Log('SUB-WARN', 'Nginx config test failed, skip restart');
+    fi
+fi";
+                    await ssh.ExecuteCommandAsync(nginxSetupCmd);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log("SUB-WARN", $"Не удалось настроить Nginx Proxy: {ex.Message}");
+                }
+            }
 
             return true;
         }
