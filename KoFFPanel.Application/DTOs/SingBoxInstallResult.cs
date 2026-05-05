@@ -12,7 +12,7 @@ public class SingBoxInstallResult
     public int Port { get; set; }
     public string Sni { get; set; } = "";
 
-    public string HttpLink => $"http://{IpAddress}:8080/{Uuid}";
+    public string HttpLink => $"https://link.partherhr.ru/{Uuid}";
     public string VlessLink => $"vless://{Uuid}@{IpAddress}:{Port}?type=tcp&security=reality&pbk={PublicKey}&fp=chrome&sni={Sni}&sid={ShortId}&spx=%2F&flow=xtls-rprx-vision#SingBox_{IpAddress}";
     public string ClientJson => SingBoxRealityConfigTemplate.GenerateClientConfig(IpAddress, Port, Uuid, Sni, PublicKey, ShortId);
 }

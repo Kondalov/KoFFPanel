@@ -11,7 +11,7 @@ public class XrayInstallResult
     public string Sni { get; set; } = "";
 
     // ССЫЛКА ПОДПИСКИ (Использует динамический порт)
-    public string HttpLink => $"http://{IpAddress}:{Port}/{Uuid}";
+    public string HttpLink => $"https://link.partherhr.ru/{Uuid}";
 
     // VLESS ССЫЛКА
     public string VlessLink => $"vless://{Uuid}@{IpAddress}:{Port}?type=tcp&security=reality&pbk={PublicKey}&fp=chrome&sni={Sni}&sid={ShortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel_{IpAddress}";

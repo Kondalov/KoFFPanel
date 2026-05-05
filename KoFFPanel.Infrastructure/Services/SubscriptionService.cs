@@ -145,6 +145,6 @@ WantedBy=multi-user.target";
 
     public string GetSubscriptionUrl(string serverIp, string uuid)
     {
-        return $"http://{serverIp}:8080/{uuid}";
+        return $"https://link.partherhr.ru/{uuid}";
     }
 }

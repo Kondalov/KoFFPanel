@@ -86,9 +86,9 @@ public static class DependencyInjection
         services.AddTransient<InstallationSuccessWindow>();
 
         // 5. Pages / Components
-        services.AddTransient<DashboardView>();
-        services.AddTransient<ClientsView>();
-        services.AddTransient<BotView>();
+        services.AddSingleton<DashboardView>();
+        services.AddSingleton<ClientsView>();
+        services.AddSingleton<BotView>();
 
         return services;
     }
