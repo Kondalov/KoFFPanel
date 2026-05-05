@@ -38,6 +38,7 @@ public partial class CabinetViewModel
         }
 
         string serviceName = isSingBox ? "sing-box" : (isTrustTunnel ? "trusttunnel" : "xray");
+        if (isSingBox) serviceName = "sing-box";
 
         _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ядро: {displayCoreName.ToUpper()}");
 

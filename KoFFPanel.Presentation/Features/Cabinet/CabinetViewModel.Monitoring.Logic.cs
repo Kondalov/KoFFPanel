@@ -63,7 +63,7 @@ public partial class CabinetViewModel
     private async Task<string> GetAccessLogsAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel)
     {
         return await localSsh.ExecuteCommandAsync(
-            isSingBox ? "journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'" :
+            isSingBox ? "tail -n 5 /var/log/sing-box/access.log 2>/dev/null || journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'" :
             isTrustTunnel ? "journalctl -u trusttunnel -n 5 --no-pager || echo 'Нет логов'" :
             "tail -n 5 /var/log/xray/access.log 2>/dev/null || echo 'Нет логов'"
         );
@@ -72,7 +72,7 @@ public partial class CabinetViewModel
     private async Task<string> GetParserTestLogsAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel)
     {
         return await localSsh.ExecuteCommandAsync(
-            isSingBox ? "journalctl -u sing-box -n 50 --no-pager | grep -iE 'inbound connection|sniff' | tail -n 3" :
+            isSingBox ? "tail -n 50 /var/log/sing-box/access.log 2>/dev/null | grep -iE 'inbound connection|sniff' | tail -n 3" :
             isTrustTunnel ? "journalctl -u trusttunnel -n 50 --no-pager | tail -n 3" :
             "tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3"
         );
@@ -80,7 +80,7 @@ public partial class CabinetViewModel
 
     private async Task<HashSet<string>> GetActiveUsernamesAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel)
     {
-        string cmd = isSingBox ? "journalctl -u sing-box --since \"1 min ago\" --no-pager | grep 'inbound connection'" :
+        string cmd = isSingBox ? "tail -n 100 /var/log/sing-box/access.log 2>/dev/null | grep 'inbound connection'" :
                      isTrustTunnel ? "journalctl -u trusttunnel --since \"1 min ago\" --no-pager" :
                      "tail -n 200 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
 

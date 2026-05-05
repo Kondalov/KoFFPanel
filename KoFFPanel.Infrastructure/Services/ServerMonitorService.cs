@@ -18,6 +18,7 @@ public class ServerMonitorService : IServerMonitorService
         if (!sshService.IsConnected) return new ServerResources(0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
 
         string cmdText = $@"
+            export LC_ALL=C
             export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin
             CORE=""{coreType.ToLower()}""
 
