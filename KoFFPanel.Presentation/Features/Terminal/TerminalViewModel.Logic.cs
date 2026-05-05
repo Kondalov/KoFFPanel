@@ -136,12 +136,12 @@ public partial class TerminalViewModel
                 {
                     string output = Encoding.UTF8.GetString(buffer, 0, bytesRead);
 
-                    System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    _ = System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                     {
                         if (_isWebViewReady)
                         {
-                            string safeOutput = JsonSerializer.Serialize(output);
-                            _webView.ExecuteScriptAsync($"term.write({safeOutput});");
+                            string safeOutput = System.Text.Json.JsonSerializer.Serialize(output);
+                            _webView?.ExecuteScriptAsync($"term.write({safeOutput});");
                         }
                         else
                         {

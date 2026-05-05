@@ -8,8 +8,11 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Management;
 
+[SupportedOSPlatform("windows")]
 public partial class AddServerViewModel : ObservableObject
 {
     private readonly IProfileRepository _profileRepository;
@@ -48,14 +51,14 @@ public partial class AddServerViewModel : ObservableObject
     {
         IsEditMode = true;
         WindowTitle = "Редактирование сервера";
-        _editingServerId = profile.Id;
+        _editingServerId = profile.Id ?? string.Empty;
 
-        Name = profile.Name;
-        IpAddress = profile.IpAddress;
+        Name = profile.Name ?? "Новый сервер";
+        IpAddress = profile.IpAddress ?? string.Empty;
         Port = profile.Port;
-        Username = profile.Username;
-        Password = profile.Password;
-        KeyPath = profile.KeyPath;
+        Username = profile.Username ?? "root";
+        Password = profile.Password ?? string.Empty;
+        KeyPath = profile.KeyPath ?? string.Empty;
     }
 
     [RelayCommand]

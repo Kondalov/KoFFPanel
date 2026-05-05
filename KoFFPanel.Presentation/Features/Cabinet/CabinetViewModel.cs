@@ -23,8 +23,11 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Cabinet;
 
+[SupportedOSPlatform("windows")]
 public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeployedMessage>
 {
     private readonly IServerMonitorService _monitorService;
@@ -117,7 +120,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         {
             foreach (VpnClient c in e.NewItems)
             {
-                if (!string.IsNullOrEmpty(c.Email) && _avatarRegistry.TryGetValue(c.Email, out string path))
+                if (!string.IsNullOrEmpty(c.Email) && _avatarRegistry.TryGetValue(c.Email, out string? path) && path != null)
                 {
                     if (File.Exists(path))
                     {
@@ -231,7 +234,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
     private void HandleServerSelection(VpnProfile? value)
     {
-        string? currentConnectionKey = value == null ? null : $"{value.Id}|{value.IpAddress}|{value.Port}|{value.Username}|{value.Password}|{value.KeyPath}|{value.CustomDomain}|{value.CoreType}";
+        string? currentConnectionKey = value == null ? null : $"{value.Id}|{value.IpAddress}|{value.Port}|{value.Username}|{value.Password}|{value.KeyPath ?? ""}|{value.CustomDomain ?? ""}|{value.CoreType}";
 
         if (currentConnectionKey == _lastConnectionKey)
         {

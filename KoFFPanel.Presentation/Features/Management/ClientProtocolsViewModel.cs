@@ -8,8 +8,11 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Management;
 
+[SupportedOSPlatform("windows")]
 public partial class ClientProtocolsViewModel : ObservableObject
 {
     private readonly IProfileRepository _profileRepository;

@@ -17,9 +17,11 @@ using System.Linq;
 using KoFFPanel.Presentation.Features.Bot;
 using KoFFPanel.Presentation.Messages;
 using KoFFPanel.Presentation.Features.Cabinet;
+using System.Runtime.Versioning;
 
 namespace KoFFPanel.Presentation.Features.Bot;
 
+[SupportedOSPlatform("windows")]
 public partial class BotViewModel : ObservableObject
 {
     private readonly IAppLogger _logger;

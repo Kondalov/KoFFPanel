@@ -79,13 +79,14 @@ public partial class XrayUserManagerService
         var blockedUsers = dbUsers.Where(u => u.IsP2PBlocked).Select(u => u.Email).ToList();
         if (blockedUsers.Any())
         {
-            var userNode = JsonValue.Create(blockedUsers);
+            var userArray = new JsonArray();
+            foreach (var email in blockedUsers) userArray.Add(email);
             
             // Правило для протокола BitTorrent
             rules.Add(new JsonObject 
             { 
                 ["type"] = "field", 
-                ["user"] = userNode.DeepClone(), 
+                ["user"] = userArray.DeepClone(), 
                 ["protocol"] = new JsonArray("bittorrent"), 
                 ["outboundTag"] = "block" 
             });
@@ -94,7 +95,7 @@ public partial class XrayUserManagerService
             rules.Add(new JsonObject 
             { 
                 ["type"] = "field", 
-                ["user"] = userNode.DeepClone(), 
+                ["user"] = userArray.DeepClone(), 
                 ["domain"] = new JsonArray("domain:nnmclub.to", "domain:rutracker.org", "domain:rutor.info", "domain:kinozal.tv", "domain:tapochek.net", "keyword:torrent"), 
                 ["outboundTag"] = "block" 
             });

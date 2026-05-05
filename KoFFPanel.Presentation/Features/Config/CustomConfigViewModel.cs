@@ -6,8 +6,11 @@ using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Config;
 
+[SupportedOSPlatform("windows")]
 public partial class CustomConfigViewModel : ObservableObject
 {
     public Action? CloseAction { get; set; }

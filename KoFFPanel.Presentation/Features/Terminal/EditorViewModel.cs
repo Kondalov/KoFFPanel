@@ -7,8 +7,11 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Terminal;
 
+[SupportedOSPlatform("windows")]
 public partial class EditorViewModel : ObservableObject, IDisposable
 {
     private readonly IAppLogger _logger;

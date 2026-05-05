@@ -300,9 +300,9 @@ public partial class CabinetViewModel
 
         bool geoJump = false;
         string curCode = (client.Country?.Length >= 2) ? client.Country.Substring(client.Country.Length - 2) : "";
-        if (!string.IsNullOrEmpty(curCode) && curCode != "??")
+        if (!string.IsNullOrEmpty(curCode))
         {
-            if (_lastKnownCountry.TryGetValue(email, out string lastC) && lastC != curCode && _lastKnownCountryTime.TryGetValue(email, out DateTime lastT) && (DateTime.Now - lastT).TotalHours < 2) geoJump = true;
+            if (_lastKnownCountry.TryGetValue(email, out string? lastC) && lastC != curCode && _lastKnownCountryTime.TryGetValue(email, out DateTime lastT) && (DateTime.Now - lastT).TotalHours < 2) geoJump = true;
             if (!geoJump) { _lastKnownCountry[email] = curCode; _lastKnownCountryTime[email] = DateTime.Now; }
         }
 

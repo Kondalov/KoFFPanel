@@ -6,9 +6,12 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Analytics;
 
 // Умные обертки для интерфейса (DTO -> View)
+[SupportedOSPlatform("windows")]
 public class TrafficItemUI
 {
     public string DateStr { get; set; } = "";
@@ -20,6 +23,7 @@ public class TrafficItemUI
     public string GradientEnd { get; set; } = "";
 }
 
+[SupportedOSPlatform("windows")]
 public class ConnectionItemUI
 {
     public string IpAddress { get; set; } = "";
@@ -28,12 +32,14 @@ public class ConnectionItemUI
     public string LastSeenStr { get; set; } = "";
 }
 
+[SupportedOSPlatform("windows")]
 public class ViolationItemUI
 {
     public string DateStr { get; set; } = "";
     public string ViolationText { get; set; } = "";
 }
 
+[SupportedOSPlatform("windows")]
 public partial class ClientAnalyticsViewModel : ObservableObject
 {
     private readonly IClientAnalyticsService _analyticsService;

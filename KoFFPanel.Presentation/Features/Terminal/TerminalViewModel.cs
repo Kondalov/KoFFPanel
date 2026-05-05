@@ -12,8 +12,11 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Terminal;
 
+[SupportedOSPlatform("windows")]
 public partial class TerminalViewModel : ObservableObject, IDisposable
 {
     private readonly ISshService _sshService;

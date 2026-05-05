@@ -10,11 +10,17 @@ public class XrayInstallResult
     public int Port { get; set; }
     public string Sni { get; set; } = "";
 
-    // ССЫЛКА ПОДПИСКИ (Использует динамический порт)
+    // ССЫЛКА ПОДПИСКИ (Хардкод по требованию клиента)
     public string HttpLink => $"https://link.partherhr.ru/{Uuid}";
 
+    // ИСПРАВЛЕНИЕ: Возвращаем свойства для поддержки кастомных доменов в VLESS и совместимости
+    public string? CustomDomain { get; set; }
+    public string? ConnectionNode { get; set; }
+
+    public string DisplayServer => !string.IsNullOrWhiteSpace(ConnectionNode) ? ConnectionNode.Trim() : IpAddress;
+
     // VLESS ССЫЛКА
-    public string VlessLink => $"vless://{Uuid}@{IpAddress}:{Port}?type=tcp&security=reality&pbk={PublicKey}&fp=chrome&sni={Sni}&sid={ShortId}&spx=%2F&flow=xtls-rprx-vision#KoFFPanel_{IpAddress}";
+    public string VlessLink => $"vless://{Uuid}@{DisplayServer}:{Port}?type=tcp&security=reality&pbk={PublicKey}&fp=chrome&sni={Sni}&sid={ShortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#Xray_{IpAddress}";
 
     // JSON КЛИЕНТА
     public string ClientJson => $$"""
@@ -25,7 +31,7 @@ public class XrayInstallResult
           "settings": {
             "vnext": [
               {
-                "address": "{{IpAddress}}",
+                "address": "{{DisplayServer}}",
                 "port": {{Port}},
                 "users": [{ "id": "{{Uuid}}", "encryption": "none", "flow": "xtls-rprx-vision" }]
               }
