@@ -72,6 +72,12 @@ public partial class AddServerViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void ClearKey()
+    {
+        KeyPath = string.Empty;
+    }
+
+    [RelayCommand]
     private async Task CheckConnectionAsync()
     {
         if (string.IsNullOrWhiteSpace(IpAddress))
@@ -127,6 +133,23 @@ public partial class AddServerViewModel : ObservableObject
         }
 
         string cleanIp = IpAddress.Trim();
+        VpnProfile profileToSave;
+
+        if (IsEditMode)
+        {
+            var existingProfile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.Id == _editingServerId);
+            profileToSave = existingProfile ?? new VpnProfile { Id = _editingServerId };
+            
+            profileToSave.Name = Name;
+            profileToSave.IpAddress = cleanIp;
+            profileToSave.Port = Port <= 0 ? 22 : Port;
+            profileToSave.Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username;
+            profileToSave.Password = Password ?? string.Empty;
+            profileToSave.KeyPath = KeyPath ?? string.Empty;
+            
+            _profileRepository.UpdateProfile(profileToSave);
+        }
+        else
 
         // УМНАЯ ЗАЩИТА ОТ ДУРАКА: Проверка, что CustomDomain действительно ведет на этот IP-адрес
         if (!string.IsNullOrWhiteSpace(CustomDomain))
@@ -159,6 +182,16 @@ public partial class AddServerViewModel : ObservableObject
 
         var profileToSave = new VpnProfile
         {
+            profileToSave = new VpnProfile
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = Name,
+                IpAddress = cleanIp,
+                Port = Port <= 0 ? 22 : Port,
+                Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username,
+                Password = Password ?? string.Empty,
+                KeyPath = KeyPath ?? string.Empty
+            };
             Id = IsEditMode ? _editingServerId : Guid.NewGuid().ToString(),
             Name = Name,
             IpAddress = cleanIp,

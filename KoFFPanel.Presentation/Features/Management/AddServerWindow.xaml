@@ -504,6 +504,8 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <ui:TextBox Grid.Column="0"
                                             Text="{Binding KeyPath, UpdateSourceTrigger=PropertyChanged}"
@@ -513,9 +515,17 @@
                                             BorderBrush="#1AFFFFFF"
                                             Padding="12,8"
                                             FontSize="13"
-                                            IsReadOnly="True" />
+                                            IsReadOnly="False" />
 
                                 <ui:Button Grid.Column="2"
+                                           Command="{Binding ClearKeyCommand}"
+                                           Style="{StaticResource NeonCancelBtnStyle}"
+                                           Padding="12,8">
+                                    <TextBlock Text="✕"
+                                               FontSize="13" />
+                                </ui:Button>
+
+                                <ui:Button Grid.Column="4"
                                            Command="{Binding BrowseKeyCommand}"
                                            Style="{StaticResource NeonBrowseBtnStyle}">
                                     <StackPanel Orientation="Horizontal">

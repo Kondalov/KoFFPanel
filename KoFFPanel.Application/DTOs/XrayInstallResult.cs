@@ -10,6 +10,8 @@ public class XrayInstallResult
     public int Port { get; set; }
     public string Sni { get; set; } = "";
 
+    // ССЫЛКА ПОДПИСКИ (Использует динамический порт)
+    public string HttpLink => $"https://link.partherhr.ru/{Uuid}";
     // ИСПРАВЛЕНИЕ: Поддержка кастомного домена
     public string? CustomDomain { get; set; }
 

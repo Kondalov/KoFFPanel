@@ -18,7 +18,12 @@ namespace KoFFPanel.Presentation.Features.Bot;
 
 public partial class BotViewModel
 {
-    private string GetApiUrl(string endpoint) => $"http://{BotIpAddress}:{BotPort}/api{endpoint}";
+    private string GetApiUrl(string endpoint)
+    {
+        string cleanIp = string.IsNullOrWhiteSpace(BotIpAddress) ? "127.0.0.1" : BotIpAddress.Trim().Replace("http://", "").Replace("https://", "").TrimEnd('/');
+        string cleanPort = string.IsNullOrWhiteSpace(BotPort) ? "5000" : BotPort.Trim();
+        return $"http://{cleanIp}:{cleanPort}/api{endpoint}";
+    }
 
     private HttpClient GetClient()
     {
@@ -34,6 +39,9 @@ public partial class BotViewModel
     {
         try
         {
+            BotIpAddress = string.IsNullOrWhiteSpace(BotIpAddress) ? "127.0.0.1" : BotIpAddress.Trim().Replace("http://", "").Replace("https://", "").TrimEnd('/');
+            BotPort = string.IsNullOrWhiteSpace(BotPort) ? "5000" : BotPort.Trim();
+
             string encryptedSecret = "";
             if (!string.IsNullOrWhiteSpace(ApiSecret))
             {
@@ -99,10 +107,9 @@ public partial class BotViewModel
             request.Headers.Add("X-API-KEY", ApiSecret);
             var response = await GetClient().SendAsync(request);
 
-            string rawPendingContent = await response.Content.ReadAsStringAsync();
-
             if (response.IsSuccessStatusCode)
             {
+                string rawPendingContent = await response.Content.ReadAsStringAsync();
                 try
                 {
                     var pendingUsers = JsonSerializer.Deserialize<List<PendingUserDto>>(rawPendingContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -113,26 +120,29 @@ public partial class BotViewModel
                     _logger.Log("API-DIAGNOSTIC", $"[КРИТИЧЕСКАЯ ОШИБКА ПАРСИНГА] {jsonEx.Message}");
                 }
 
-                var poolReq = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/sync/pool/count"));
-                poolReq.Headers.Add("X-API-KEY", ApiSecret);
-                var poolRes = await GetClient().SendAsync(poolReq);
-
-                string rawPoolContent = await poolRes.Content.ReadAsStringAsync();
-
-                if (poolRes.IsSuccessStatusCode)
-                {
-                    try
-                    {
-                        var poolData = JsonSerializer.Deserialize<ReserveCountDto>(rawPoolContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                        ReserveKeysCount = poolData?.ReserveCount ?? 0;
-                    }
-                    catch { }
-                }
-
                 if (!IsBotOnline || BotStatus != "ОНЛАЙН")
                 {
                     IsBotOnline = true;
                     BotStatus = "ОНЛАЙН";
+                }
+
+                // ИСПРАВЛЕНИЕ: Выносим второй запрос в отдельный try-catch, чтобы он не валил статус бота в ОФФЛАЙН
+                try
+                {
+                    var poolReq = new HttpRequestMessage(HttpMethod.Get, GetApiUrl("/sync/pool/count"));
+                    poolReq.Headers.Add("X-API-KEY", ApiSecret);
+                    var poolRes = await GetClient().SendAsync(poolReq);
+
+                    if (poolRes.IsSuccessStatusCode)
+                    {
+                        string rawPoolContent = await poolRes.Content.ReadAsStringAsync();
+                        var poolData = JsonSerializer.Deserialize<ReserveCountDto>(rawPoolContent, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        ReserveKeysCount = poolData?.ReserveCount ?? 0;
+                    }
+                }
+                catch (Exception poolEx)
+                {
+                    _logger.Log("BOT-POOL-ERR", $"Ошибка проверки пула резервных ключей: {poolEx.Message}");
                 }
             }
             else
@@ -143,8 +153,9 @@ public partial class BotViewModel
                     : $"ОШИБКА API: {(int)response.StatusCode}";
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.Log("BOT-HEARTBEAT-ERR", $"Ошибка проверки бота: {ex.Message}");
             IsBotOnline = false;
             BotStatus = "ОФФЛАЙН (Недоступен)";
         }
