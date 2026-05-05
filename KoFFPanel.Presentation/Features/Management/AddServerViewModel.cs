@@ -1,14 +1,18 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using MaxMind.GeoIP2;
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+
+using System.Runtime.Versioning;
 
 namespace KoFFPanel.Presentation.Features.Management;
 
+[SupportedOSPlatform("windows")]
 public partial class AddServerViewModel : ObservableObject
 {
     private readonly IProfileRepository _profileRepository;
@@ -27,6 +31,9 @@ public partial class AddServerViewModel : ObservableObject
     [ObservableProperty] private string _username = "root";
     [ObservableProperty] private string _password = "";
     [ObservableProperty] private string _keyPath = "";
+
+    [ObservableProperty] private string _customDomain = "";
+    [ObservableProperty] private string _connectionNode = "";
 
     [ObservableProperty] private string _statusMessage = "";
 
@@ -47,14 +54,16 @@ public partial class AddServerViewModel : ObservableObject
     {
         IsEditMode = true;
         WindowTitle = "Редактирование сервера";
-        _editingServerId = profile.Id;
+        _editingServerId = profile.Id ?? string.Empty;
 
-        Name = profile.Name;
-        IpAddress = profile.IpAddress;
+        Name = profile.Name ?? "Новый сервер";
+        IpAddress = profile.IpAddress ?? string.Empty;
         Port = profile.Port;
-        Username = profile.Username;
-        Password = profile.Password;
-        KeyPath = profile.KeyPath;
+        Username = profile.Username ?? "root";
+        Password = profile.Password ?? string.Empty;
+        KeyPath = profile.KeyPath ?? string.Empty;
+        CustomDomain = profile.CustomDomain ?? string.Empty;
+        ConnectionNode = profile.ConnectionNode ?? string.Empty;
     }
 
     [RelayCommand]
@@ -102,23 +111,6 @@ public partial class AddServerViewModel : ObservableObject
         IsNotChecking = true;
     }
 
-    // ИСПРАВЛЕНИЕ: Локальное получение названия страны через базу MaxMind
-    private string ResolveCountryByIp(string ip)
-    {
-        try
-        {
-            string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-Country.mmdb");
-            if (File.Exists(dbPath))
-            {
-                using var reader = new DatabaseReader(dbPath);
-                var response = reader.Country(ip);
-                return response.Country.IsoCode ?? "??";
-            }
-        }
-        catch { }
-        return "??"; // Если файла нет или IP внутренний
-    }
-
     [RelayCommand]
     private void Save()
     {
@@ -142,6 +134,8 @@ public partial class AddServerViewModel : ObservableObject
             profileToSave.Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username;
             profileToSave.Password = Password ?? string.Empty;
             profileToSave.KeyPath = KeyPath ?? string.Empty;
+            profileToSave.CustomDomain = CustomDomain?.Trim() ?? string.Empty;
+            profileToSave.ConnectionNode = ConnectionNode?.Trim() ?? string.Empty;
             
             _profileRepository.UpdateProfile(profileToSave);
         }
@@ -155,7 +149,9 @@ public partial class AddServerViewModel : ObservableObject
                 Port = Port <= 0 ? 22 : Port,
                 Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username,
                 Password = Password ?? string.Empty,
-                KeyPath = KeyPath ?? string.Empty
+                KeyPath = KeyPath ?? string.Empty,
+                CustomDomain = CustomDomain?.Trim() ?? string.Empty,
+                ConnectionNode = ConnectionNode?.Trim() ?? string.Empty
             };
             _profileRepository.AddProfile(profileToSave);
         }

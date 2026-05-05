@@ -20,6 +20,9 @@ public class VpnProfile
     // ИСПРАВЛЕНИЕ: Жестко храним тип установленного ядра ("xray" или "sing-box")
     public string CoreType { get; set; } = "xray";
 
+    public string? CustomDomain { get; set; }
+    public string? ConnectionNode { get; set; }
+
     // === LEGACY DATA (For migration only) ===
     public int VpnPort { get; set; } = 443;
     public string Uuid { get; set; } = "";
