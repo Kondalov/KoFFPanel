@@ -20,6 +20,9 @@ public class VpnProfile
     // ИСПРАВЛЕНИЕ: Жестко храним тип установленного ядра ("xray" или "sing-box")
     public string CoreType { get; set; } = "xray";
 
+    public string? CustomDomain { get; set; }
+    public string? ConnectionNode { get; set; }
+
     // ИСПРАВЛЕНИЕ: Кастомный домен для подписки (например, https://link.partherhr.ru)
     public string? CustomDomain { get; set; }
 

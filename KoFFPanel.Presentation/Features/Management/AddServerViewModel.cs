@@ -32,6 +32,9 @@ public partial class AddServerViewModel : ObservableObject
     [ObservableProperty] private string _password = "";
     [ObservableProperty] private string _keyPath = "";
 
+    [ObservableProperty] private string _customDomain = "";
+    [ObservableProperty] private string _connectionNode = "";
+
     [ObservableProperty] private string _statusMessage = "";
 
     [ObservableProperty] private bool _isChecking = false;
@@ -59,6 +62,11 @@ public partial class AddServerViewModel : ObservableObject
         Username = profile.Username ?? "root";
         Password = profile.Password ?? string.Empty;
         KeyPath = profile.KeyPath ?? string.Empty;
+        Username = profile.Username ?? "root";
+        Password = profile.Password ?? string.Empty;
+        KeyPath = profile.KeyPath ?? string.Empty;
+        CustomDomain = profile.CustomDomain ?? string.Empty;
+        ConnectionNode = profile.ConnectionNode ?? string.Empty;
     }
 
     [RelayCommand]
@@ -129,6 +137,8 @@ public partial class AddServerViewModel : ObservableObject
             profileToSave.Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username;
             profileToSave.Password = Password ?? string.Empty;
             profileToSave.KeyPath = KeyPath ?? string.Empty;
+            profileToSave.CustomDomain = CustomDomain?.Trim() ?? string.Empty;
+            profileToSave.ConnectionNode = ConnectionNode?.Trim() ?? string.Empty;
             
             _profileRepository.UpdateProfile(profileToSave);
         }
@@ -142,7 +152,9 @@ public partial class AddServerViewModel : ObservableObject
                 Port = Port <= 0 ? 22 : Port,
                 Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username,
                 Password = Password ?? string.Empty,
-                KeyPath = KeyPath ?? string.Empty
+                KeyPath = KeyPath ?? string.Empty,
+                CustomDomain = CustomDomain?.Trim() ?? string.Empty,
+                ConnectionNode = ConnectionNode?.Trim() ?? string.Empty
             };
             _profileRepository.AddProfile(profileToSave);
         }
