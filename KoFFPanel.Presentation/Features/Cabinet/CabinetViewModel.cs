@@ -231,7 +231,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
     private void HandleServerSelection(VpnProfile? value)
     {
-        string? currentConnectionKey = value == null ? null : $"{value.Id}|{value.IpAddress}|{value.Port}|{value.Username}|{value.Password}|{value.KeyPath}";
         string? currentConnectionKey = value == null ? null : $"{value.Id}|{value.IpAddress}|{value.Port}|{value.Username}|{value.Password}|{value.KeyPath}|{value.CustomDomain}|{value.CoreType}";
 
         if (currentConnectionKey == _lastConnectionKey)
@@ -250,9 +249,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
         if (value != null)
         {
-            // УСТАНОВКА КАСТОМНОГО ДОМЕНА ПОДПИСКИ ДЛЯ ВЫБРАННОГО СЕРВЕРА
-            _subscriptionService.SetCustomDomain(value.CustomDomain ?? "");
-
             ActiveCoreTitle = value.CoreType == "sing-box" ? "Ядро (Sing-box)" : (value.CoreType == "trusttunnel" ? "Ядро (TrustTunnel)" : "Ядро (Xray-core)");
 
             try

@@ -241,10 +241,5 @@ fi";
     public string GetSubscriptionUrl(string serverIp, string uuid)
     {
         return $"https://link.partherhr.ru/{uuid}";
-        if (!string.IsNullOrEmpty(_customDomain))
-        {
-            return $"{_customDomain}/{uuid}";
-        }
-        return $"http://{serverIp}:8080/{uuid}";
     }
 }
