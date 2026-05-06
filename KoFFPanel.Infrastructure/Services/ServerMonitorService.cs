@@ -293,13 +293,47 @@ public class ServerMonitorService : IServerMonitorService
 
     public async Task<(bool Success, long RoundtripTime)> PingServerAsync(string ip, int timeoutMs = 2000)
     {
+        // 1. Стандартный ICMP Ping (быстрый, но часто блокируется провайдером или ufw/iptables)
         try
         {
             using var pinger = new Ping();
             var reply = await pinger.SendPingAsync(ip, timeoutMs);
-            if (reply.Status == IPStatus.Success) return (true, reply.RoundtripTime);
+            if (reply.Status == IPStatus.Success)
+            {
+                return (true, reply.RoundtripTime);
+            }
         }
         catch { }
+
+        // 2. Умный алгоритм (Защита от дурака): Фоллбэк на TCP Ping
+        // Если ICMP заблокирован, проверяем доступность сервера через открытие TCP-сокета.
+        // Перебираем ключевые порты: 22 (SSH), 443 (Xray/VLESS), 80 (HTTP), 8080 (Подписки).
+        int[] fallbackPorts = { 22, 443, 80, 8080 };
+
+        foreach (var port in fallbackPorts)
+        {
+            try
+            {
+                using var tcpClient = new System.Net.Sockets.TcpClient();
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+
+                var connectTask = tcpClient.ConnectAsync(ip, port);
+                // Задаем быстрый таймаут для TCP-попытки, чтобы цикл не зависал
+                var timeoutTask = Task.Delay(Math.Min(timeoutMs, 800));
+
+                if (await Task.WhenAny(connectTask, timeoutTask) == connectTask)
+                {
+                    if (tcpClient.Connected)
+                    {
+                        sw.Stop();
+                        return (true, sw.ElapsedMilliseconds);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // Если сервер "мертв" по всем фронтам
         return (false, 0);
     }
 
