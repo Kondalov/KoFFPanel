@@ -1,26 +1,16 @@
 using Renci.SshNet;
 using System;
-using System.Linq;
+using System.IO;
 
 class Program {
     static void Main(string[] args) {
-        if (args.Length == 0) {
-            Console.WriteLine("Usage: TestSsh <command>");
-            return;
-        }
-        string command = string.Join(" ", args);
-        var pk = new PrivateKeyFile(@"C:\Users\Nikolay\.ssh\id_ed25519", "01983");
-        using var ssh = new SshClient("103.71.22.166", "root", new[] { pk });
-        try {
+        var keyFile = new PrivateKeyFile(@"C:\Users\Nikolay\.ssh\id_ed25519", "01983");
+        var connectionInfo = new ConnectionInfo("185.94.167.194", "root", new PrivateKeyAuthenticationMethod("root", keyFile));
+        using (var ssh = new SshClient(connectionInfo)) {
             ssh.Connect();
-            var cmd = ssh.CreateCommand(command);
-            var result = cmd.Execute();
-            Console.Write(result);
-            if (!string.IsNullOrEmpty(cmd.Error)) {
-                Console.Error.Write(cmd.Error);
+            if (args.Length > 0) {
+                Console.WriteLine(ssh.RunCommand(args[0]).Result);
             }
-        } catch (Exception ex) {
-            Console.WriteLine(ex.ToString());
         }
     }
 }

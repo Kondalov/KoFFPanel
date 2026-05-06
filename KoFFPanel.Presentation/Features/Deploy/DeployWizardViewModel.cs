@@ -16,8 +16,11 @@ using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Deploy;
 
+[SupportedOSPlatform("windows")]
 public partial class ProtocolSetupItem : ObservableObject
 {
     public IProtocolBuilder Builder { get; }
@@ -29,7 +32,7 @@ public partial class ProtocolSetupItem : ObservableObject
 
     [ObservableProperty] private string _ttUsername = "ADMIN";
     [ObservableProperty] private string _ttPassword = "";
-    
+
     public bool IsTrustTunnel => Builder.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase);
 
     public ProtocolSetupItem(IProtocolBuilder builder)
@@ -47,8 +50,8 @@ public partial class ProtocolSetupItem : ObservableObject
     }
 }
 
-public partial class DeployWizardViewModel : ObservableObject
-{
+[SupportedOSPlatform("windows")]
+public partial class DeployWizardViewModel : ObservableObject{
     private readonly ISshService _ssh;
     private readonly ProtocolFactory _protocolFactory;
     private readonly ISmartPortValidator _portValidator;

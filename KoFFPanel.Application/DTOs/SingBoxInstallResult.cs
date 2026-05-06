@@ -12,25 +12,12 @@ public class SingBoxInstallResult
     public int Port { get; set; }
     public string Sni { get; set; } = "";
 
-    // ИСПРАВЛЕНИЕ: Поддержка кастомного домена
-    public string? CustomDomain { get; set; }
-    
-    // ИСПРАВЛЕНИЕ: Поддержка кастомного узла для подключения
-    public string? ConnectionNode { get; set; }
+    // ИСПРАВЛЕНИЕ: Оставляем хардкод для HTTP-подписки по просьбе клиента
+    public string HttpLink => $"https://link.partherhr.ru/{Uuid}";
 
-    public string HttpLink
-    {
-        get
-        {
-            if (!string.IsNullOrWhiteSpace(CustomDomain))
-            {
-                string domain = CustomDomain.Trim().TrimEnd('/');
-                if (!domain.StartsWith("http")) domain = "https://" + domain;
-                return $"{domain}/{Uuid}";
-            }
-            return $"http://{IpAddress}:8080/{Uuid}";
-        }
-    }
+    // ИСПРАВЛЕНИЕ: Возвращаем свойства для поддержки кастомных доменов в VLESS и совместимости
+    public string? CustomDomain { get; set; }
+    public string? ConnectionNode { get; set; }
 
     public string DisplayServer => !string.IsNullOrWhiteSpace(ConnectionNode) ? ConnectionNode.Trim() : IpAddress;
 

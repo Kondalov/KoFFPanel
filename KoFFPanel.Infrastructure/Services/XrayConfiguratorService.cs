@@ -244,7 +244,7 @@ echo 'ERROR_ALL_FAILED'
                                 }
                             }
 
-                            if (configChanged)
+                            if (configChanged && root != null)
                             {
                                 string updatedJson = root.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
                                 string base64Config = Convert.ToBase64String(Encoding.UTF8.GetBytes(updatedJson.Replace("\r", "")));

@@ -5,10 +5,14 @@ using KoFFPanel.Domain.Entities;
 using MaxMind.GeoIP2;
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+
+using System.Runtime.Versioning;
 
 namespace KoFFPanel.Presentation.Features.Management;
 
+[SupportedOSPlatform("windows")]
 public partial class AddServerViewModel : ObservableObject
 {
     private readonly IProfileRepository _profileRepository;
@@ -27,6 +31,7 @@ public partial class AddServerViewModel : ObservableObject
     [ObservableProperty] private string _username = "root";
     [ObservableProperty] private string _password = "";
     [ObservableProperty] private string _keyPath = "";
+
     [ObservableProperty] private string _customDomain = "";
     [ObservableProperty] private string _connectionNode = "";
 
@@ -49,16 +54,19 @@ public partial class AddServerViewModel : ObservableObject
     {
         IsEditMode = true;
         WindowTitle = "Редактирование сервера";
-        _editingServerId = profile.Id;
+        _editingServerId = profile.Id ?? string.Empty;
 
-        Name = profile.Name;
-        IpAddress = profile.IpAddress;
+        Name = profile.Name ?? "Новый сервер";
+        IpAddress = profile.IpAddress ?? string.Empty;
         Port = profile.Port;
-        Username = profile.Username;
-        Password = profile.Password;
-        KeyPath = profile.KeyPath;
-        CustomDomain = profile.CustomDomain ?? "";
-        ConnectionNode = profile.ConnectionNode ?? "";
+        Username = profile.Username ?? "root";
+        Password = profile.Password ?? string.Empty;
+        KeyPath = profile.KeyPath ?? string.Empty;
+        Username = profile.Username ?? "root";
+        Password = profile.Password ?? string.Empty;
+        KeyPath = profile.KeyPath ?? string.Empty;
+        CustomDomain = profile.CustomDomain ?? string.Empty;
+        ConnectionNode = profile.ConnectionNode ?? string.Empty;
     }
 
     [RelayCommand]
@@ -69,6 +77,12 @@ public partial class AddServerViewModel : ObservableObject
         {
             KeyPath = path;
         }
+    }
+
+    [RelayCommand]
+    private void ClearKey()
+    {
+        KeyPath = string.Empty;
     }
 
     [RelayCommand]
@@ -100,23 +114,6 @@ public partial class AddServerViewModel : ObservableObject
         IsNotChecking = true;
     }
 
-    // ИСПРАВЛЕНИЕ: Локальное получение названия страны через базу MaxMind
-    private string ResolveCountryByIp(string ip)
-    {
-        try
-        {
-            string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-Country.mmdb");
-            if (File.Exists(dbPath))
-            {
-                using var reader = new DatabaseReader(dbPath);
-                var response = reader.Country(ip);
-                return response.Country.IsoCode ?? "??";
-            }
-        }
-        catch { }
-        return "??"; // Если файла нет или IP внутренний
-    }
-
     [RelayCommand]
     private void Save()
     {
@@ -127,55 +124,38 @@ public partial class AddServerViewModel : ObservableObject
         }
 
         string cleanIp = IpAddress.Trim();
-
-        // УМНАЯ ЗАЩИТА ОТ ДУРАКА: Проверка, что CustomDomain действительно ведет на этот IP-адрес
-        if (!string.IsNullOrWhiteSpace(CustomDomain))
-        {
-            try
-            {
-                string domainToCheck = CustomDomain.Trim().TrimEnd('/');
-                if (domainToCheck.StartsWith("http://")) domainToCheck = domainToCheck.Substring(7);
-                if (domainToCheck.StartsWith("https://")) domainToCheck = domainToCheck.Substring(8);
-                
-                // Удаляем возможные пути, оставляя только хост
-                int slashIndex = domainToCheck.IndexOf('/');
-                if (slashIndex > 0) domainToCheck = domainToCheck.Substring(0, slashIndex);
-
-                var addresses = System.Net.Dns.GetHostAddresses(domainToCheck);
-                bool ipMatches = addresses.Any(a => a.ToString() == cleanIp);
-                
-                // Если IP не совпадает напрямую, возможно домен за Cloudflare. 
-                // Но для подписок Cloudflare это ок, только если мы уверены. 
-                // Пока сделаем мягкое предупреждение, но разрешим сохранить, так как Cloudflare Proxy меняет IP на свои (104.x, 172.x).
-                // Но если это вообще другой сервер пользователя (как в нашем случае), это приведет к 404.
-                // Как отличить Cloudflare от чужого сервера? У Cloudflare IP-адреса известны, но их много.
-                // Лучше сделаем HTTP-запрос к домену с проверкой X-KoFFPanel-Server-IP.
-            }
-            catch
-            {
-                // Игнорируем ошибки DNS
-            }
-        }
-
-        var profileToSave = new VpnProfile
-        {
-            Id = IsEditMode ? _editingServerId : Guid.NewGuid().ToString(),
-            Name = Name,
-            IpAddress = cleanIp,
-            Port = Port <= 0 ? 22 : Port,
-            Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username,
-            Password = Password ?? string.Empty,
-            KeyPath = KeyPath ?? string.Empty,
-            CustomDomain = string.IsNullOrWhiteSpace(CustomDomain) ? null : CustomDomain.Trim(),
-            ConnectionNode = string.IsNullOrWhiteSpace(ConnectionNode) ? null : ConnectionNode.Trim()
-        };
+        VpnProfile profileToSave;
 
         if (IsEditMode)
         {
+            var existingProfile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.Id == _editingServerId);
+            profileToSave = existingProfile ?? new VpnProfile { Id = _editingServerId };
+            
+            profileToSave.Name = Name;
+            profileToSave.IpAddress = cleanIp;
+            profileToSave.Port = Port <= 0 ? 22 : Port;
+            profileToSave.Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username;
+            profileToSave.Password = Password ?? string.Empty;
+            profileToSave.KeyPath = KeyPath ?? string.Empty;
+            profileToSave.CustomDomain = CustomDomain?.Trim() ?? string.Empty;
+            profileToSave.ConnectionNode = ConnectionNode?.Trim() ?? string.Empty;
+            
             _profileRepository.UpdateProfile(profileToSave);
         }
         else
         {
+            profileToSave = new VpnProfile
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = Name,
+                IpAddress = cleanIp,
+                Port = Port <= 0 ? 22 : Port,
+                Username = string.IsNullOrWhiteSpace(Username) ? "root" : Username,
+                Password = Password ?? string.Empty,
+                KeyPath = KeyPath ?? string.Empty,
+                CustomDomain = CustomDomain?.Trim() ?? string.Empty,
+                ConnectionNode = ConnectionNode?.Trim() ?? string.Empty
+            };
             _profileRepository.AddProfile(profileToSave);
         }
 

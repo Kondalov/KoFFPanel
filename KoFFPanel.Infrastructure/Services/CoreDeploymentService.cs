@@ -118,7 +118,7 @@ echo 'READY|Сервер готов к установке.'
 
                     {sudoPrefix}fuser -k -9 443/tcp 443/udp 8080/tcp 2>/dev/null || true
                     {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray
-                    {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray
+                    {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box && {sudoPrefix}chmod 777 /var/log/sing-box
                     sleep 1
                 ";
                 await ssh.ExecuteCommandAsync(cleanupCmd);
@@ -307,7 +307,7 @@ cd /tmp && rm -rf /tmp/singbox_install
 
         string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
         string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(5));
-        return (log.Contains("SUCCESS_INSTALLED"), log);
+        return (log.Contains("SUCCESS_INSTALLED") || log.Contains("installed") || log.Contains("already"), log);
     }
 
     private async Task<(bool IsSuccess, string Log)> InstallTrustTunnelInternalAsync(ISshService ssh, string targetVersion, string sudoPrefix)
@@ -435,7 +435,7 @@ WantedBy=multi-user.target";
         var baseConfig = new JsonObject();
         if (core == "sing-box")
         {
-            baseConfig["log"] = new JsonObject { ["level"] = "info" }; 
+            baseConfig["log"] = new JsonObject { ["level"] = "info", ["timestamp"] = true, ["output"] = "/var/log/sing-box/access.log" }; 
             baseConfig["inbounds"] = inboundsArray;
             baseConfig["outbounds"] = new JsonArray { new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, new JsonObject { ["type"] = "block", ["tag"] = "block" } };
             baseConfig["route"] = new JsonObject { ["rules"] = new JsonArray() };

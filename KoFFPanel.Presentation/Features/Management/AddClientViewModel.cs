@@ -2,8 +2,11 @@
 using CommunityToolkit.Mvvm.Input;
 using System;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Management;
 
+[SupportedOSPlatform("windows")]
 public partial class AddClientViewModel : ObservableObject
 {
     [ObservableProperty] private string _clientName = "";

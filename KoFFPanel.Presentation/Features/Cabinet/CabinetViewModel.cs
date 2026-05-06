@@ -23,8 +23,11 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation.Features.Cabinet;
 
+[SupportedOSPlatform("windows")]
 public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeployedMessage>
 {
     private readonly IServerMonitorService _monitorService;
@@ -117,7 +120,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         {
             foreach (VpnClient c in e.NewItems)
             {
-                if (!string.IsNullOrEmpty(c.Email) && _avatarRegistry.TryGetValue(c.Email, out string path))
+                if (!string.IsNullOrEmpty(c.Email) && _avatarRegistry.TryGetValue(c.Email, out string? path) && path != null)
                 {
                     if (File.Exists(path))
                     {
@@ -189,30 +192,49 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         return string.Format("{0:n2} {1}", number, suffixes[counter]);
     }
 
+    private bool _isReloadingServers = false;
+
     private void LoadData()
     {
-        var profiles = _profileRepository.LoadProfiles();
-        string? lastSelectedId = SelectedServer?.Id;
-        Servers.Clear();
-
-        if (profiles != null)
+        _isReloadingServers = true;
+        try
         {
-            foreach (var profile in profiles)
-            {
-                profile.MigrateLegacyData();
-                Servers.Add(profile);
-            }
-        }
+            var profiles = _profileRepository.LoadProfiles();
+            string? lastSelectedId = SelectedServer?.Id;
+            Servers.Clear();
 
-        ServersCount = Servers.Count;
-        SelectedServer = (lastSelectedId != null && Servers.Any(s => s.Id == lastSelectedId)) ? Servers.First(s => s.Id == lastSelectedId) : Servers.FirstOrDefault();
+            if (profiles != null)
+            {
+                foreach (var profile in profiles)
+                {
+                    profile.MigrateLegacyData();
+                    Servers.Add(profile);
+                }
+            }
+
+            ServersCount = Servers.Count;
+            SelectedServer = (lastSelectedId != null && Servers.Any(s => s.Id == lastSelectedId)) ? Servers.First(s => s.Id == lastSelectedId) : Servers.FirstOrDefault();
+        }
+        finally
+        {
+            _isReloadingServers = false;
+            HandleServerSelection(SelectedServer);
+        }
     }
 
     private string? _lastConnectionKey;
 
     partial void OnSelectedServerChanged(VpnProfile? value)
     {
-        string? currentConnectionKey = value == null ? null : $"{value.Id}|{value.IpAddress}|{value.Port}|{value.Username}|{value.Password}|{value.KeyPath}|{value.CustomDomain}|{value.CoreType}";
+        if (!_isReloadingServers)
+        {
+            HandleServerSelection(value);
+        }
+    }
+
+    private void HandleServerSelection(VpnProfile? value)
+    {
+        string? currentConnectionKey = value == null ? null : $"{value.Id}|{value.IpAddress}|{value.Port}|{value.Username}|{value.Password}|{value.KeyPath ?? ""}|{value.CustomDomain ?? ""}|{value.CoreType}";
 
         if (currentConnectionKey == _lastConnectionKey)
         {
@@ -230,9 +252,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
         if (value != null)
         {
-            // УСТАНОВКА КАСТОМНОГО ДОМЕНА ПОДПИСКИ ДЛЯ ВЫБРАННОГО СЕРВЕРА
-            _subscriptionService.SetCustomDomain(value.CustomDomain ?? "");
-
             ActiveCoreTitle = value.CoreType == "sing-box" ? "Ядро (Sing-box)" : (value.CoreType == "trusttunnel" ? "Ядро (TrustTunnel)" : "Ядро (Xray-core)");
 
             try
