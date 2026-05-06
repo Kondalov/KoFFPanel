@@ -17,6 +17,10 @@ public class SshService : ISshService, IDisposable
     private ShellStream? _shellStream;
     private readonly IAppLogger _logger;
 
+    // ИСПРАВЛЕНИЕ: Внедряем SemaphoreSlim для строгой очереди SSH-команд. 
+    // Гарантирует, что команды выполняются строго друг за другом без краша канала.
+    private readonly SemaphoreSlim _sshSemaphore = new SemaphoreSlim(1, 1);
+
     public SshService(IAppLogger logger)
     {
         _logger = logger;
@@ -181,13 +185,15 @@ public class SshService : ISshService, IDisposable
     {
         if (_sshClient == null || !_sshClient.IsConnected) return string.Empty;
 
-        TimeSpan actualTimeout = timeout ?? TimeSpan.FromSeconds(15);
-
-        _logger.Log("SSH-CMD-TRACE", $"[СТАРТ] Запрос команды: {commandText.Substring(0, Math.Min(commandText.Length, 50))}... (Таймаут: {actualTimeout.TotalSeconds}с)");
-        long startTick = Environment.TickCount64;
-
+        // Блокируем параллельное выполнение команд, чтобы предотвратить Race Condition
+        await _sshSemaphore.WaitAsync(cancellationToken);
         try
         {
+            TimeSpan actualTimeout = timeout ?? TimeSpan.FromSeconds(15);
+
+            _logger.Log("SSH-CMD-TRACE", $"[СТАРТ] Запрос команды: {commandText.Substring(0, Math.Min(commandText.Length, 50))}... (Таймаут: {actualTimeout.TotalSeconds}с)");
+            long startTick = Environment.TickCount64;
+
             var tcs = new TaskCompletionSource<string>();
             var cmd = _sshClient.CreateCommand(commandText);
             cmd.CommandTimeout = actualTimeout;
@@ -229,6 +235,11 @@ public class SshService : ISshService, IDisposable
         {
             _logger.Log("SSH-CRASH", $"[КРАШ] Исключение в ExecuteCommandAsync: {ex.Message}");
             return string.Empty;
+        }
+        finally
+        {
+            // Обязательно освобождаем очередь для следующей команды
+            _sshSemaphore.Release();
         }
     }
 

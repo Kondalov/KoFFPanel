@@ -30,25 +30,16 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         if (dbUsers.Count == 0)
         {
             var admin = new VpnClient { Email = "ADMIN", Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true, IsTrustTunnelEnabled = true, IsHysteria2Enabled = true };
-            _dbContext.Clients.Add(admin); await _dbContext.SaveChangesAsync();
+            _dbContext.Clients.Add(admin);
+            await _dbContext.SaveChangesAsync();
             dbUsers.Add(admin);
         }
 
-        if (ssh.IsConnected)
-        {
-            string raw = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json 2>/dev/null");
-            if (!string.IsNullOrWhiteSpace(raw) && raw.Contains("{"))
-            {
-                try {
-                    var root = JsonNode.Parse(raw);
-                    if (root != null) {
-                        await RebuildInboundsAsync(root, serverIp);
-                        await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                    }
-                } catch { }
-            }
-        }
-        return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+        // ИСПРАВЛЕНИЕ: Блок синхронизации конфига (cat /etc/sing-box/config.json + ApplyAndTestConfigAsync) 
+        // СТРОГО УДАЛЕН. Метод GetUsers должен только читать БД. Пересборка конфига 
+        // при каждом открытии вкладки перегружает SSH и ломает сессию.
+
+        return dbUsers;
     }
 
     public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true)

@@ -28,19 +28,7 @@ public partial class CabinetViewModel
         string pass = profile.Password ?? "";
         string key = profile.KeyPath ?? "";
 
-        bool isSingBox = profile.CoreType == "sing-box";
-        bool isTrustTunnel = profile.CoreType == "trusttunnel";
-        
-        string displayCoreName = isSingBox ? "Sing-box" : (isTrustTunnel ? "TrustTunnel" : "Xray-core");
-        if (profile.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel") && !isTrustTunnel)
-        {
-            displayCoreName += " + TrustTunnel";
-        }
-
-        string serviceName = isSingBox ? "sing-box" : (isTrustTunnel ? "trusttunnel" : "xray");
-        if (isSingBox) serviceName = "sing-box";
-
-        _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ядро: {displayCoreName.ToUpper()}");
+        _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ожидаемое Ядро: {profile.CoreType?.ToUpper()}");
 
         if (await localSsh.ConnectAsync(ip, profile.Port, user, pass, key) != "SUCCESS")
         {
@@ -57,7 +45,12 @@ public partial class CabinetViewModel
         {
             while (!token.IsCancellationRequested)
             {
-                await RunMonitoringCycleStepAsync(localSsh, profile, isSingBox, isTrustTunnel, serviceName, ip, displayCoreName, token);
+                // ИСПРАВЛЕНИЕ: Прерываем цикл, если сокет был закрыт (Session timed out), 
+                // чтобы не спамить пустые логи и не сломать тип ядра в БД.
+                if (!localSsh.IsConnected) throw new Exception("SSH Connection Dropped");
+
+                // ИСПРАВЛЕНИЕ: Убрана статичная передача переменных, теперь они вычисляются внутри динамически
+                await RunMonitoringCycleStepAsync(localSsh, profile, token);
                 await Task.Delay(5000, token);
             }
         }
@@ -66,8 +59,23 @@ public partial class CabinetViewModel
         finally { localSsh.Disconnect(); if (_currentMonitoringSsh == localSsh) { _currentMonitoringSsh = null; IsMonitoringActive = false; } }
     }
 
-    private async Task RunMonitoringCycleStepAsync(ISshService localSsh, VpnProfile profile, bool isSingBox, bool isTrustTunnel, string serviceName, string ip, string displayCoreName, CancellationToken token)
+    private async Task RunMonitoringCycleStepAsync(ISshService localSsh, VpnProfile profile, CancellationToken token)
     {
+        string ip = profile.IpAddress ?? "";
+
+        // ИСПРАВЛЕНИЕ: Определяем ядро динамически на каждом шаге цикла, 
+        // чтобы изменения из БД (если они произошли) применялись мгновенно.
+        bool isSingBox = profile.CoreType == "sing-box";
+        bool isTrustTunnel = profile.CoreType == "trusttunnel";
+
+        string displayCoreName = isSingBox ? "Sing-box" : (isTrustTunnel ? "TrustTunnel" : "Xray-core");
+        if (profile.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel") && !isTrustTunnel)
+        {
+            displayCoreName += " + TrustTunnel";
+        }
+
+        string serviceName = isSingBox ? "sing-box" : (isTrustTunnel ? "trusttunnel" : "xray");
+
         var pingResult = await _monitorService.PingServerAsync(ip);
         PingMs = pingResult.Success ? pingResult.RoundtripTime : 0;
 
@@ -79,14 +87,18 @@ public partial class CabinetViewModel
         int tcpCount = await GetTcpConnectionsCountAsync(localSsh, res.TcpConnections);
         TcpConnections = tcpCount;
 
-        // ВНЕДРЕНО: Умный алгоритм с надежной проверкой (foolproof). 
-        // systemctl is-active гарантированно возвращает статусы строго в порядке запроса (sb, xr, tt)
         string fallback = await localSsh.ExecuteCommandAsync("systemctl is-active sing-box xray trusttunnel 2>/dev/null");
-        var fbLines = fallback.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-        bool sbActive = fbLines.Length > 0 && fbLines[0].Trim() == "active";
-        bool xrActive = fbLines.Length > 1 && fbLines[1].Trim() == "active";
-        bool ttActive = fbLines.Length > 2 && fbLines[2].Trim() == "active";
+        bool sbActive = false, xrActive = false, ttActive = false;
+
+        // ИСПРАВЛЕНИЕ: Парсим статусы ТОЛЬКО если сервер реально ответил.
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            var fbLines = fallback.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            sbActive = fbLines.Length > 0 && fbLines[0].Trim() == "active";
+            xrActive = fbLines.Length > 1 && fbLines[1].Trim() == "active";
+            ttActive = fbLines.Length > 2 && fbLines[2].Trim() == "active";
+        }
 
         string actualDisplayCore = displayCoreName;
         if (sbActive && xrActive) actualDisplayCore = "Sing-box + Xray";
@@ -120,11 +132,16 @@ public partial class CabinetViewModel
         {
             UpdateUiAfterCycle(actualDisplayCore, coreStatusStr, coreStats, journalLogs, accessLogs, grepTest);
 
-            if (SelectedServer != null)
+            // ИСПРАВЛЕНИЕ: Если fallback пустой (нет связи), мы НЕ перезаписываем ядро!
+            if (SelectedServer != null && !string.IsNullOrWhiteSpace(fallback))
             {
-                // ФИКС: Умный алгоритм актуализации ядра в БД (foolproof)
-                string detectedCoreType = sbActive ? "sing-box" : (ttActive ? "trusttunnel" : "xray");
-                if (SelectedServer.CoreType != detectedCoreType)
+                string detectedCoreType = SelectedServer.CoreType; // Берем текущее как дефолт
+                if (sbActive) detectedCoreType = "sing-box";
+                else if (xrActive) detectedCoreType = "xray";
+                else if (ttActive) detectedCoreType = "trusttunnel";
+
+                // Обновляем ядро в БД ТОЛЬКО если 100% подтверждено наличие хотя бы одного активного процесса
+                if (SelectedServer.CoreType != detectedCoreType && (sbActive || xrActive || ttActive))
                 {
                     _logger.Log("MONITORING", $"[FOOLPROOF] Обнаружено расхождение ядра! БД: {SelectedServer.CoreType}, Реал: {detectedCoreType}. Обновляем...");
                     SelectedServer.CoreType = detectedCoreType;

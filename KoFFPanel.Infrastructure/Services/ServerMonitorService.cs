@@ -101,7 +101,12 @@ public class ServerMonitorService : IServerMonitorService
         string rawLogs = "";
         if (coreType.ToLower() == "sing-box")
         {
-            rawLogs = await sshService.ExecuteCommandAsync("journalctl -u sing-box -n 2000 --no-pager 2>/dev/null | grep -E 'inbound connection from|inbound connection to'");
+            // Читаем логи из файла, а если пуст - резервно из journalctl
+            rawLogs = await sshService.ExecuteCommandAsync("tail -n 2000 /var/log/sing-box/access.log 2>/dev/null | grep -iE 'inbound connection|remoteAddr'");
+            if (string.IsNullOrWhiteSpace(rawLogs))
+            {
+                rawLogs = await sshService.ExecuteCommandAsync("journalctl -u sing-box -n 2000 --no-pager 2>/dev/null | grep -iE 'inbound connection|remoteAddr'");
+            }
         }
         else if (coreType.ToLower() == "trusttunnel")
         {
@@ -117,60 +122,73 @@ public class ServerMonitorService : IServerMonitorService
         var userIps = new Dictionary<string, HashSet<string>>();
         var lines = rawLogs.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
 
-        var connIdToIp = new Dictionary<string, string>();
-
-        foreach (var line in lines)
+        if (coreType.ToLower() == "sing-box")
         {
-            try
+            var connIdToIp = new Dictionary<string, string>();
+            var connIdToUser = new Dictionary<string, string>();
+
+            foreach (var line in lines)
             {
-                if (coreType.ToLower() == "sing-box")
+                try
                 {
-                    string connId = "";
-                    int idStart = line.IndexOf("] [");
-                    if (idStart != -1)
-                    {
-                        int idEnd = line.IndexOf(' ', idStart + 3);
-                        if (idEnd != -1) connId = line.Substring(idStart + 3, idEnd - idStart - 3);
-                    }
+                    // Выцепляем ID соединения из лога (напр. [1984081120 71ms] -> 1984081120)
+                    var idMatch = System.Text.RegularExpressions.Regex.Match(line, @"\[(\d+)(?:\s+[^\]]+)?\]");
+                    string connId = idMatch.Success ? idMatch.Groups[1].Value : "";
 
-                    if (line.Contains("inbound connection from "))
+                    if (string.IsNullOrEmpty(connId)) continue;
+
+                    // ИЩЕМ IP
+                    if (line.Contains("remoteAddr:"))
                     {
-                        var parts = line.Split(new[] { "inbound connection from " }, StringSplitOptions.None);
-                        if (parts.Length > 1 && !string.IsNullOrEmpty(connId))
+                        var ipMatch = System.Text.RegularExpressions.Regex.Match(line, @"remoteAddr:\s*([0-9a-fA-F\.\:\[\]]+)");
+                        if (ipMatch.Success)
                         {
-                            string ipPort = parts[1].Trim();
-                            string ip = ipPort;
-                            if (ipPort.StartsWith("["))
-                            {
-                                int endBracket = ipPort.IndexOf(']');
-                                if (endBracket != -1) ip = ipPort.Substring(1, endBracket - 1);
-                            }
-                            else
-                            {
-                                ip = ipPort.Split(':')[0];
-                            }
-                            connIdToIp[connId] = ip;
+                            string ip = ipMatch.Groups[1].Value.Trim();
+                            ip = ip.Contains(":") && !ip.StartsWith("[") ? ip.Split(':')[0] : ip;
+                            connIdToIp[connId] = ip.Replace("[", "").Replace("]", "");
                         }
                     }
-                    else if (line.Contains("] inbound connection to "))
+                    else if (line.Contains("inbound connection from"))
                     {
-                        string user = "Unknown";
-                        int userStart = line.IndexOf("]: [");
-                        if (userStart != -1)
+                        var ipMatch = System.Text.RegularExpressions.Regex.Match(line, @"inbound connection from\s*([0-9a-fA-F\.\:\[\]]+)");
+                        if (ipMatch.Success)
                         {
-                            int userEnd = line.IndexOf("] inbound", userStart);
-                            if (userEnd != -1) user = line.Substring(userStart + 4, userEnd - userStart - 4);
+                            string ip = ipMatch.Groups[1].Value.Trim();
+                            ip = ip.Contains(":") && !ip.StartsWith("[") ? ip.Split(':')[0] : ip;
+                            connIdToIp[connId] = ip.Replace("[", "").Replace("]", "");
                         }
+                    }
 
-                        if (user != "Unknown" && !string.IsNullOrEmpty(connId) && connIdToIp.ContainsKey(connId))
-                        {
-                            string ip = connIdToIp[connId];
-                            if (!userIps.ContainsKey(user)) userIps[user] = new HashSet<string>();
-                            userIps[user].Add(ip);
-                        }
+                    // ИЩЕМ ЮЗЕРА
+                    var userMatch = System.Text.RegularExpressions.Regex.Match(line, @"\]:\s*\[(.*?)\]\s*inbound connection");
+                    if (userMatch.Success)
+                    {
+                        connIdToUser[connId] = userMatch.Groups[1].Value.Trim();
                     }
                 }
-                else
+                catch { }
+            }
+
+            // Маппинг: Объединяем IP и Пользователя по общему ID соединения
+            foreach (var kvp in connIdToUser)
+            {
+                string connId = kvp.Key;
+                string user = kvp.Value;
+
+                if (!userIps.ContainsKey(user)) userIps[user] = new HashSet<string>();
+
+                if (connIdToIp.ContainsKey(connId))
+                {
+                    userIps[user].Add(connIdToIp[connId]);
+                }
+            }
+        }
+        else
+        {
+            // Старая логика Xray остается без изменений
+            foreach (var line in lines)
+            {
+                try
                 {
                     string user = "Unknown";
                     string ip = "";
@@ -193,10 +211,11 @@ public class ServerMonitorService : IServerMonitorService
                         userIps[user].Add(ip);
                     }
                 }
+                catch { }
             }
-            catch { }
         }
 
+        // Блок загрузки базы локаций GeoIP (без изменений)
         string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-Country.mmdb");
         if (!File.Exists(dbPath))
         {
@@ -278,7 +297,6 @@ public class ServerMonitorService : IServerMonitorService
                     Email = kvp.Key,
                     LastIp = lastIp,
                     ActiveSessions = kvp.Value.Count,
-                    // ИСПРАВЛЕНИЕ: Убрали хардкодный эмодзи планеты. Теперь тут только текст.
                     Country = country
                 });
             }
@@ -293,47 +311,70 @@ public class ServerMonitorService : IServerMonitorService
 
     public async Task<(bool Success, long RoundtripTime)> PingServerAsync(string ip, int timeoutMs = 2000)
     {
-        // 1. Стандартный ICMP Ping (быстрый, но часто блокируется провайдером или ufw/iptables)
+        // 1. Стандартный ICMP Ping
         try
         {
             using var pinger = new Ping();
             var reply = await pinger.SendPingAsync(ip, timeoutMs);
-            if (reply.Status == IPStatus.Success)
+            // Foolproof защита: реальный удаленный сервер не ответит быстрее 2 мс. 
+            // Все что быстрее — это фальшивый ответ от локального TUN-адаптера.
+            if (reply.Status == IPStatus.Success && reply.RoundtripTime > 2)
             {
                 return (true, reply.RoundtripTime);
             }
         }
         catch { }
 
-        // 2. Умный алгоритм (Защита от дурака): Фоллбэк на TCP Ping
-        // Если ICMP заблокирован, проверяем доступность сервера через открытие TCP-сокета.
-        // Перебираем ключевые порты: 22 (SSH), 443 (Xray/VLESS), 80 (HTTP), 8080 (Подписки).
-        int[] fallbackPorts = { 22, 443, 80, 8080 };
+        // 2. HTTP L7 Ping с жестким обходом прокси
+        // Это современный паттерн обхода маршрутизации VPN-клиентов в .NET
+        try
+        {
+            using var handler = new System.Net.Http.HttpClientHandler
+            {
+                UseProxy = false, // СТРОГО: Игнорируем локальный прокси от VPN
+                ServerCertificateCustomValidationCallback = (sender, cert, chain, errors) => true
+            };
 
+            using var client = new System.Net.Http.HttpClient(handler);
+            client.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
+            client.DefaultRequestHeaders.ConnectionClose = true;
+
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            // Обращаемся к нашему микросервису подписок
+            var response = await client.GetAsync($"http://{ip}:8080/ping");
+
+            if (response.IsSuccessStatusCode)
+            {
+                sw.Stop();
+                long ping = sw.ElapsedMilliseconds;
+                if (ping > 2) return (true, ping);
+            }
+        }
+        catch { }
+
+        // 3. Бронебойный TCP Ping через Socket
+        int[] fallbackPorts = { 22, 443, 80 };
         foreach (var port in fallbackPorts)
         {
             try
             {
-                using var tcpClient = new System.Net.Sockets.TcpClient();
+                using var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+                socket.Blocking = false;
+
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
 
-                var connectTask = tcpClient.ConnectAsync(ip, port);
-                // Задаем быстрый таймаут для TCP-попытки, чтобы цикл не зависал
-                var timeoutTask = Task.Delay(Math.Min(timeoutMs, 800));
-
-                if (await Task.WhenAny(connectTask, timeoutTask) == connectTask)
+                await socket.ConnectAsync(ip, port, cts.Token);
+                if (socket.Connected)
                 {
-                    if (tcpClient.Connected)
-                    {
-                        sw.Stop();
-                        return (true, sw.ElapsedMilliseconds);
-                    }
+                    sw.Stop();
+                    long ping = sw.ElapsedMilliseconds;
+                    if (ping > 2) return (true, ping);
                 }
             }
             catch { }
         }
 
-        // Если сервер "мертв" по всем фронтам
         return (false, 0);
     }
 

@@ -161,20 +161,23 @@ public partial class SingBoxUserManagerService
 
     private async Task<(bool IsSuccess, string Message)> ApplyAndTestConfigAsync(ISshService ssh, string newJson)
     {
-        string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(newJson.Replace("\r", "")));
-        await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d > /tmp/sb_test.json");
+        string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
 
-        if ((await ssh.ExecuteCommandAsync("sing-box check -c /tmp/sb_test.json 2>&1")).Contains("error"))
+        string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(newJson.Replace("\r", "")));
+        await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {s} tee /tmp/sb_test.json >/dev/null");
+
+        if ((await ssh.ExecuteCommandAsync($"{s} sing-box check -c /tmp/sb_test.json 2>&1")).Contains("error"))
         {
             return (false, "Ошибка теста конфига!");
         }
 
-        // ИСПРАВЛЕНИЕ: Отправка сигнала SIGHUP (Hot Reload) напрямую в процесс.
-        // Это обходит ограничения systemctl и гарантированно заставляет Sing-box
-        // перечитать конфигурацию без изменения PID и сброса аптайма.
-        string applyCmd = "cp /etc/sing-box/config.json /etc/sing-box/config.backup.json; " +
-                          "mv /tmp/sb_test.json /etc/sing-box/config.json; " +
-                          "killall -HUP sing-box 2>/dev/null || systemctl restart sing-box";
+        // ИСПРАВЛЕНИЕ: Используем \cp -f и \mv -f. 
+        // Обратный слэш (\) заставляет Linux игнорировать алиасы (такие как cp -i),
+        // а флаг -f принудительно перезаписывает файл без вопросов (y/n).
+        // Это полностью устраняет зависание SSH-канала на 15-30 секунд.
+        string applyCmd = $"{s} \\cp -f /etc/sing-box/config.json /etc/sing-box/config.backup.json; " +
+                          $"{s} \\mv -f /tmp/sb_test.json /etc/sing-box/config.json; " +
+                          $"{s} killall -HUP sing-box 2>/dev/null || {s} systemctl restart sing-box";
 
         await ssh.ExecuteCommandAsync(applyCmd);
 
