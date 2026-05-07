@@ -3,8 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Windows;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation;
 
+[SupportedOSPlatform("windows")]
 public partial class App : System.Windows.Application
 {
     public IServiceProvider Services { get; }

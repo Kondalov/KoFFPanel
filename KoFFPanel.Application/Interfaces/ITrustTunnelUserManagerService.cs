@@ -11,7 +11,7 @@ public interface ITrustTunnelUserManagerService
     Task<(bool IsSuccess, string Message, string TrustTunnelLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long trafficLimitBytes, DateTime? expiryDate, bool isP2PBlocked = true, bool isVless = false, bool isHy2 = false, bool isTt = true);
     Task<(bool IsSuccess, string Message)> RemoveUserAsync(ISshService ssh, string serverIp, string name);
     Task<(bool IsSuccess, string Message)> ToggleUserStatusAsync(ISshService ssh, string serverIp, string name, bool enableAccess);
-    Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, bool isP2PBlocked = true, bool isVless = false, bool isHy2 = false, bool isTt = true);
+    Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, string note, bool isP2PBlocked = true, bool isVless = false, bool isHy2 = false, bool isTt = true);
     Task SaveTrafficToDbAsync(string serverIp, IEnumerable<VpnClient> clients);
     Task<Dictionary<string, long>> GetTrafficStatsAsync(ISshService ssh);
     Task<bool> ResetTrafficAsync(ISshService ssh, string name);

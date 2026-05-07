@@ -16,7 +16,7 @@ public interface ISingBoxUserManagerService
     Task<(bool IsSuccess, string Message)> ToggleUserStatusAsync(ISshService ssh, string serverIp, string name, bool enableAccess);
 
     // ИСПРАВЛЕНИЕ: Добавлен ISshService для пересборки конфига, флаг P2P и флаги протоколов
-    Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = true, bool isTt = true);
+    Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, string note, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = true, bool isTt = true);
 
     Task SaveTrafficToDbAsync(string serverIp, IEnumerable<VpnClient> clients);
     Task<Dictionary<string, long>> GetTrafficStatsAsync(ISshService ssh);

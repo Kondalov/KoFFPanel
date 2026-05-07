@@ -19,44 +19,67 @@ public partial class CabinetViewModel
 
     private async Task StartMonitoringLoopAsync(VpnProfile profile, CancellationToken token)
     {
-        IsMonitoringActive = true; ServerStatus = "Подключение...";
-        ISshService localSsh = _sshServiceFactory();
-        _currentMonitoringSsh = localSsh;
-
-        string ip = profile.IpAddress ?? "";
-        string user = profile.Username ?? "root";
-        string pass = profile.Password ?? "";
-        string key = profile.KeyPath ?? "";
-
-        _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ожидаемое Ядро: {profile.CoreType?.ToUpper()}");
-
-        if (await localSsh.ConnectAsync(ip, profile.Port, user, pass, key) != "SUCCESS")
+        IsMonitoringActive = true;
+        
+        while (!token.IsCancellationRequested)
         {
-            ServerStatus = "Ошибка подключения";
-            if (_currentMonitoringSsh == localSsh) IsMonitoringActive = false;
-            localSsh.Disconnect(); return;
-        }
+            ServerStatus = "Подключение...";
+            ISshService localSsh = _sshServiceFactory();
+            _currentMonitoringSsh = localSsh;
 
-        ServerStatus = "Онлайн (Сбор данных)";
-        await LoadUsersAsync();
-        _ = _analyticsService.CleanupOldLogsAsync();
+            string ip = profile.IpAddress ?? "";
+            string user = profile.Username ?? "root";
+            string pass = profile.Password ?? "";
+            string key = profile.KeyPath ?? "";
 
-        try
-        {
-            while (!token.IsCancellationRequested)
+            _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ожидаемое Ядро: {profile.CoreType?.ToUpper()}");
+
+            if (await localSsh.ConnectAsync(ip, profile.Port, user, pass, key) != "SUCCESS")
             {
-                // ИСПРАВЛЕНИЕ: Прерываем цикл, если сокет был закрыт (Session timed out), 
-                // чтобы не спамить пустые логи и не сломать тип ядра в БД.
-                if (!localSsh.IsConnected) throw new Exception("SSH Connection Dropped");
-
-                // ИСПРАВЛЕНИЕ: Убрана статичная передача переменных, теперь они вычисляются внутри динамически
-                await RunMonitoringCycleStepAsync(localSsh, profile, token);
-                await Task.Delay(5000, token);
+                ServerStatus = "Ошибка подключения. Переподключение через 5с...";
+                if (_currentMonitoringSsh == localSsh) _currentMonitoringSsh = null;
+                localSsh.Disconnect();
+                
+                try { await Task.Delay(5000, token); continue; }
+                catch (TaskCanceledException) { break; }
             }
+
+            ServerStatus = "Онлайн (Сбор данных)";
+            await LoadUsersAsync();
+            _ = _analyticsService.CleanupOldLogsAsync();
+
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    if (!localSsh.IsConnected) throw new Exception("SSH Connection Dropped");
+
+                    await RunMonitoringCycleStepAsync(localSsh, profile, token);
+                    await Task.Delay(5000, token);
+                }
+            }
+            catch (TaskCanceledException) { }
+            catch (Exception ex) 
+            { 
+                ServerStatus = "Связь потеряна. Переподключение..."; 
+                _logger.Log("MONITORING", $"Сбой: {ex.Message}");
+            }
+            finally 
+            { 
+                localSsh.Disconnect(); 
+                if (_currentMonitoringSsh == localSsh) { _currentMonitoringSsh = null; } 
+            }
+            
+            // Если была отмена (нажали Отключить), выходим из внешнего цикла
+            if (token.IsCancellationRequested) break;
+            
+            // Задержка перед реконнектом
+            try { await Task.Delay(3000, token); }
+            catch (TaskCanceledException) { break; }
         }
-        catch (TaskCanceledException) { }
-        catch { ServerStatus = "Связь потеряна"; }
-        finally { localSsh.Disconnect(); if (_currentMonitoringSsh == localSsh) { _currentMonitoringSsh = null; IsMonitoringActive = false; } }
+        
+        IsMonitoringActive = false;
+        ServerStatus = "Оффлайн";
     }
 
     private async Task RunMonitoringCycleStepAsync(ISshService localSsh, VpnProfile profile, CancellationToken token)
@@ -105,13 +128,13 @@ public partial class CabinetViewModel
         else if (sbActive) actualDisplayCore = "Sing-box";
         else if (xrActive) actualDisplayCore = "Xray-core";
 
-        if (ttActive && !actualDisplayCore.Contains("TrustTunnel"))
-            actualDisplayCore = (actualDisplayCore == "TrustTunnel") ? "TrustTunnel" : actualDisplayCore + " + TrustTunnel";
+        if (ttActive && !actualDisplayCore.Contains("TrustTunnel", StringComparison.OrdinalIgnoreCase))
+            actualDisplayCore = string.Equals(actualDisplayCore, "TrustTunnel", StringComparison.OrdinalIgnoreCase) ? "TrustTunnel" : actualDisplayCore + " + TrustTunnel";
 
         string coreStatusStr = "Stopped";
-        if (actualDisplayCore.Contains("Sing-box") && sbActive) coreStatusStr = "Active";
-        else if (actualDisplayCore.Contains("Xray") && xrActive) coreStatusStr = "Active";
-        else if (actualDisplayCore.Contains("TrustTunnel") && ttActive) coreStatusStr = "Active";
+        if (actualDisplayCore.Contains("Sing-box", StringComparison.OrdinalIgnoreCase) && sbActive) coreStatusStr = "Active";
+        else if (actualDisplayCore.Contains("Xray", StringComparison.OrdinalIgnoreCase) && xrActive) coreStatusStr = "Active";
+        else if (actualDisplayCore.Contains("TrustTunnel", StringComparison.OrdinalIgnoreCase) && ttActive) coreStatusStr = "Active";
 
         string journalLogs = await localSsh.ExecuteCommandAsync($"journalctl -u {serviceName} -n 5 --no-pager");
         string accessLogs = await GetAccessLogsAsync(localSsh, isSingBox, isTrustTunnel);

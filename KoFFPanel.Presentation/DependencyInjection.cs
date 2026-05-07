@@ -11,10 +11,14 @@ using KoFFPanel.Presentation.Features.Config;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 
+using System.Runtime.Versioning;
+
 namespace KoFFPanel.Presentation;
 
+[SupportedOSPlatform("windows")]
 public static class DependencyInjection
 {
+    [SupportedOSPlatform("windows")]
     public static IServiceCollection AddPresentationServices(this IServiceCollection services)
     {
         // 1. Ð˜Ð½Ñ„Ñ€Ð°ÑÑ‚Ñ€ÑƒÐºÑ‚ÑƒÑ€Ð° Ð¸ Core-ÑÐµÑ€Ð²Ð¸ÑÑ‹

@@ -298,7 +298,7 @@ public partial class BotViewModel : ObservableObject
             var payload = new { ServerIp = cabinetVm.SelectedServer.IpAddress, CoreType = cabinetVm.SelectedServer.CoreType, InboundsConfigJson = JsonSerializer.Serialize(botInbounds) };
             var req = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/templates")) { Content = JsonContent.Create(payload) };
             req.Headers.Add("X-API-KEY", ApiSecret);
-            await GetClient().SendAsync(req);
+            using var response = await GetClient().SendAsync(req);
 
             MessageBox.Show("Конфигурация сервера успешно отправлена!", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -326,7 +326,7 @@ public partial class BotViewModel : ObservableObject
 
             var req = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/legacy/sync")) { Content = JsonContent.Create(allClients) };
             req.Headers.Add("X-API-KEY", ApiSecret);
-            var res = await GetClient().SendAsync(req);
+            using var res = await GetClient().SendAsync(req);
 
             if (res.IsSuccessStatusCode) MessageBox.Show($"База выгружена! Передано {allClients.Count} клиентов.", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
         }

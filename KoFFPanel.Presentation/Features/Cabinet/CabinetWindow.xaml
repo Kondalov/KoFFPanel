@@ -8,6 +8,7 @@
                  MinHeight="700"
                  MinWidth="1150"
                  WindowStartupLocation="CenterScreen"
+                 WindowStyle="None"
                  WindowBackdropType="None"
                  Background="#0a0a0a"
                  ExtendsContentIntoTitleBar="True">

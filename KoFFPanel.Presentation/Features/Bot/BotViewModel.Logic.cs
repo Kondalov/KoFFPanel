@@ -120,7 +120,7 @@ public partial class BotViewModel
                     _logger.Log("API-DIAGNOSTIC", $"[КРИТИЧЕСКАЯ ОШИБКА ПАРСИНГА] {jsonEx.Message}");
                 }
 
-                if (!IsBotOnline || BotStatus != "ОНЛАЙН")
+                if (!IsBotOnline || !string.Equals(BotStatus, "ОНЛАЙН", StringComparison.OrdinalIgnoreCase))
                 {
                     IsBotOnline = true;
                     BotStatus = "ОНЛАЙН";
@@ -182,7 +182,7 @@ public partial class BotViewModel
                 _lastNightSyncDate = now.Date;
                 LastNightlySyncText = $"Обновлено: {now:dd.MM.yy HH:mm}";
 
-                if (!IsBotOnline || BotStatus != "ОНЛАЙН")
+                if (!IsBotOnline || !string.Equals(BotStatus, "ОНЛАЙН", StringComparison.OrdinalIgnoreCase))
                 {
                     IsBotOnline = true;
                     BotStatus = "ОНЛАЙН";
@@ -238,7 +238,7 @@ public partial class BotViewModel
             };
             req.Headers.Add("X-API-KEY", ApiSecret);
 
-            var response = await GetClient().SendAsync(req);
+            using var response = await GetClient().SendAsync(req);
             if (response.IsSuccessStatusCode)
             {
                 _logger.Log("BOT-SYNC", $"Отправлен срез трафика для {trafficPayload.Count} клиентов.");

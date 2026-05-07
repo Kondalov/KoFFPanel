@@ -131,20 +131,21 @@ public class TrustTunnelUserManagerService : ITrustTunnelUserManagerService
         catch (Exception ex) { return (false, $"Ошибка статуса: {ex.Message}"); }
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, bool isP2PBlocked = true, bool isVless = false, bool isHy2 = false, bool isTt = true)
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long newLimitBytes, DateTime? newExpiryDate, string note, bool isP2PBlocked = true, bool isVless = false, bool isHy2 = false, bool isTt = true)
     {
-        var dbUser = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-        if (dbUser == null) return false;
-
-        dbUser.TrafficLimit = newLimitBytes; 
-        dbUser.ExpiryDate = newExpiryDate; 
-        dbUser.IsP2PBlocked = isP2PBlocked;
-        dbUser.IsVlessEnabled = isVless;
-        dbUser.IsHysteria2Enabled = isHy2;
-        dbUser.IsTrustTunnelEnabled = isTt;
-
         try
         {
+            var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
+            if (user == null) return false;
+
+            user.TrafficLimit = newLimitBytes;
+            user.ExpiryDate = newExpiryDate;
+            user.Note = note;
+            user.IsP2PBlocked = isP2PBlocked;
+            user.IsVlessEnabled = isVless;
+            user.IsHysteria2Enabled = isHy2;
+            user.IsTrustTunnelEnabled = isTt;
+
             await _dbContext.SaveChangesAsync();
             await RebuildCredentialsAsync(ssh, serverIp);
             await ssh.ExecuteCommandAsync("systemctl restart trusttunnel");

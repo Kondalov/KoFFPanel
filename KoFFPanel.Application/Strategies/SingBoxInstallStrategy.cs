@@ -87,9 +87,9 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
             string safeScriptBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(prepareScript.Replace("\r", "")));
             var prepResult = await ssh.ExecuteCommandAsync($"echo '{safeScriptBase64}' | base64 -d | bash", TimeSpan.FromMinutes(5));
 
-            if (prepResult.Contains("ERROR_ARCH")) return (false, $"Ошибка: Архитектура {prepResult} не поддерживается Sing-box.", null);
-            if (prepResult.Contains("ERROR_DOWNLOAD")) return (false, $"Ошибка скачивания архива ядра. Проверьте соединение.", null);
-            if (!prepResult.Contains("SUCCESS_PREPARE")) return (false, $"Сбой инсталлятора.\nВывод: {prepResult.Trim()}", null);
+            if (prepResult.Contains("ERROR_ARCH", StringComparison.OrdinalIgnoreCase)) return (false, $"Ошибка: Архитектура {prepResult} не поддерживается Sing-box.", null);
+            if (prepResult.Contains("ERROR_DOWNLOAD", StringComparison.OrdinalIgnoreCase)) return (false, $"Ошибка скачивания архива ядра. Проверьте соединение.", null);
+            if (!prepResult.Contains("SUCCESS_PREPARE", StringComparison.OrdinalIgnoreCase)) return (false, $"Сбой инсталлятора.\nВывод: {prepResult.Trim()}", null);
 
             string finalUuid = existingUuid, finalPriv = existingPrivKey, finalPub = existingPubKey, finalSid = existingShortId;
 

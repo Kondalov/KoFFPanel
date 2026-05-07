@@ -1,6 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.Messaging;
 using KoFFPanel.Presentation.Messages;
 using KoFFPanel.Domain.Entities;
+using KoFFPanel.Application.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -25,12 +26,22 @@ public partial class CabinetViewModel
         // ИСПРАВЛЕНИЕ: Обновляем выбранный сервер свежими данными (с новыми Inbounds)
         SelectedServer = message.Server;
 
-        var ssh = _currentMonitoringSsh;
+        ISshService? ssh = _currentMonitoringSsh;
+        bool isTempSsh = false;
+
+        // Если текущий SSH недоступен (например, из-за рестарта сети), создаем временный
         if (ssh == null || !ssh.IsConnected)
         {
-            _logger.Log("USER-SYNC", "КРИТИЧЕСКАЯ ОТМЕНА: Нет активного SSH!");
-            System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = "Ошибка: Нет SSH");
-            return;
+            _logger.Log("USER-SYNC", "Мониторинг недоступен. Создаю временное SSH подключение...");
+            ssh = _sshServiceFactory();
+            string connRes = await ssh.ConnectAsync(SelectedServer.IpAddress ?? "", SelectedServer.Port, SelectedServer.Username ?? "root", SelectedServer.Password ?? "", SelectedServer.KeyPath ?? "");
+            if (connRes != "SUCCESS")
+            {
+                _logger.Log("USER-SYNC", "КРИТИЧЕСКАЯ ОТМЕНА: Не удалось создать временный SSH!");
+                System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = "Ошибка синхронизации: Нет SSH");
+                return;
+            }
+            isTempSsh = true;
         }
 
         bool isSingBox = SelectedServer.CoreType == "sing-box";
@@ -85,5 +96,9 @@ public partial class CabinetViewModel
             }
         }
         catch (Exception ex) { _logger.Log("USER-SYNC", $"Ошибка: {ex.Message}"); }
+        finally 
+        { 
+            if (isTempSsh) ssh.Disconnect(); 
+        }
     }
 }

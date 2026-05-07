@@ -102,11 +102,11 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true)
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, string note, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
         if (user == null) return false;
-        user.TrafficLimit = limit; user.ExpiryDate = expiry; user.IsP2PBlocked = p2p;
+        user.TrafficLimit = limit; user.ExpiryDate = expiry; user.IsP2PBlocked = p2p; user.Note = note;
         user.IsVlessEnabled = isVless; user.IsHysteria2Enabled = isHy2; user.IsTrustTunnelEnabled = isTt;
         await _dbContext.SaveChangesAsync();
 

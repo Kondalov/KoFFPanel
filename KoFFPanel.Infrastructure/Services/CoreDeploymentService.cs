@@ -123,28 +123,28 @@ echo 'READY|Сервер готов к установке.'
                 ";
                 await ssh.ExecuteCommandAsync(cleanupCmd);
 
-                if (coreName == "xray")
+                if (string.Equals(coreName, "xray", StringComparison.OrdinalIgnoreCase))
                 {
                     await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /var/log/xray && {sudoPrefix}touch /var/log/xray/access.log /var/log/xray/error.log && {sudoPrefix}chmod -R 777 /var/log/xray");
                 }
 
                 // ИСПРАВЛЕНИЕ: При установке Xray/SingBox удаляем ВСЕ старые протоколы этих ядер. 
                 // TrustTunnel удаляем только если в новом списке его нет.
-                profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() != "trusttunnel"); 
+                profile.Inbounds.RemoveAll(i => !string.Equals(i.Protocol, "trusttunnel", StringComparison.OrdinalIgnoreCase)); 
                 
                 // Если мы ставим только Xray/SingBox и не передали TrustTunnel в protocols, 
                 // то логично и его вычистить для "чистой" установки, как просил пользователь.
-                if (!protocols.Any(p => p.Builder.ProtocolType.ToLower() == "trusttunnel"))
+                if (!protocols.Any(p => string.Equals(p.Builder.ProtocolType, "trusttunnel", StringComparison.OrdinalIgnoreCase)))
                 {
-                    profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() == "trusttunnel");
+                    profile.Inbounds.RemoveAll(i => string.Equals(i.Protocol, "trusttunnel", StringComparison.OrdinalIgnoreCase));
                 }
 
                 profile.CoreType = coreName;
             }
 
             await LogStep("[2/7] Установка бинарных файлов ядра...");
-            var installRes = coreType.ToLower() == "sing-box" ? await InstallSingBoxInternalAsync(ssh, "latest", sudoPrefix) :
-                             (coreType.ToLower() == "trusttunnel" ? await InstallTrustTunnelInternalAsync(ssh, "latest", sudoPrefix) :
+            var installRes = string.Equals(coreType, "sing-box", StringComparison.OrdinalIgnoreCase) ? await InstallSingBoxInternalAsync(ssh, "latest", sudoPrefix) :
+                             (string.Equals(coreType, "trusttunnel", StringComparison.OrdinalIgnoreCase) ? await InstallTrustTunnelInternalAsync(ssh, "latest", sudoPrefix) :
                              await InstallXrayInternalAsync(ssh, "latest", sudoPrefix));
 
             if (!installRes.IsSuccess) 
@@ -157,7 +157,7 @@ echo 'READY|Сервер готов к установке.'
             foreach (var p in protocols)
             {
                 await LogStep($"Обработка протокола: {p.Builder.ProtocolType} на порту {p.Port}");
-                var existingDb = profile.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == p.Builder.ProtocolType.ToLower());
+                var existingDb = profile.Inbounds.FirstOrDefault(i => string.Equals(i.Protocol, p.Builder.ProtocolType, StringComparison.OrdinalIgnoreCase));
                 ServerInbound inboundDb;
                 if (existingDb != null && existingDb.Port == p.Port) 
                 { 
@@ -183,7 +183,7 @@ echo 'READY|Сервер готов к установке.'
             }
 
             await LogStep("[5/7] Развертывание файлов конфигурации...");
-            if (coreType.ToLower() == "trusttunnel") await DeployTrustTunnelConfigAsync(ssh, profile, sudoPrefix, protocols);
+            if (string.Equals(coreType, "trusttunnel", StringComparison.OrdinalIgnoreCase)) await DeployTrustTunnelConfigAsync(ssh, profile, sudoPrefix, protocols);
             else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
 
             await LogStep("[6/7] Настройка микросервиса подписок (HTTPS Ready)...");

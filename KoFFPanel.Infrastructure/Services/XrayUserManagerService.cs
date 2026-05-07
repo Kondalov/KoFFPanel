@@ -301,13 +301,14 @@ EOF";
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false)
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, string note, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
         if (user == null) return false;
 
         user.TrafficLimit = limit; 
         user.ExpiryDate = expiry;
+        user.Note = note;
         user.IsP2PBlocked = isP2PBlocked;
         user.IsVlessEnabled = isVless;
         user.IsHysteria2Enabled = isHy2;

@@ -16,7 +16,7 @@ public interface IXrayUserManagerService
     Task<Dictionary<string, long>> GetTrafficStatsAsync(ISshService ssh);
     Task<bool> ResetTrafficAsync(ISshService ssh, string email);
     Task<(bool IsSuccess, string Message)> ToggleUserStatusAsync(ISshService ssh, string serverIp, string email, bool active);
-    Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false);
+    Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, string note, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false);
     Task SaveTrafficToDbAsync(string ip, IEnumerable<VpnClient> clients);
     Task<bool> SyncUsersToCoreAsync(ISshService ssh, IEnumerable<VpnClient> dbUsers);
 }
