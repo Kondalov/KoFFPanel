@@ -41,7 +41,7 @@ public class SubscriptionService : ISubscriptionService
 
             // Чистим порты перед запуском
             await ssh.ExecuteCommandAsync($"{s} fuser -k 8080/tcp 2>/dev/null || true");
-            
+
             // Настройка Firewall
             await ssh.ExecuteCommandAsync($"if command -v ufw >/dev/null 2>&1; then {s} ufw allow 8080/tcp || true; {s} ufw allow 80/tcp || true; fi");
             await ssh.ExecuteCommandAsync($"{s} iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT || true");
@@ -51,16 +51,18 @@ public class SubscriptionService : ISubscriptionService
             await ssh.ExecuteCommandAsync($"{s} chown -R $USER:$USER /var/www/xray-sub");
             await ssh.ExecuteCommandAsync($"{s} chmod -R 755 /var/www/xray-sub");
 
-            // УЛУЧШЕННЫЙ СКРИПТ: Добавлена обработка ошибок, логирование и ping endpoint для проверки маршрутизации
+            // УЛУЧШЕННЫЙ СКРИПТ: Умный парсинг URI и защита от кэширования
             string pyScript = @"
 import http.server, socketserver, os, sys
+from urllib.parse import urlparse
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            p = self.path.strip('/')
+            # УМНЫЙ АЛГОРИТМ: Отсекаем GET-параметры (?t=12345), которые Hiddify добавляет для обхода кэша
+            parsed_path = urlparse(self.path)
+            p = parsed_path.path.strip('/')
             
-            # ИСПРАВЛЕНИЕ: Добавлен эндпоинт для 'умной проверки' маршрутизации
             if p == 'ping':
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/plain')
@@ -80,11 +82,16 @@ class H(http.server.BaseHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/plain; charset=utf-8')
                 self.send_header('Content-Length', str(len(content)))
-                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-                self.send_header('profile-update-interval', '24')
+                
+                # FOOLPROOF: Жесткий запрет кэширования (Cloudflare & Hiddify bypass)
+                self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
+                self.send_header('Pragma', 'no-cache')
+                self.send_header('Expires', '0')
+                self.send_header('profile-update-interval', '1') # Разрешаем Hiddify обновляться часто
                 self.send_header('profile-title', 'KoFFPanel')
                 self.send_header('subscription-userinfo', 'upload=0; download=0; total=0; expire=0')
                 self.end_headers()
+                
                 self.wfile.write(content)
             else:
                 self.send_error(404, 'File Not Found')
@@ -93,12 +100,11 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_error(500, 'Internal Server Error')
 
     def log_message(self, format, *args):
-        # Тихий режим для уменьшения логов в системном журнале
         pass
 
 socketserver.TCPServer.allow_reuse_address = True
 try:
-    with socketserver.ThreadingTCPServer(('', 8080), H) as d:
+    with socketserver.ThreadingTCPServer(('127.0.0.1', 8080), H) as d:
         print('Starting subscription server on port 8080...')
         d.serve_forever()
 except Exception as e:
@@ -126,7 +132,6 @@ WantedBy=multi-user.target";
 
             await ssh.ExecuteCommandAsync($"{s} systemctl daemon-reload && {s} systemctl enable koff-sub --now && {s} systemctl restart koff-sub");
 
-            // === УМНАЯ НАСТРОЙКА REVERSE PROXY (Cloudflare Compatible) ===
             if (!string.IsNullOrEmpty(_customDomain))
             {
                 try
@@ -144,28 +149,28 @@ WantedBy=multi-user.target";
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # FOOLPROOF: Пробиваем кэш Cloudflare на уровне Nginx
+        add_header Cache-Control ""no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"";
+        add_header Pragma ""no-cache"";
+        add_header Expires ""0"";
     }}
 }}";
                     string b64Nginx = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(nginxProxy));
-                    
-                    // Скрипт автоматизации Nginx: проверка наличия, исправление конфига hash_bucket, удаление старых конфигов
+
                     string nginxSetupCmd = $@"
 if command -v nginx >/dev/null 2>&1; then
-    # Исправление лимитов имен доменов
     if ! grep -q 'server_names_hash_bucket_size' /etc/nginx/nginx.conf; then
         {s} sed -i '/http {{/a \        server_names_hash_bucket_size 64;' /etc/nginx/nginx.conf
     else
         {s} sed -i 's/#\s*server_names_hash_bucket_size.*/server_names_hash_bucket_size 64;/g' /etc/nginx/nginx.conf
     fi
 
-    # Удаление старых конфликтующих конфигов (защита от мусора)
     {s} rm -f /etc/nginx/sites-enabled/xray_sub /etc/nginx/sites-available/xray_sub
 
-    # Установка нового прокси-конфига
     echo '{b64Nginx}' | base64 -d | {s} tee /etc/nginx/sites-available/koff-sub-proxy >/dev/null
     {s} ln -sf /etc/nginx/sites-available/koff-sub-proxy /etc/nginx/sites-enabled/
     
-    # Проверка и перезагрузка
     if {s} nginx -t; then
         {s} systemctl restart nginx
     else
