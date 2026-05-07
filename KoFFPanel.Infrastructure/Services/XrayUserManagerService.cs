@@ -27,7 +27,7 @@ public partial class XrayUserManagerService : IXrayUserManagerService
     {
         // === MODERN 2026: DEBUG TRACE ===
         System.Diagnostics.Debug.WriteLine($"[DB-QUERY] Searching for users with IP: '{serverIp}'");
-        
+
         var dbUsers = await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
         System.Diagnostics.Debug.WriteLine($"[DB-QUERY] Found in DB: {dbUsers.Count} users.");
 
@@ -35,25 +35,15 @@ public partial class XrayUserManagerService : IXrayUserManagerService
         {
             System.Diagnostics.Debug.WriteLine($"[DB-QUERY] DB empty for this IP! Creating default ADMIN...");
             var admin = new VpnClient { Email = "ADMIN", Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true };
-            _dbContext.Clients.Add(admin); await _dbContext.SaveChangesAsync();
+            _dbContext.Clients.Add(admin);
+            await _dbContext.SaveChangesAsync();
             dbUsers.Add(admin);
         }
 
-        if (ssh.IsConnected)
-        {
-            string raw = await ssh.ExecuteCommandAsync("cat /usr/local/etc/xray/config.json 2>/dev/null");
-            if (!string.IsNullOrWhiteSpace(raw) && !raw.Contains("No such"))
-            {
-                try {
-                    var root = JsonNode.Parse(raw);
-                    if (root != null) {
-                        await RebuildInboundsAsync(root, serverIp, ssh);
-                        await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-                    }
-                } catch { }
-            }
-        }
-        return await _dbContext.Clients.Where(c => c.ServerIp == serverIp).ToListAsync();
+        // ИСПРАВЛЕНИЕ: Блок пересоборки конфига и рестарта Xray СТРОГО УДАЛЕН.
+        // Чтение списка пользователей не должно вмешиваться в работу ядра и убивать сессии.
+
+        return dbUsers;
     }
 
     public async Task<(bool IsSuccess, string Message, string VlessLink)> InitializeRealityAsync(ISshService ssh, string serverIp)

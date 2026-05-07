@@ -336,4 +336,22 @@ public partial class BotViewModel : ObservableObject
         }
         finally { IsSyncing = false; await HeartbeatCheckAsync(); }
     }
+
+    [RelayCommand]
+    public async Task TriggerInstantSyncAsync()
+    {
+        if (!IsBotOnline) return;
+
+        _logger.Log("BOT-SYNC", "Запущена МГНОВЕННАЯ синхронизация изменений в бота...");
+        IsSyncing = true;
+
+        try
+        {
+            await SilentAutoSyncAsync();
+        }
+        finally
+        {
+            IsSyncing = false;
+        }
+    }
 }

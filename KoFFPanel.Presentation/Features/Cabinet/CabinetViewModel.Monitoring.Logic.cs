@@ -214,23 +214,55 @@ public partial class CabinetViewModel
 
     private async Task<Dictionary<string, long>> CalculateTrafficStatsAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel, HashSet<string> activeUsernames)
     {
-        if (!isSingBox && !isTrustTunnel) return await _userManager.GetTrafficStatsAsync(localSsh);
+        Dictionary<string, long> trafficStats;
 
-        var trafficStats = new Dictionary<string, long>();
+        if (!isSingBox && !isTrustTunnel)
+        {
+            // Для Xray получаем точную статистику через API ядра
+            trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
+
+            // FOOLPROOF ЗАЩИТА: Если по API идет трафик, значит юзер 100% онлайн, даже если его уже нет в логах (logrotate/долгий стрим)
+            foreach (var kvp in trafficStats)
+            {
+                long prev = _previousTrafficStats.TryGetValue(kvp.Key, out long p) ? p : 0;
+                if (kvp.Value > prev)
+                {
+                    activeUsernames.Add(kvp.Key);
+                }
+            }
+            return trafficStats;
+        }
+
+        // Логика для Sing-Box и TrustTunnel (расчет по общему сетевому интерфейсу IFACE)
+        trafficStats = new Dictionary<string, long>();
         string netBytesCmd = "IFACE=$(ip route | grep default | awk '{print $5}' | head -n1); echo $(( $(cat /sys/class/net/$IFACE/statistics/rx_bytes 2>/dev/null || echo 0) + $(cat /sys/class/net/$IFACE/statistics/tx_bytes 2>/dev/null || echo 0) ))";
-        
-        if (long.TryParse((await localSsh.ExecuteCommandAsync(netBytesCmd)).Trim(), out long currentTotalServerBytes))
+
+        string cmdResult = await localSsh.ExecuteCommandAsync(netBytesCmd);
+        if (long.TryParse(cmdResult.Trim(), out long currentTotalServerBytes))
         {
             if (_previousTotalServerBytes > 0 && currentTotalServerBytes > _previousTotalServerBytes)
             {
                 long delta = currentTotalServerBytes - _previousTotalServerBytes;
-                // Исключаем фоновый трафик системы (например 10KB/сек) если юзеров нет
-                if (activeUsernames.Count > 0 && delta > 10240) 
+
+                // Умный алгоритм: распределяем трафик на всех, кто светился в последние 3 минуты
+                var recentlyActive = Clients
+                    .Where(c => c.LastOnline.HasValue && (DateTime.Now - c.LastOnline.Value).TotalMinutes <= 3)
+                    .Select(c => c.Email ?? "")
+                    .ToList();
+
+                foreach (var u in activeUsernames)
                 {
-                    long bytesPerUser = delta / activeUsernames.Count;
-                    foreach (var uname in activeUsernames) 
+                    if (!recentlyActive.Contains(u)) recentlyActive.Add(u);
+                }
+
+                if (recentlyActive.Count > 0 && delta > 10240) // Игнорируем фоновый шум ОС (менее 10KB)
+                {
+                    long bytesPerUser = delta / recentlyActive.Count;
+                    foreach (var uname in recentlyActive)
                     {
                         trafficStats[uname] = (_previousTrafficStats.TryGetValue(uname, out long p) ? p : 0) + bytesPerUser;
+                        // Искусственно продлеваем активность сессии, чтобы UI не моргал
+                        activeUsernames.Add(uname);
                     }
                 }
             }
@@ -267,11 +299,22 @@ public partial class CabinetViewModel
             if (activeUsernames.Contains(email))
             {
                 var log = allOnlineStats.FirstOrDefault(s => s.Email == email);
+                // FOOLPROOF: Если allOnlineStats пуст из-за таймаута SSH, сохраняем минимум 1 активную сессию (раз юзер есть в activeUsernames)
                 client.ActiveConnections = log != null && log.ActiveSessions > 0 ? log.ActiveSessions : 1;
                 client.LastOnline = DateTime.Now;
-                if (log != null) { client.LastIp = log.LastIp; if (!string.IsNullOrEmpty(log.Country)) client.Country = log.Country; connectionBatch.Add((email, log.LastIp ?? "", client.Country ?? "")); }
+
+                if (log != null)
+                {
+                    client.LastIp = log.LastIp;
+                    if (!string.IsNullOrEmpty(log.Country)) client.Country = log.Country;
+                    connectionBatch.Add((email, log.LastIp ?? "", client.Country ?? ""));
+                }
             }
-            else client.ActiveConnections = (client.LastOnline.HasValue && (DateTime.Now - client.LastOnline.Value).TotalMinutes <= 1) ? 1 : 0;
+            else
+            {
+                // Мягкая деградация (сглаживание). Ждем 3 минуты перед тем, как визуально "отключить" пользователя.
+                client.ActiveConnections = (client.LastOnline.HasValue && (DateTime.Now - client.LastOnline.Value).TotalMinutes <= 3) ? 1 : 0;
+            }
 
             if (CheckAntiFraudAndLimits(client, trafficStats.TryGetValue(email, out long d) ? d : 0)) dbNeedsUpdate = true;
         }

@@ -14,16 +14,22 @@ public partial class CabinetViewModel
 {
     [ObservableProperty]
     private string _coreTitleLabel = "Ядро (Ожидание)";
-
     private long _previousTotalServerBytes = 0;
+
+    // Добавляем переменную класса для отслеживания актуальной задачи
+    private Guid _activeMonitoringTaskId;
 
     private async Task StartMonitoringLoopAsync(VpnProfile profile, CancellationToken token)
     {
-        IsMonitoringActive = true;
-        
+        // Захват локального ID задачи для защиты от гонки потоков (Race Condition)
+        var currentTaskId = Guid.NewGuid();
+        _activeMonitoringTaskId = currentTaskId;
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() => IsMonitoringActive = true);
+
         while (!token.IsCancellationRequested)
         {
-            ServerStatus = "Подключение...";
+            UpdateStatusSecurely("Подключение...", currentTaskId);
             ISshService localSsh = _sshServiceFactory();
             _currentMonitoringSsh = localSsh;
 
@@ -34,17 +40,21 @@ public partial class CabinetViewModel
 
             _logger.Log("MONITORING", $"[START] Запуск цикла мониторинга. Ожидаемое Ядро: {profile.CoreType?.ToUpper()}");
 
-            if (await localSsh.ConnectAsync(ip, profile.Port, user, pass, key) != "SUCCESS")
+            // ИСПРАВЛЕНИЕ: Добавлен жесткий таймаут коннекта на уровне Task, чтобы исключить зависание UI
+            var connectTask = localSsh.ConnectAsync(ip, profile.Port, user, pass, key);
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(15), token);
+
+            if (await Task.WhenAny(connectTask, timeoutTask) == timeoutTask || await connectTask != "SUCCESS")
             {
-                ServerStatus = "Ошибка подключения. Переподключение через 5с...";
+                UpdateStatusSecurely("Ошибка соединения. Переподключение через 5с...", currentTaskId);
                 if (_currentMonitoringSsh == localSsh) _currentMonitoringSsh = null;
                 localSsh.Disconnect();
-                
+
                 try { await Task.Delay(5000, token); continue; }
                 catch (TaskCanceledException) { break; }
             }
 
-            ServerStatus = "Онлайн (Сбор данных)";
+            UpdateStatusSecurely("Онлайн (Загрузка пользователей)", currentTaskId);
             await LoadUsersAsync();
             _ = _analyticsService.CleanupOldLogsAsync();
 
@@ -52,34 +62,49 @@ public partial class CabinetViewModel
             {
                 while (!token.IsCancellationRequested)
                 {
-                    if (!localSsh.IsConnected) throw new Exception("SSH Connection Dropped");
+                    if (!localSsh.IsConnected) throw new Exception("SSH сокет закрыт сервером");
 
                     await RunMonitoringCycleStepAsync(localSsh, profile, token);
+
+                    // FOOLPROOF: Динамическое обновление статуса каждую итерацию. 
+                    // Если цикл работает, пользователь всегда видит свежее время обновления.
+                    UpdateStatusSecurely($"Онлайн (Синхр: {DateTime.Now:HH:mm:ss})", currentTaskId);
+
                     await Task.Delay(5000, token);
                 }
             }
             catch (TaskCanceledException) { }
-            catch (Exception ex) 
-            { 
-                ServerStatus = "Связь потеряна. Переподключение..."; 
+            catch (Exception ex)
+            {
+                UpdateStatusSecurely($"Связь потеряна. Реконнект...", currentTaskId);
                 _logger.Log("MONITORING", $"Сбой: {ex.Message}");
             }
-            finally 
-            { 
-                localSsh.Disconnect(); 
-                if (_currentMonitoringSsh == localSsh) { _currentMonitoringSsh = null; } 
+            finally
+            {
+                localSsh.Disconnect();
+                if (_currentMonitoringSsh == localSsh) { _currentMonitoringSsh = null; }
             }
-            
-            // Если была отмена (нажали Отключить), выходим из внешнего цикла
+
             if (token.IsCancellationRequested) break;
-            
-            // Задержка перед реконнектом
+
             try { await Task.Delay(3000, token); }
             catch (TaskCanceledException) { break; }
         }
-        
-        IsMonitoringActive = false;
-        ServerStatus = "Оффлайн";
+
+        UpdateStatusSecurely("Оффлайн", currentTaskId);
+        System.Windows.Application.Current.Dispatcher.Invoke(() => IsMonitoringActive = false);
+    }
+
+    // ИСПРАВЛЕНИЕ: Безопасное обновление UI, отклоняющее команды от убитых/старых потоков
+    private void UpdateStatusSecurely(string status, Guid taskId)
+    {
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            if (_activeMonitoringTaskId == taskId)
+            {
+                ServerStatus = status;
+            }
+        });
     }
 
     private async Task RunMonitoringCycleStepAsync(ISshService localSsh, VpnProfile profile, CancellationToken token)
