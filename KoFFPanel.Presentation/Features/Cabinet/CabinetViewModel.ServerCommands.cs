@@ -1,13 +1,14 @@
-﻿using System;
+﻿using CommunityToolkit.Mvvm.Input;
+using KoFFPanel.Domain.Entities;
+using KoFFPanel.Presentation.Features.Bot;
+using KoFFPanel.Presentation.Features.Deploy;
+using KoFFPanel.Presentation.Features.Management;
+using KoFFPanel.Presentation.Features.Terminal;
+using Microsoft.Extensions.DependencyInjection;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using KoFFPanel.Domain.Entities;
-using CommunityToolkit.Mvvm.Input;
-using Microsoft.Extensions.DependencyInjection;
-using KoFFPanel.Presentation.Features.Management;
-using KoFFPanel.Presentation.Features.Deploy;
-using KoFFPanel.Presentation.Features.Terminal;
 
 namespace KoFFPanel.Presentation.Features.Cabinet;
 
@@ -30,15 +31,59 @@ public partial class CabinetViewModel
         LoadData(); 
     }
 
-    [RelayCommand] 
-    private void EditServer(VpnProfile? p) 
-    { 
-        if (p == null) return; 
-        var w = _serviceProvider.GetRequiredService<AddServerWindow>(); 
-        if (System.Windows.Application.Current.MainWindow != null) w.Owner = System.Windows.Application.Current.MainWindow; 
-        if (w.DataContext is AddServerViewModel vm) vm.LoadForEdit(p); 
-        w.ShowDialog(); 
-        LoadData(); 
+    [RelayCommand]
+    private async Task EditServer(VpnProfile? p)
+    {
+        if (p == null) return;
+
+        // ЗАПОМИНАЕМ СТАРЫЙ IP перед открытием окна редактирования
+        string originalIp = p.IpAddress ?? "";
+
+        var w = _serviceProvider.GetRequiredService<AddServerWindow>();
+        if (System.Windows.Application.Current.MainWindow != null) w.Owner = System.Windows.Application.Current.MainWindow;
+        if (w.DataContext is AddServerViewModel vm) vm.LoadForEdit(p);
+
+        w.ShowDialog(); // Выполнение тормозится здесь, пока ты не закроешь окно
+
+        LoadData(); // Перезагружаем профили из локальной БД
+
+        // FOOLPROOF ЗАЩИТА: Проверяем, изменился ли IP-адрес после сохранения
+        var updatedProfile = Servers.FirstOrDefault(s => s.Id == p.Id);
+        if (updatedProfile != null)
+        {
+            string newIp = updatedProfile.IpAddress ?? "";
+
+            if (!string.IsNullOrEmpty(originalIp) && !string.IsNullOrEmpty(newIp) && originalIp != newIp)
+            {
+                // Запрашиваем подтверждение у пользователя (Защита от случайного переезда)
+                var result = System.Windows.MessageBox.Show(
+                    $"Вы изменили IP-адрес сервера с {originalIp} на {newIp}.\n\nХотите автоматически перенести всех пользователей в базе бота на этот новый сервер?",
+                    "Умная миграция сервера",
+                    System.Windows.MessageBoxButton.YesNo,
+                    System.Windows.MessageBoxImage.Question);
+
+                if (result == System.Windows.MessageBoxResult.Yes)
+                {
+                    ServerStatus = "Миграция пользователей в боте...";
+
+                    var botVm = _serviceProvider.GetRequiredService<BotViewModel>();
+                    bool success = await botVm.MigrateServerIpInBotAsync(originalIp, newIp);
+
+                    if (success)
+                    {
+                        ServerStatus = "Онлайн (Миграция завершена!)";
+                        // Мгновенно запускаем синхронизацию, чтобы скачать ключи на новый сервер
+                        await botVm.TriggerInstantSyncAsync();
+                        System.Windows.MessageBox.Show("Все пользователи успешно привязаны к новому IP и поставлены в очередь на синхронизацию!", "Успех", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        ServerStatus = "Ошибка миграции в боте!";
+                        System.Windows.MessageBox.Show("Не удалось перенести пользователей. Проверьте соединение с ботом.", "Ошибка", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+                    }
+                }
+            }
+        }
     }
 
     [RelayCommand] 

@@ -261,4 +261,36 @@ public partial class BotViewModel
             _logger?.Log("BOT-CRASH-PREVENTED", $"Предотвращено падение приложения в фоне: {ex.Message}");
         }
     }
+
+    // УМНЫЙ АЛГОРИТМ: Метод для безопасного запроса миграции
+    public async Task<bool> MigrateServerIpInBotAsync(string oldIp, string newIp)
+    {
+        if (string.IsNullOrWhiteSpace(oldIp) || string.IsNullOrWhiteSpace(newIp) || oldIp == newIp)
+            return false;
+
+        try
+        {
+            var payload = new { OldIp = oldIp, NewIp = newIp };
+            var req = new HttpRequestMessage(HttpMethod.Post, GetApiUrl("/sync/migrate-server"))
+            {
+                Content = JsonContent.Create(payload)
+            };
+            req.Headers.Add("X-API-KEY", ApiSecret);
+
+            var res = await GetClient().SendAsync(req);
+            if (res.IsSuccessStatusCode)
+            {
+                _logger.Log("BOT-MIGRATE", $"Сервер успешно мигрировал в боте с {oldIp} на {newIp}.");
+                return true;
+            }
+
+            _logger.Log("BOT-MIGRATE-ERR", $"Бот вернул ошибку: {res.StatusCode}");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("BOT-MIGRATE-CRASH", $"Сбой API при миграции: {ex.Message}");
+            return false;
+        }
+    }
 }
