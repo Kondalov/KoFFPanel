@@ -9,11 +9,13 @@ namespace KoFFPanel.Infrastructure.Services;
 public class SubscriptionService : ISubscriptionService
 {
     private readonly IAppLogger _logger;
+    private readonly IProfileRepository _profileRepository;
     private string? _customDomain;
 
-    public SubscriptionService(IAppLogger logger)
+    public SubscriptionService(IAppLogger logger, IProfileRepository profileRepository)
     {
         _logger = logger;
+        _profileRepository = profileRepository;
     }
 
     public void SetCustomDomain(string domain)
@@ -36,22 +38,21 @@ public class SubscriptionService : ISubscriptionService
         if (!ssh.IsConnected) return false;
         try
         {
-            _logger.Log("SUB", "Настройка кастомного Python-микросервиса подписок (HTTPS Ready)...");
+            _logger.Log("SUB", "Настройка кастомного Python-микросервиса подписок (Smart Port 8081)...");
             string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
 
             // Чистим порты перед запуском
-            await ssh.ExecuteCommandAsync($"{s} fuser -k 8080/tcp 2>/dev/null || true");
+            await ssh.ExecuteCommandAsync($"{s} fuser -k 8081/tcp 2>/dev/null || true");
 
             // Настройка Firewall
-            await ssh.ExecuteCommandAsync($"if command -v ufw >/dev/null 2>&1; then {s} ufw allow 8080/tcp || true; {s} ufw allow 80/tcp || true; fi");
-            await ssh.ExecuteCommandAsync($"{s} iptables -I INPUT 1 -p tcp --dport 8080 -j ACCEPT || true");
-            await ssh.ExecuteCommandAsync($"{s} iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT || true");
+            await ssh.ExecuteCommandAsync($"if command -v ufw >/dev/null 2>&1; then {s} ufw allow 8081/tcp || true; fi");
+            await ssh.ExecuteCommandAsync($"{s} iptables -I INPUT 1 -p tcp --dport 8081 -j ACCEPT || true");
 
             await ssh.ExecuteCommandAsync($"{s} mkdir -p /var/www/xray-sub");
             await ssh.ExecuteCommandAsync($"{s} chown -R $USER:$USER /var/www/xray-sub");
             await ssh.ExecuteCommandAsync($"{s} chmod -R 755 /var/www/xray-sub");
 
-            // УЛУЧШЕННЫЙ СКРИПТ: Умный парсинг URI и защита от кэширования
+            // УЛУЧШЕННЫЙ СКРИПТ: Прямой бинд на 0.0.0.0:8081
             string pyScript = @"
 import http.server, socketserver, os, sys
 from urllib.parse import urlparse
@@ -59,7 +60,6 @@ from urllib.parse import urlparse
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            # УМНЫЙ АЛГОРИТМ: Отсекаем GET-параметры (?t=12345), которые Hiddify добавляет для обхода кэша
             parsed_path = urlparse(self.path)
             p = parsed_path.path.strip('/')
             
@@ -87,7 +87,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
                 self.send_header('Pragma', 'no-cache')
                 self.send_header('Expires', '0')
-                self.send_header('profile-update-interval', '1') # Разрешаем Hiddify обновляться часто
+                self.send_header('profile-update-interval', '1') 
                 self.send_header('profile-title', 'KoFFPanel')
                 self.send_header('subscription-userinfo', 'upload=0; download=0; total=0; expire=0')
                 self.end_headers()
@@ -104,8 +104,8 @@ class H(http.server.BaseHTTPRequestHandler):
 
 socketserver.TCPServer.allow_reuse_address = True
 try:
-    with socketserver.ThreadingTCPServer(('127.0.0.1', 8080), H) as d:
-        print('Starting subscription server on port 8080...')
+    with socketserver.ThreadingTCPServer(('0.0.0.0', 8081), H) as d:
+        print('Starting subscription server on port 8081...')
         d.serve_forever()
 except Exception as e:
     print(f'Fatal server error: {e}')
@@ -131,59 +131,6 @@ WantedBy=multi-user.target";
             await ssh.ExecuteCommandAsync($"echo '{b64Svc}' | base64 -d | {s} tee /etc/systemd/system/koff-sub.service >/dev/null");
 
             await ssh.ExecuteCommandAsync($"{s} systemctl daemon-reload && {s} systemctl enable koff-sub --now && {s} systemctl restart koff-sub");
-
-            if (!string.IsNullOrEmpty(_customDomain))
-            {
-                try
-                {
-                    var uri = new Uri(_customDomain);
-                    string host = uri.Host;
-                    _logger.Log("SUB", $"Настройка Nginx Proxy для домена {host}...");
-
-                    string nginxProxy = $@"server {{
-    listen 80;
-    server_name {host};
-    location / {{
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # FOOLPROOF: Пробиваем кэш Cloudflare на уровне Nginx
-        add_header Cache-Control ""no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"";
-        add_header Pragma ""no-cache"";
-        add_header Expires ""0"";
-    }}
-}}";
-                    string b64Nginx = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(nginxProxy));
-
-                    string nginxSetupCmd = $@"
-if command -v nginx >/dev/null 2>&1; then
-    if ! grep -q 'server_names_hash_bucket_size' /etc/nginx/nginx.conf; then
-        {s} sed -i '/http {{/a \        server_names_hash_bucket_size 64;' /etc/nginx/nginx.conf
-    else
-        {s} sed -i 's/#\s*server_names_hash_bucket_size.*/server_names_hash_bucket_size 64;/g' /etc/nginx/nginx.conf
-    fi
-
-    {s} rm -f /etc/nginx/sites-enabled/xray_sub /etc/nginx/sites-available/xray_sub
-
-    echo '{b64Nginx}' | base64 -d | {s} tee /etc/nginx/sites-available/koff-sub-proxy >/dev/null
-    {s} ln -sf /etc/nginx/sites-available/koff-sub-proxy /etc/nginx/sites-enabled/
-    
-    if {s} nginx -t; then
-        {s} systemctl restart nginx
-    else
-        _logger.Log('SUB-WARN', 'Nginx config test failed, skip restart');
-    fi
-fi";
-                    await ssh.ExecuteCommandAsync(nginxSetupCmd);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Log("SUB-WARN", $"Не удалось настроить Nginx Proxy: {ex.Message}");
-                }
-            }
 
             return true;
         }
@@ -245,6 +192,25 @@ fi";
 
     public string GetSubscriptionUrl(string serverIp, string uuid)
     {
-        return $"https://link.partherhr.ru/{uuid}";
+        // === ИСПРАВЛЕНИЕ: Умный алгоритм поиска актуального домена из БД ===
+        var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
+        string? domain = profile?.CustomDomain;
+
+        if (!string.IsNullOrWhiteSpace(domain))
+        {
+            domain = domain.Trim().TrimEnd('/');
+            if (!domain.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                domain = "https://" + domain;
+            }
+            return $"{domain}/{uuid}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(_customDomain))
+        {
+            return $"{_customDomain}/{uuid}";
+        }
+
+        return $"http://{serverIp}:8080/{uuid}";
     }
 }

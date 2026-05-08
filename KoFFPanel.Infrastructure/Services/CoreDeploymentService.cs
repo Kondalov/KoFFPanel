@@ -74,7 +74,7 @@ echo 'READY|Сервер готов к установке.'
     public async Task<(bool IsSuccess, string Log)> DeployFullStackAsync(ISshService ssh, VpnProfile profile, string coreType, List<(IProtocolBuilder Builder, int Port, string? TtUsername, string? TtPassword)> protocols)
     {
         string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "deploy_steps.log");
-        async Task LogStep(string step) 
+        async Task LogStep(string step)
         {
             string msg = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {step}";
             _logger.Log("DEPLOY-TRACE", msg);
@@ -101,26 +101,25 @@ echo 'READY|Сервер готов к установке.'
             }
             else
             {
-                // ИСПРАВЛЕНИЕ: Максимально агрессивная очистка. Останавливаем, отключаем, убиваем процессы, ЧИСТИМ DOCKER и чистим порты.
                 string cleanupCmd = $@"
-                    {sudoPrefix}systemctl stop sing-box xray 2>/dev/null || true
-                    {sudoPrefix}systemctl disable sing-box xray 2>/dev/null || true
-                    {sudoPrefix}pkill -9 sing-box 2>/dev/null || true
-                    {sudoPrefix}pkill -9 xray 2>/dev/null || true
-                    
-                    # ЗАЩИТА ОТ ДУРАКА: Если ядро запущено в Docker, оно тоже может занимать порты
-                    if command -v docker >/dev/null 2>&1; then
-                        {sudoPrefix}docker ps -q --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
-                        {sudoPrefix}docker ps -aq --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker rm 2>/dev/null || true
-                        # Также убиваем контейнеры, слушающие порт 443 напрямую
-                        {sudoPrefix}docker ps -q | xargs -i {sudoPrefix}docker inspect -f '{{{{.Id}}}} {{{{.HostConfig.PortBindings}}}}' {{}} | grep ':443' | awk '{{print $1}}' | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
-                    fi
+                {sudoPrefix}systemctl stop sing-box xray 2>/dev/null || true
+                {sudoPrefix}systemctl disable sing-box xray 2>/dev/null || true
+                {sudoPrefix}pkill -9 sing-box 2>/dev/null || true
+                {sudoPrefix}pkill -9 xray 2>/dev/null || true
+                
+                # ЗАЩИТА ОТ ДУРАКА: Если ядро запущено в Docker, оно тоже может занимать порты
+                if command -v docker >/dev/null 2>&1; then
+                    {sudoPrefix}docker ps -q --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
+                    {sudoPrefix}docker ps -aq --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker rm 2>/dev/null || true
+                    # Также убиваем контейнеры, слушающие порт 443 напрямую
+                    {sudoPrefix}docker ps -q | xargs -i {sudoPrefix}docker inspect -f '{{{{.Id}}}} {{{{.HostConfig.PortBindings}}}}' {{}} | grep ':443' | awk '{{print $1}}' | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
+                fi
 
-                    {sudoPrefix}fuser -k -9 443/tcp 443/udp 8080/tcp 2>/dev/null || true
-                    {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray
-                    {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box && {sudoPrefix}chmod 777 /var/log/sing-box
-                    sleep 1
-                ";
+                {sudoPrefix}fuser -k -9 443/tcp 443/udp 8080/tcp 2>/dev/null || true
+                {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray
+                {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box && {sudoPrefix}chmod 777 /var/log/sing-box
+                sleep 1
+            ";
                 await ssh.ExecuteCommandAsync(cleanupCmd);
 
                 if (string.Equals(coreName, "xray", StringComparison.OrdinalIgnoreCase))
@@ -128,12 +127,8 @@ echo 'READY|Сервер готов к установке.'
                     await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /var/log/xray && {sudoPrefix}touch /var/log/xray/access.log /var/log/xray/error.log && {sudoPrefix}chmod -R 777 /var/log/xray");
                 }
 
-                // ИСПРАВЛЕНИЕ: При установке Xray/SingBox удаляем ВСЕ старые протоколы этих ядер. 
-                // TrustTunnel удаляем только если в новом списке его нет.
-                profile.Inbounds.RemoveAll(i => !string.Equals(i.Protocol, "trusttunnel", StringComparison.OrdinalIgnoreCase)); 
-                
-                // Если мы ставим только Xray/SingBox и не передали TrustTunnel в protocols, 
-                // то логично и его вычистить для "чистой" установки, как просил пользователь.
+                profile.Inbounds.RemoveAll(i => !string.Equals(i.Protocol, "trusttunnel", StringComparison.OrdinalIgnoreCase));
+
                 if (!protocols.Any(p => string.Equals(p.Builder.ProtocolType, "trusttunnel", StringComparison.OrdinalIgnoreCase)))
                 {
                     profile.Inbounds.RemoveAll(i => string.Equals(i.Protocol, "trusttunnel", StringComparison.OrdinalIgnoreCase));
@@ -147,7 +142,7 @@ echo 'READY|Сервер готов к установке.'
                              (string.Equals(coreType, "trusttunnel", StringComparison.OrdinalIgnoreCase) ? await InstallTrustTunnelInternalAsync(ssh, "latest", sudoPrefix) :
                              await InstallXrayInternalAsync(ssh, "latest", sudoPrefix));
 
-            if (!installRes.IsSuccess) 
+            if (!installRes.IsSuccess)
             {
                 await LogStep($"ОШИБКА: Не удалось установить ядро. Лог: {installRes.Log}");
                 return (false, $"Ошибка установки ядра: {installRes.Log}");
@@ -159,18 +154,18 @@ echo 'READY|Сервер готов к установке.'
                 await LogStep($"Обработка протокола: {p.Builder.ProtocolType} на порту {p.Port}");
                 var existingDb = profile.Inbounds.FirstOrDefault(i => string.Equals(i.Protocol, p.Builder.ProtocolType, StringComparison.OrdinalIgnoreCase));
                 ServerInbound inboundDb;
-                if (existingDb != null && existingDb.Port == p.Port) 
-                { 
+                if (existingDb != null && existingDb.Port == p.Port)
+                {
                     await LogStep("Восстановление существующих сертификатов...");
-                    await SmartRestoreCertsAsync(ssh, existingDb); 
-                    inboundDb = existingDb; 
+                    await SmartRestoreCertsAsync(ssh, existingDb);
+                    inboundDb = existingDb;
                 }
-                else 
+                else
                 {
                     await LogStep("Генерация новых ключей/сертификатов...");
                     inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
                 }
-                
+
                 if (!profile.Inbounds.Contains(inboundDb))
                     profile.Inbounds.Add(inboundDb);
             }
@@ -187,27 +182,29 @@ echo 'READY|Сервер готов к установке.'
             else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
 
             await LogStep("[6/7] Настройка микросервиса подписок (HTTPS Ready)...");
+
+            // === ИСПРАВЛЕНИЕ: Обязательно передаем домен перед деплоем сервиса подписок ===
+            _subscriptionService.SetCustomDomain(profile.CustomDomain ?? string.Empty);
+
             await _subscriptionService.InitializeServerAsync(ssh);
             _profileRepository.UpdateProfile(profile);
 
             await LogStep("[7/7] Запуск службы и проверка статуса...");
 
-            // ИСПРАВЛЕНИЕ: Жестко освобождаем порты перед запуском
             foreach (var inbound in profile.Inbounds)
             {
                 await LogStep($"Очистка возможных зависших процессов на порту {inbound.Port}...");
                 string killCmd = $@"
-                    {sudoPrefix}fuser -k -9 {inbound.Port}/tcp 2>/dev/null || true
-                    {sudoPrefix}fuser -k -9 {inbound.Port}/udp 2>/dev/null || true
-                    PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true)
-                    if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi
-                ";
+                {sudoPrefix}fuser -k -9 {inbound.Port}/tcp 2>/dev/null || true
+                {sudoPrefix}fuser -k -9 {inbound.Port}/udp 2>/dev/null || true
+                PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true)
+                if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi
+            ";
                 await ssh.ExecuteCommandAsync(killCmd);
             }
 
             await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload && {sudoPrefix}systemctl enable {coreName} --now && {sudoPrefix}systemctl restart {coreName}");
-            
-            // Даем время на запуск
+
             await Task.Delay(2000);
             string status = (await ssh.ExecuteCommandAsync($"systemctl is-active {coreName}")).Trim();
 
@@ -222,10 +219,10 @@ echo 'READY|Сервер готов к установке.'
             await LogStep("=== ДЕПЛОЙ ЗАВЕРШЕН УСПЕШНО ===");
             return (true, $"Успешно развернуто! Ядро: {coreType.ToUpper()}.");
         }
-        catch (Exception ex) 
-        { 
+        catch (Exception ex)
+        {
             await LogStep($"КРИТИЧЕСКАЯ ОШИБКА ИСКЛЮЧЕНИЯ: {ex.Message}\n{ex.StackTrace}");
-            return (false, ex.Message); 
+            return (false, ex.Message);
         }
     }
 
