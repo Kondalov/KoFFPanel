@@ -311,13 +311,13 @@ public class ServerMonitorService : IServerMonitorService
 
     public async Task<(bool Success, long RoundtripTime)> PingServerAsync(string ip, int timeoutMs = 2000)
     {
-        // 1. Стандартный ICMP Ping
+        // 1. Стандартный ICMP Ping (Идеально работает до включения ключа)
         try
         {
             using var pinger = new Ping();
             var reply = await pinger.SendPingAsync(ip, timeoutMs);
             // Foolproof защита: реальный удаленный сервер не ответит быстрее 2 мс. 
-            // Все что быстрее — это фальшивый ответ от локального TUN-адаптера.
+            // Всё что быстрее — это фальшивый ответ от локального TUN-адаптера.
             if (reply.Status == IPStatus.Success && reply.RoundtripTime > 2)
             {
                 return (true, reply.RoundtripTime);
@@ -325,54 +325,56 @@ public class ServerMonitorService : IServerMonitorService
         }
         catch { }
 
-        // 2. HTTP L7 Ping с жестким обходом прокси
-        // Это современный паттерн обхода маршрутизации VPN-клиентов в .NET
-        try
+        // 2. Бронебойный TCP Payload Ping (Обходит Fake Handshake)
+        // Мы отправляем минимальный HTTP-запрос на быстрые порты и ждем ответ.
+        // Nginx (80), Python (8080) и Xray (443) обрабатывают это мгновенно (< 1 мс),
+        // поэтому замеряется ИСКЛЮЧИТЕЛЬНО сетевое время (твои 40-70 ms).
+        int[] fastPorts = { 80, 8080, 443 };
+
+        foreach (var port in fastPorts)
         {
-            using var handler = new System.Net.Http.HttpClientHandler
-            {
-                UseProxy = false, // СТРОГО: Игнорируем локальный прокси от VPN
-                ServerCertificateCustomValidationCallback = (sender, cert, chain, errors) => true
-            };
-
-            using var client = new System.Net.Http.HttpClient(handler);
-            client.Timeout = TimeSpan.FromMilliseconds(timeoutMs);
-            client.DefaultRequestHeaders.ConnectionClose = true;
-
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            // Обращаемся к нашему микросервису подписок
-            var response = await client.GetAsync($"http://{ip}:8080/ping");
-
-            if (response.IsSuccessStatusCode)
-            {
-                sw.Stop();
-                long ping = sw.ElapsedMilliseconds;
-                if (ping > 2) return (true, ping);
-            }
-        }
-        catch { }
-
-        // 3. Бронебойный TCP Ping через Socket
-        int[] fallbackPorts = { 22, 443, 80 };
-        foreach (var port in fallbackPorts)
-        {
+            var tcpClient = new System.Net.Sockets.TcpClient();
             try
             {
-                using var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork, System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
-                socket.Blocking = false;
-
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                using var cts = new System.Threading.CancellationTokenSource(timeoutMs);
+                var connectTask = tcpClient.ConnectAsync(ip, port);
 
-                await socket.ConnectAsync(ip, port, cts.Token);
-                if (socket.Connected)
+                if (await Task.WhenAny(connectTask, Task.Delay(timeoutMs)) == connectTask)
                 {
-                    sw.Stop();
-                    long ping = sw.ElapsedMilliseconds;
-                    if (ping > 2) return (true, ping);
+                    await connectTask; // Убеждаемся, что нет исключений подключения
+
+                    using var stream = tcpClient.GetStream();
+
+                    // Отправляем легчайший HTTP HEAD запрос
+                    byte[] request = System.Text.Encoding.ASCII.GetBytes($"HEAD / HTTP/1.1\r\nHost: {ip}\r\nConnection: close\r\n\r\n");
+                    await stream.WriteAsync(request, 0, request.Length);
+
+                    // Ждем реакции сервера (ответ или разрыв соединения)
+                    byte[] buffer = new byte[1];
+                    var readTask = stream.ReadAsync(buffer, 0, 1);
+
+                    if (await Task.WhenAny(readTask, Task.Delay(timeoutMs)) == readTask)
+                    {
+                        // Независимо от того, ответил сервер (bytes > 0) или сбросил соединение
+                        // (bytes == 0, как делает Xray Reality на 443 порту при мусорном трафике),
+                        // это 100% честный сетевой Roundtrip.
+                        sw.Stop();
+                        long ping = sw.ElapsedMilliseconds;
+
+                        // Защита от фальшивых локальных ответов
+                        if (ping > 2)
+                        {
+                            return (true, ping);
+                        }
+                    }
                 }
             }
             catch { }
+            finally
+            {
+                // Жесткое закрытие сокета для предотвращения утечек в ОС
+                try { tcpClient.Close(); } catch { }
+            }
         }
 
         return (false, 0);
