@@ -1,7 +1,6 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
-
 using System.Runtime.Versioning;
 
 namespace KoFFPanel.Presentation.Features.Management;
@@ -14,12 +13,15 @@ public partial class AddClientViewModel : ObservableObject
     [ObservableProperty] private DateTime? _expiryDate = null;
     [ObservableProperty] private string _note = "";
 
-    // Флаги протоколов
+    // Флаги протоколов (СТАРЫЕ - НЕ ТРОГАЕМ)
     [ObservableProperty] private bool _isVlessEnabled = true;
     [ObservableProperty] private bool _isHysteria2Enabled = true;
     [ObservableProperty] private bool _isTrustTunnelEnabled = true;
 
-    // НОВОЕ СВОЙСТВО: Флаг блокировки торрентов (По умолчанию включено для безопасности сервера)
+    // НОВЫЕ СВОЙСТВА
+    [ObservableProperty] private bool _isTrojanEnabled = false;
+    [ObservableProperty] private bool _isShadowsocksEnabled = false;
+
     [ObservableProperty] private bool _isP2PBlocked = true;
 
     [ObservableProperty] private string _windowTitle = "Добавить пользователя";
@@ -39,15 +41,17 @@ public partial class AddClientViewModel : ObservableObject
         ExpiryDate = DateTime.Now.AddMonths(1);
         Note = "";
         IsP2PBlocked = true;
-        
+
         IsVlessEnabled = true;
         IsHysteria2Enabled = true;
         IsTrustTunnelEnabled = true;
+        IsTrojanEnabled = false;
+        IsShadowsocksEnabled = false;
     }
 
-    // Обновленный метод загрузки с учетом P2P флага и протоколов
-    public void LoadForEdit(string currentName, long currentLimitBytes, DateTime? currentExpiry, string currentNote, 
-                           bool isP2pBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false)
+    public void LoadForEdit(string currentName, long currentLimitBytes, DateTime? currentExpiry, string currentNote,
+                           bool isP2pBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false,
+                           bool isTrojan = false, bool isShadowsocks = false)
     {
         IsEditMode = true;
         WindowTitle = "Редактировать пользователя";
@@ -58,10 +62,12 @@ public partial class AddClientViewModel : ObservableObject
         ExpiryDate = currentExpiry;
         Note = currentNote ?? "";
         IsP2PBlocked = isP2pBlocked;
-        
+
         IsVlessEnabled = isVless;
         IsHysteria2Enabled = isHy2;
         IsTrustTunnelEnabled = isTt;
+        IsTrojanEnabled = isTrojan;
+        IsShadowsocksEnabled = isShadowsocks;
     }
 
     [RelayCommand]

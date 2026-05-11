@@ -7,7 +7,6 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
-
 using System.Runtime.Versioning;
 
 namespace KoFFPanel.Presentation.Features.Management;
@@ -25,6 +24,8 @@ public partial class ClientProtocolsViewModel : ObservableObject
     [ObservableProperty] private bool _supportsVless = true;
     [ObservableProperty] private bool _supportsHysteria2 = true;
     [ObservableProperty] private bool _supportsTrustTunnel = false;
+    [ObservableProperty] private bool _supportsTrojan = false;
+    [ObservableProperty] private bool _supportsShadowsocks = false;
 
     // === HTTP ПОДПИСКА ===
     [ObservableProperty] private string _httpLink = "";
@@ -44,6 +45,17 @@ public partial class ClientProtocolsViewModel : ObservableObject
     [ObservableProperty] private bool _isTrustTunnelEnabled;
     [ObservableProperty] private string _trustTunnelLink = "";
     [ObservableProperty] private bool _isTrustTunnelCopied;
+
+    // === Trojan ===
+    [ObservableProperty] private bool _isTrojanEnabled;
+    [ObservableProperty] private string _trojanLink = "";
+    [ObservableProperty] private bool _isTrojanCopied;
+
+    // === Shadowsocks ===
+    [ObservableProperty] private bool _isShadowsocksEnabled;
+    [ObservableProperty] private string _shadowsocksLink = "";
+    [ObservableProperty] private bool _isShadowsocksCopied;
+
     [ObservableProperty] private string _trustTunnelCertPath = "/opt/trusttunnel2/cert.pem";
     [ObservableProperty] private string _ttUsername = "";
     [ObservableProperty] private string _ttPassword = "";
@@ -65,7 +77,6 @@ public partial class ClientProtocolsViewModel : ObservableObject
         _filePicker = filePicker;
     }
 
-    // ИСПРАВЛЕНИЕ: Добавлен параметр httpLink из CabinetViewModel
     public void Initialize(VpnClient client, string httpLink)
     {
         _originalClient = client;
@@ -73,77 +84,63 @@ public partial class ClientProtocolsViewModel : ObservableObject
         WindowTitle = $"Протоколы: {client.Email}";
         IsAdmin = client.Email.Equals("ADMIN", StringComparison.OrdinalIgnoreCase);
         TtServerAddress = client.ServerIp;
-
         HttpLink = httpLink;
 
         var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == client.ServerIp);
-
-        // Если профиль не найден по IP (дубли или смена IP), пробуем найти по ID, если он есть у клиента
-        // (Допустим, мы добавим ServerId в VpnClient позже, пока полагаемся на IP)
-
         profile?.MigrateLegacyData();
+        var inbounds = profile?.Inbounds ?? new System.Collections.Generic.List<ServerInbound>();
 
-        var inbounds = profile?.Inbounds ?? new List<ServerInbound>();
-
-        // УМНЫЙ АЛГОРИТМ ОПРЕДЕЛЕНИЯ ПОДДЕРЖКИ
         bool serverHasVless = inbounds.Any(i => i.Protocol.Equals("vless", StringComparison.OrdinalIgnoreCase));
         bool serverHasHysteria = inbounds.Any(i => i.Protocol.Equals("hysteria2", StringComparison.OrdinalIgnoreCase));
         bool serverHasTrustTunnel = inbounds.Any(i => i.Protocol.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase));
+        bool serverHasTrojan = inbounds.Any(i => i.Protocol.Equals("trojan", StringComparison.OrdinalIgnoreCase));
+        bool serverHasShadowsocks = inbounds.Any(i => i.Protocol.Equals("shadowsocks", StringComparison.OrdinalIgnoreCase));
 
         SupportsVless = serverHasVless;
         SupportsHysteria2 = serverHasHysteria;
         SupportsTrustTunnel = serverHasTrustTunnel;
+        SupportsTrojan = serverHasTrojan;
+        SupportsShadowsocks = serverHasShadowsocks;
 
-        // РЕЖИМ ОТОБРАЖЕНИЯ:
-        // Если на сервере установлен ТОЛЬКО TrustTunnel - это спец-режим.
-        // Во всех остальных случаях (Xray, Sing-Box) показываем стандартный вид с подпиской.
-        IsTrustTunnelMode = serverHasTrustTunnel && !serverHasVless && !serverHasHysteria;
+        IsTrustTunnelMode = serverHasTrustTunnel && !serverHasVless && !serverHasHysteria && !serverHasTrojan && !serverHasShadowsocks;
 
-        // СИНХРОНИЗАЦИЯ ВКЛЮЧЕНИЯ (UI должен соответствовать реальности сервера)
         IsVlessEnabled = client.IsVlessEnabled && serverHasVless;
         IsHysteria2Enabled = client.IsHysteria2Enabled && serverHasHysteria;
-        
-        // TrustTunnel включаем только если он есть на сервере
         IsTrustTunnelEnabled = client.IsTrustTunnelEnabled && serverHasTrustTunnel;
+        IsTrojanEnabled = client.IsTrojanEnabled && serverHasTrojan;
+        IsShadowsocksEnabled = client.IsShadowsocksEnabled && serverHasShadowsocks;
 
-        // ГЕНЕРАЦИЯ ССЫЛОК НА ЛЕТУ (Если в БД пусто, но сервер поддерживает)
         VlessLink = client.VlessLink;
-        if (serverHasVless && (string.IsNullOrWhiteSpace(VlessLink) || VlessLink.Contains("не установлен")))
-        {
-            var vlessInbound = inbounds.First(i => i.Protocol.Equals("vless", StringComparison.OrdinalIgnoreCase));
-            VlessLink = GenerateVlessLinkFallback(vlessInbound, client.ServerIp, client.Uuid, client.Email);
-        }
-
         Hysteria2Link = client.Hysteria2Link;
-        if (serverHasHysteria && (string.IsNullOrWhiteSpace(Hysteria2Link) || Hysteria2Link.Contains("не установлен")))
-        {
-            var hy2Inbound = inbounds.First(i => i.Protocol.Equals("hysteria2", StringComparison.OrdinalIgnoreCase));
-            Hysteria2Link = GenerateHysteriaLinkFallback(hy2Inbound, client.ServerIp, client.Uuid, client.Email);
-        }
-
         TrustTunnelLink = client.TrustTunnelLink;
+        TrojanLink = client.TrojanLink;
+        ShadowsocksLink = client.ShadowsocksLink;
+
+        if (serverHasVless && (string.IsNullOrWhiteSpace(VlessLink) || VlessLink.Contains("не установлен")))
+            VlessLink = GenerateVlessLinkFallback(inbounds.First(i => i.Protocol.Equals("vless", StringComparison.OrdinalIgnoreCase)), client.ServerIp, client.Uuid, client.Email);
+
+        if (serverHasHysteria && (string.IsNullOrWhiteSpace(Hysteria2Link) || Hysteria2Link.Contains("не установлен")))
+            Hysteria2Link = GenerateHysteriaLinkFallback(inbounds.First(i => i.Protocol.Equals("hysteria2", StringComparison.OrdinalIgnoreCase)), client.ServerIp, client.Uuid, client.Email);
+
         if (serverHasTrustTunnel && (string.IsNullOrWhiteSpace(TrustTunnelLink) || TrustTunnelLink.Contains("не установлен")))
-        {
-            var ttInbound = inbounds.First(i => i.Protocol.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase));
-            TrustTunnelLink = GenerateTrustTunnelLinkFallback(ttInbound, client.ServerIp, client.Uuid, client.Email);
-        }
+            TrustTunnelLink = GenerateTrustTunnelLinkFallback(inbounds.First(i => i.Protocol.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase)), client.ServerIp, client.Uuid, client.Email);
 
         TtUsername = client.Email;
         TtPassword = client.Uuid;
 
-        if (serverHasTrustTunnel) 
+        if (serverHasTrustTunnel)
         {
             ExtractTrustTunnelSettingsSafe(inbounds);
-            
-            // ИСПРАВЛЕНИЕ: Если это ADMIN или специальный пользователь TrustTunnel, берем креды из настроек инбаунда
             var ttInbound = inbounds.FirstOrDefault(i => i.Protocol.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase));
             if (ttInbound != null && !string.IsNullOrWhiteSpace(ttInbound.SettingsJson))
             {
-                try {
+                try
+                {
                     var ttSettings = System.Text.Json.JsonDocument.Parse(ttInbound.SettingsJson).RootElement;
                     if (ttSettings.TryGetProperty("username", out var u)) TtUsername = u.GetString() ?? TtUsername;
                     if (ttSettings.TryGetProperty("password", out var p)) TtPassword = p.GetString() ?? TtPassword;
-                } catch { }
+                }
+                catch { }
             }
         }
         else SetDefaultTrustTunnelSettings();
@@ -151,26 +148,30 @@ public partial class ClientProtocolsViewModel : ObservableObject
 
     private string GenerateVlessLinkFallback(ServerInbound inbound, string ip, string uuid, string email)
     {
-        try {
+        try
+        {
             var settings = System.Text.Json.JsonDocument.Parse(inbound.SettingsJson).RootElement;
             string pub = settings.GetProperty("publicKey").GetString() ?? "";
             string sni = settings.GetProperty("sni").GetString() ?? "google.com";
             string sid = settings.GetProperty("shortId").GetString() ?? "";
             string safeIp = ip.Contains(":") && !ip.StartsWith("[") ? $"[{ip}]" : ip;
             return $"vless://{uuid}@{safeIp}:{inbound.Port}?type=tcp&security=reality&pbk={pub}&fp=chrome&sni={sni}&sid={sid}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#KoFF_{email}";
-        } catch { return "Ошибка генерации ссылки"; }
+        }
+        catch { return "Ошибка генерации ссылки"; }
     }
 
     private string GenerateHysteriaLinkFallback(ServerInbound inbound, string ip, string uuid, string email)
     {
-        try {
+        try
+        {
             var settings = System.Text.Json.JsonDocument.Parse(inbound.SettingsJson).RootElement;
             string sni = settings.GetProperty("sni").GetString() ?? "bing.com";
             string obfs = settings.GetProperty("obfsPassword").GetString() ?? "";
             string safeIp = ip.Contains(":") && !ip.StartsWith("[") ? $"[{ip}]" : ip;
             string encodedName = Uri.EscapeDataString($"KoFF_{email}");
             return $"hy2://{uuid}@{safeIp}:{inbound.Port}?sni={sni}&obfs=salamander&obfs-password={obfs}&insecure=1#{encodedName}";
-        } catch { return "Ошибка генерации ссылки"; }
+        }
+        catch { return "Ошибка генерации ссылки"; }
     }
 
     private string GenerateTrustTunnelLinkFallback(ServerInbound inbound, string ip, string uuid, string email)
@@ -179,14 +180,13 @@ public partial class ClientProtocolsViewModel : ObservableObject
         return $"vless://{uuid}@{safeIp}:{inbound.Port}?type=xhttp&security=tls&sni=google.com&alpn=h3#TT_{email}";
     }
 
-    private void ExtractTrustTunnelSettingsSafe(IEnumerable<ServerInbound> inbounds)
+    private void ExtractTrustTunnelSettingsSafe(System.Collections.Generic.IEnumerable<ServerInbound> inbounds)
     {
         var ttInbound = inbounds.FirstOrDefault(i => i.Protocol.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase));
-
         if (ttInbound is null || string.IsNullOrWhiteSpace(ttInbound.SettingsJson))
         {
             SetDefaultTrustTunnelSettings();
-            return; // Early return (Guard clause)
+            return;
         }
 
         try
@@ -197,7 +197,6 @@ public partial class ClientProtocolsViewModel : ObservableObject
         }
         catch (System.Text.Json.JsonException)
         {
-            // ИСПРАВЛЕНИЕ: Никаких пустых catch! (Silent fail обрабатывается fallback-значениями)
             SetDefaultTrustTunnelSettings();
         }
     }
@@ -206,41 +205,6 @@ public partial class ClientProtocolsViewModel : ObservableObject
     {
         TtDomainName = "google.com";
         TtDnsServers = "8.8.8.8, 1.1.1.1";
-    }
-
-    [RelayCommand]
-    private async Task CopyTtPasswordAsync()
-    {
-        if (string.IsNullOrWhiteSpace(TtPassword)) return;
-        await SafeCopyToClipboardAsync(TtPassword);
-        IsTrustTunnelCopied = true;
-        await Task.Delay(2000);
-        IsTrustTunnelCopied = false;
-    }
-
-    [RelayCommand]
-    private async Task DownloadCertAsync()
-    {
-        if (!IsAdmin || !_ssh.IsConnected) return;
-
-        try
-        {
-            string remotePath = TrustTunnelCertPath;
-            string? localPath = _filePicker.SaveFile("cert.pem", "PEM Certificate (*.pem)|*.pem|All files (*.*)|*.*");
-            
-            if (string.IsNullOrEmpty(localPath)) return;
-
-            using (var localStream = System.IO.File.Create(localPath))
-            {
-                await _ssh.DownloadFileAsync(remotePath, localStream);
-            }
-            
-            MessageBox.Show($"Файл успешно сохранен: {localPath}", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Ошибка при скачивании: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
     }
 
     private async Task SafeCopyToClipboardAsync(string text)
@@ -259,44 +223,33 @@ public partial class ClientProtocolsViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private async Task CopyHttpAsync()
-    {
-        if (string.IsNullOrWhiteSpace(HttpLink)) return;
-        await SafeCopyToClipboardAsync(HttpLink);
-        IsHttpCopied = true;
-        await Task.Delay(2000);
-        IsHttpCopied = false;
-    }
+    [RelayCommand] private async Task CopyTtPasswordAsync() { if (string.IsNullOrWhiteSpace(TtPassword)) return; await SafeCopyToClipboardAsync(TtPassword); IsTrustTunnelCopied = true; await Task.Delay(2000); IsTrustTunnelCopied = false; }
+    [RelayCommand] private async Task CopyHttpAsync() { if (string.IsNullOrWhiteSpace(HttpLink)) return; await SafeCopyToClipboardAsync(HttpLink); IsHttpCopied = true; await Task.Delay(2000); IsHttpCopied = false; }
+    [RelayCommand] private async Task CopyVlessAsync() { if (string.IsNullOrWhiteSpace(VlessLink)) return; await SafeCopyToClipboardAsync(VlessLink); IsVlessCopied = true; await Task.Delay(2000); IsVlessCopied = false; }
+    [RelayCommand] private async Task CopyHysteria2Async() { if (string.IsNullOrWhiteSpace(Hysteria2Link)) return; await SafeCopyToClipboardAsync(Hysteria2Link); IsHysteria2Copied = true; await Task.Delay(2000); IsHysteria2Copied = false; }
+    [RelayCommand] private async Task CopyTrustTunnelAsync() { if (string.IsNullOrWhiteSpace(TrustTunnelLink)) return; await SafeCopyToClipboardAsync(TrustTunnelLink); IsTrustTunnelCopied = true; await Task.Delay(2000); IsTrustTunnelCopied = false; }
+
+    [RelayCommand] private async Task CopyTrojanAsync() { if (string.IsNullOrWhiteSpace(TrojanLink)) return; await SafeCopyToClipboardAsync(TrojanLink); IsTrojanCopied = true; await Task.Delay(2000); IsTrojanCopied = false; }
+    [RelayCommand] private async Task CopyShadowsocksAsync() { if (string.IsNullOrWhiteSpace(ShadowsocksLink)) return; await SafeCopyToClipboardAsync(ShadowsocksLink); IsShadowsocksCopied = true; await Task.Delay(2000); IsShadowsocksCopied = false; }
 
     [RelayCommand]
-    private async Task CopyVlessAsync()
+    private async Task DownloadCertAsync()
     {
-        if (string.IsNullOrWhiteSpace(VlessLink)) return;
-        await SafeCopyToClipboardAsync(VlessLink);
-        IsVlessCopied = true;
-        await Task.Delay(2000);
-        IsVlessCopied = false;
-    }
-
-    [RelayCommand]
-    private async Task CopyHysteria2Async()
-    {
-        if (string.IsNullOrWhiteSpace(Hysteria2Link)) return;
-        await SafeCopyToClipboardAsync(Hysteria2Link);
-        IsHysteria2Copied = true;
-        await Task.Delay(2000);
-        IsHysteria2Copied = false;
-    }
-
-    [RelayCommand]
-    private async Task CopyTrustTunnelAsync()
-    {
-        if (string.IsNullOrWhiteSpace(TrustTunnelLink)) return;
-        await SafeCopyToClipboardAsync(TrustTunnelLink);
-        IsTrustTunnelCopied = true;
-        await Task.Delay(2000);
-        IsTrustTunnelCopied = false;
+        if (!IsAdmin || !_ssh.IsConnected) return;
+        try
+        {
+            string? localPath = _filePicker.SaveFile("cert.pem", "PEM Certificate (*.pem)|*.pem|All files (*.*)|*.*");
+            if (string.IsNullOrEmpty(localPath)) return;
+            using (var localStream = System.IO.File.Create(localPath))
+            {
+                await _ssh.DownloadFileAsync(TrustTunnelCertPath, localStream);
+            }
+            MessageBox.Show($"Файл успешно сохранен: {localPath}", "Успех", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Ошибка при скачивании: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     [RelayCommand]
@@ -305,17 +258,13 @@ public partial class ClientProtocolsViewModel : ObservableObject
         _originalClient.IsVlessEnabled = IsVlessEnabled;
         _originalClient.IsHysteria2Enabled = IsHysteria2Enabled;
         _originalClient.IsTrustTunnelEnabled = IsTrustTunnelEnabled;
-
-        // В окне доступа поля TrustTunnel только для чтения (информация после установки)
-        // Мы не сохраняем TtUsername и TtPassword здесь, так как они задаются только через мастер установки.
+        _originalClient.IsTrojanEnabled = IsTrojanEnabled;
+        _originalClient.IsShadowsocksEnabled = IsShadowsocksEnabled;
 
         SaveCallback?.Invoke(_originalClient);
         CloseAction?.Invoke();
     }
 
     [RelayCommand]
-    private void Cancel()
-    {
-        CloseAction?.Invoke();
-    }
+    private void Cancel() => CloseAction?.Invoke();
 }

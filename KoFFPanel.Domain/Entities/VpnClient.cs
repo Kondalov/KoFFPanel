@@ -11,8 +11,6 @@ public class VpnClient : INotifyPropertyChanged
     public int Id { get; set; }
     public string ServerIp { get; set; } = "";
 
-    // Говорим базе данных (EF Core/SQLite) ИГНОРИРОВАТЬ это поле, 
-    // чтобы она не искала колонку AvatarPath и не падала с ошибкой.
     private string _avatarPath = "";
     [NotMapped]
     public string AvatarPath
@@ -88,15 +86,14 @@ public class VpnClient : INotifyPropertyChanged
         set { _vlessLink = value; OnPropertyChanged(); }
     }
 
-    // === НОВЫЕ ПОЛЯ ДЛЯ МУЛЬТИ-ПРОТОКОЛОВ (ШАГ 2) ===
-    private bool _isVlessEnabled = true; // У старых пользователей VLESS должен остаться включенным
+    private bool _isVlessEnabled = true;
     public bool IsVlessEnabled
     {
         get => _isVlessEnabled;
         set { _isVlessEnabled = value; OnPropertyChanged(); }
     }
 
-    private bool _isHysteria2Enabled = false; // По умолчанию выключен
+    private bool _isHysteria2Enabled = false;
     public bool IsHysteria2Enabled
     {
         get => _isHysteria2Enabled;
@@ -123,6 +120,36 @@ public class VpnClient : INotifyPropertyChanged
         get => _trustTunnelLink;
         set { _trustTunnelLink = value; OnPropertyChanged(); }
     }
+
+    // === НОВЫЕ ПРОТОКОЛЫ ===
+    private bool _isTrojanEnabled = false;
+    public bool IsTrojanEnabled
+    {
+        get => _isTrojanEnabled;
+        set { _isTrojanEnabled = value; OnPropertyChanged(); }
+    }
+
+    private string _trojanLink = "";
+    public string TrojanLink
+    {
+        get => _trojanLink;
+        set { _trojanLink = value; OnPropertyChanged(); }
+    }
+
+    private bool _isShadowsocksEnabled = false;
+    public bool IsShadowsocksEnabled
+    {
+        get => _isShadowsocksEnabled;
+        set { _isShadowsocksEnabled = value; OnPropertyChanged(); }
+    }
+
+    private string _shadowsocksLink = "";
+    public string ShadowsocksLink
+    {
+        get => _shadowsocksLink;
+        set { _shadowsocksLink = value; OnPropertyChanged(); }
+    }
+    // ========================
 
     private long _trafficUsed = 0;
     public long TrafficUsed

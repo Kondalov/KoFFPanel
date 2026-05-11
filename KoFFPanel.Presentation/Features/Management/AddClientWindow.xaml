@@ -187,6 +187,24 @@
                                 <ui:ToggleSwitch HorizontalAlignment="Right"
                                                  IsChecked="{Binding IsTrustTunnelEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             </Grid>
+                            <Separator Background="#1AFFFFFF"
+                                       Margin="0,0,0,10" />
+                            <Grid Margin="0,0,0,10">
+                                <TextBlock Text="Trojan (TLS)"
+                                           Foreground="White"
+                                           VerticalAlignment="Center" />
+                                <ui:ToggleSwitch HorizontalAlignment="Right"
+                                                 IsChecked="{Binding IsTrojanEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </Grid>
+                            <Separator Background="#1AFFFFFF"
+                                       Margin="0,0,0,10" />
+                            <Grid>
+                                <TextBlock Text="Shadowsocks (2022)"
+                                           Foreground="White"
+                                           VerticalAlignment="Center" />
+                                <ui:ToggleSwitch HorizontalAlignment="Right"
+                                                 IsChecked="{Binding IsShadowsocksEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </Grid>
                         </StackPanel>
                     </Border>
 

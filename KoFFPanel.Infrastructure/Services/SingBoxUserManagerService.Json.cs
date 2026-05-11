@@ -23,63 +23,148 @@ public partial class SingBoxUserManagerService
         var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
         string displayServer = !string.IsNullOrWhiteSpace(profile?.ConnectionNode) ? profile.ConnectionNode.Trim() : serverIp;
 
-        bool hasReality = false, hasHy2 = false, hasXHttp = false;
-        foreach (var inboundNode in inbounds) {
-            var type = inboundNode?["type"]?.ToString();
-            if ("vless".Equals(type, StringComparison.OrdinalIgnoreCase)) { 
-                if ("quic".Equals(inboundNode?["transport"]?["type"]?.ToString(), StringComparison.OrdinalIgnoreCase)) hasXHttp = true; 
-                else hasReality = true; 
-            }
-            else if ("hysteria2".Equals(type, StringComparison.OrdinalIgnoreCase)) hasHy2 = true;
-        }
-
-        foreach (var inbound in inbounds.OfType<JsonObject>()) {
+        foreach (var inbound in inbounds.OfType<JsonObject>().ToList())
+        {
             var type = inbound["type"]?.ToString();
-            if ("vless".Equals(type, StringComparison.OrdinalIgnoreCase)) {
-                var isQuic = "quic".Equals(inbound["transport"]?["type"]?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+            if (type == "vless")
+            {
+                var isQuic = "quic".Equals(inbound["transport"]?["type"]?.ToString(), StringComparison.OrdinalIgnoreCase) ||
+                             "xhttp".Equals(inbound["transport"]?["type"]?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+                var targetUsers = dbUsers.Where(u => u.IsActive && ((!isQuic && u.IsVlessEnabled) || (isQuic && u.IsTrustTunnelEnabled))).ToList();
                 var usersArray = new JsonArray();
-                foreach (var u in dbUsers.Where(u => u.IsActive && ((!isQuic && u.IsVlessEnabled) || (isQuic && u.IsTrustTunnelEnabled))))
-                    usersArray.Add(isQuic ? new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid } : new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid, ["flow"] = "xtls-rprx-vision" });
+
+                if (targetUsers.Any())
+                {
+                    foreach (var u in targetUsers)
+                        usersArray.Add(isQuic ? new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid } : new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid, ["flow"] = "xtls-rprx-vision" });
+                }
+                else
+                {
+                    usersArray.Add(new JsonObject { ["name"] = "init", ["uuid"] = "00000000-0000-0000-0000-000000000000" });
+                }
+
                 inbound["users"] = usersArray;
                 UpdateVlessLinks(inbound, dbUsers, displayServer, serverIp, isQuic);
-            } else if (type == "hysteria2") UpdateHysteria2Links(inbound, dbUsers, displayServer);
+            }
+            else if (type == "hysteria2")
+            {
+                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsHysteria2Enabled).ToList();
+                var usersArray = new JsonArray();
+
+                if (targetUsers.Any())
+                {
+                    foreach (var u in targetUsers)
+                        usersArray.Add(new JsonObject { ["name"] = u.Email, ["password"] = u.Uuid });
+                }
+                else
+                {
+                    usersArray.Add(new JsonObject { ["name"] = "init", ["password"] = "init_pass" });
+                }
+
+                inbound["users"] = usersArray;
+                UpdateHysteria2Links(inbound, dbUsers, displayServer);
+            }
+            else if (type == "trojan")
+            {
+                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsTrojanEnabled).ToList();
+                var usersArray = new JsonArray();
+
+                if (targetUsers.Any())
+                {
+                    foreach (var u in targetUsers)
+                        usersArray.Add(new JsonObject { ["password"] = u.Uuid, ["name"] = u.Email });
+                }
+                else
+                {
+                    usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
+                }
+
+                inbound["users"] = usersArray;
+                UpdateTrojanLinks(inbound, dbUsers, displayServer);
+            }
+            else if (type == "shadowsocks")
+            {
+                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsShadowsocksEnabled).ToList();
+                var usersArray = new JsonArray();
+
+                if (targetUsers.Any())
+                {
+                    foreach (var u in targetUsers)
+                        usersArray.Add(new JsonObject { ["password"] = u.Uuid, ["name"] = u.Email });
+                }
+                else
+                {
+                    usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
+                }
+
+                inbound["users"] = usersArray;
+                UpdateShadowsocksLinks(inbound, dbUsers, displayServer);
+            }
         }
 
-        if (!hasReality) foreach (var u in dbUsers) u.VlessLink = "VLESS не установлен!";
-        if (!hasHy2) foreach (var u in dbUsers) u.Hysteria2Link = "Hysteria 2 не установлен!";
-
-        // ИСПРАВЛЕНИЕ: Не затираем TrustTunnelLink, если он установлен как отдельный протокол
-        bool hasAnyTrustTunnel = hasXHttp || (profile?.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel") ?? false);
-        
-        if (!hasAnyTrustTunnel) 
-        {
-            foreach (var u in dbUsers) u.TrustTunnelLink = "TrustTunnel не установлен!";
-        }
-
-        if (root != null) await ApplyP2PRulesAsync(root, serverIp);
+        await ApplyP2PRulesAsync(root, serverIp);
         await _dbContext.SaveChangesAsync();
+    }
+
+    private void UpdateTrojanLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer)
+    {
+        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
+        int port = 4434;
+        if (inbound["listen_port"] != null) int.TryParse(inbound["listen_port"]!.ToString(), out port);
+        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "bing.com";
+
+        foreach (var u in dbUsers)
+        {
+            string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
+            // Добавлен ALPN для совместимости с Hiddify 4.1.1
+            u.TrojanLink = $"trojan://{u.Uuid}@{safeIp}:{port}?security=tls&sni={sni}&type=tcp&alpn=http/1.1,h2&allowInsecure=1#{encodedName}";
+        }
+    }
+
+    private void UpdateShadowsocksLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer)
+    {
+        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
+        int port = 8388;
+        if (inbound["listen_port"] != null) int.TryParse(inbound["listen_port"]!.ToString(), out port);
+        string method = inbound["method"]?.ToString() ?? "aes-256-gcm";
+
+        foreach (var u in dbUsers)
+        {
+            string credentials = $"{method}:{u.Uuid}";
+            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
+            string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
+            u.ShadowsocksLink = $"ss://{base64Creds}@{safeIp}:{port}#{encodedName}";
+        }
     }
 
     private void UpdateVlessLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer, string serverIp, bool isQuic)
     {
         string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
         string sni = inbound["tls"]?["server_name"]?.ToString() ?? "google.com";
-        int port = (int?)inbound["listen_port"] ?? (isQuic ? 4433 : 443);
+        int port = isQuic ? 4433 : 443;
+        if (inbound["listen_port"] != null) int.TryParse(inbound["listen_port"]!.ToString(), out port);
 
-        if (!isQuic) {
+        if (!isQuic)
+        {
             string pubKey = "", shortId = "";
-            try {
+            try
+            {
                 var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
                 var settings = JsonDocument.Parse(profile?.Inbounds.FirstOrDefault(i => i.Protocol == "vless")?.SettingsJson ?? "{}").RootElement;
                 pubKey = settings.GetProperty("publicKey").GetString() ?? ""; shortId = settings.GetProperty("shortId").GetString() ?? "";
-            } catch { }
-            foreach (var u in dbUsers) 
+            }
+            catch { }
+            foreach (var u in dbUsers)
             {
                 string encodedName = Uri.EscapeDataString($"SB_VLESS_{u.Email}");
                 u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
             }
-        } else {
-            foreach (var u in dbUsers) 
+        }
+        else
+        {
+            foreach (var u in dbUsers)
             {
                 string encodedName = Uri.EscapeDataString($"TT_{u.Email}");
                 u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=xhttp&security=tls&sni={sni.Replace("google.com", "vpn.endpoint")}&alpn=h3&allowInsecure=1&insecure=1#{encodedName}";
@@ -90,20 +175,18 @@ public partial class SingBoxUserManagerService
     private void UpdateHysteria2Links(JsonObject inbound, List<VpnClient> dbUsers, string displayServer)
     {
         string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
-        int port = (int?)inbound["listen_port"] ?? 8443;
-        
-        // ИСПРАВЛЕНИЕ: Fallback для SNI должен быть bing.com, как в генераторе сертификатов Hysteria2Builder.cs
-        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "bing.com"; 
-        
+        int port = 8443;
+        if (inbound["listen_port"] != null) int.TryParse(inbound["listen_port"]!.ToString(), out port);
+
+        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "bing.com";
         string pass = inbound["obfs"]?["password"]?.ToString() ?? "";
         string obfs = string.IsNullOrEmpty(pass) ? "" : $"&obfs=salamander&obfs-password={pass}";
-        var users = new JsonArray();
-        foreach (var u in dbUsers) {
-            if (u.IsActive && u.IsHysteria2Enabled) users.Add(new JsonObject { ["name"] = u.Email, ["password"] = u.Uuid });
+
+        foreach (var u in dbUsers)
+        {
             string encodedName = Uri.EscapeDataString($"SB_HY2_{u.Email}");
             u.Hysteria2Link = $"hy2://{u.Uuid}@{safeIp}:{port}?sni={sni}&insecure=1{obfs}&alpn=h3#{encodedName}";
         }
-        inbound["users"] = users;
     }
 
     private async Task ApplyP2PRulesAsync(JsonNode root, string serverIp)
@@ -111,7 +194,7 @@ public partial class SingBoxUserManagerService
         try
         {
             var blockedNames = await _dbContext.Clients.AsNoTracking().Where(c => c.ServerIp == serverIp && c.IsP2PBlocked).Select(c => c.Email.Trim()).ToListAsync();
-            
+
             if (root["log"] is JsonObject logObj) logObj["level"] = "trace";
             else if (root is JsonObject rootObj) rootObj["log"] = new JsonObject { ["level"] = "trace" };
 
@@ -171,11 +254,32 @@ public partial class SingBoxUserManagerService
             return (false, "Ошибка теста конфига!");
         }
 
-        // ИСПРАВЛЕНИЕ: Используем \cp -f и \mv -f. 
-        // Обратный слэш (\) заставляет Linux игнорировать алиасы (такие как cp -i),
-        // а флаг -f принудительно перезаписывает файл без вопросов (y/n).
-        // Это полностью устраняет зависание SSH-канала на 15-30 секунд.
-        string applyCmd = $"{s} \\cp -f /etc/sing-box/config.json /etc/sing-box/config.backup.json; " +
+        // ИСПРАВЛЕНИЕ: Автоматический парсинг портов и открытие Firewall
+        // Это навсегда решит проблему тайм-аутов для новых протоколов.
+        var ports = new HashSet<int>();
+        try
+        {
+            var parsed = JsonNode.Parse(newJson);
+            var inbounds = parsed?["inbounds"]?.AsArray();
+            if (inbounds != null)
+            {
+                foreach (var inbound in inbounds)
+                {
+                    var portToken = inbound["listen_port"] ?? inbound["port"];
+                    if (portToken != null && int.TryParse(portToken.ToString(), out int p)) ports.Add(p);
+                }
+            }
+        }
+        catch { }
+
+        string fwCmds = "";
+        foreach (var p in ports)
+        {
+            fwCmds += $"{s} ufw allow {p}/tcp 2>/dev/null; {s} ufw allow {p}/udp 2>/dev/null; {s} iptables -I INPUT -p tcp --dport {p} -j ACCEPT 2>/dev/null; {s} iptables -I INPUT -p udp --dport {p} -j ACCEPT 2>/dev/null; ";
+        }
+
+        string applyCmd = $"{fwCmds} " +
+                          $"{s} \\cp -f /etc/sing-box/config.json /etc/sing-box/config.backup.json; " +
                           $"{s} \\mv -f /tmp/sb_test.json /etc/sing-box/config.json; " +
                           $"{s} killall -HUP sing-box 2>/dev/null || {s} systemctl restart sing-box";
 

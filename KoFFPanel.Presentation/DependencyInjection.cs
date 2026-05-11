@@ -21,7 +21,7 @@ public static class DependencyInjection
     [SupportedOSPlatform("windows")]
     public static IServiceCollection AddPresentationServices(this IServiceCollection services)
     {
-        // 1. Ð˜Ð½Ñ„Ñ€Ð°ÑÑ‚Ñ€ÑƒÐºÑ‚ÑƒÑ€Ð° Ð¸ Core-ÑÐµÑ€Ð²Ð¸ÑÑ‹
+        // 1. Инфраструктура и Core-сервисы
         services.AddSingleton<IAppLogger, AppLogger>();
         services.AddSingleton<IProfileRepository, ProfileRepository>();
         services.AddTransient<ISshService, SshService>();
@@ -36,7 +36,7 @@ public static class DependencyInjection
         // 2026 MODERNIZATION: Регистрация новых сервисов БД
         services.AddSingleton<LogBufferService>();
         services.AddHostedService(sp => sp.GetRequiredService<LogBufferService>());
-        
+
         services.AddSingleton<DatabaseBackupService>();
         services.AddSingleton<IDatabaseBackupService>(sp => sp.GetRequiredService<DatabaseBackupService>());
         services.AddHostedService(sp => sp.GetRequiredService<DatabaseBackupService>());
@@ -51,18 +51,22 @@ public static class DependencyInjection
         services.AddTransient<ISingBoxConfiguratorService, SingBoxConfiguratorService>();
         services.AddTransient<ISingBoxUserManagerService, SingBoxUserManagerService>();
         services.AddTransient<ITrustTunnelUserManagerService, TrustTunnelUserManagerService>();
-        
+
         services.AddTransient<IServerSelectionService, ServerSelectionService>();
         services.AddTransient<ISmartPortValidator, SmartPortValidator>();
         services.AddTransient<KoFFPanel.Application.Services.ProtocolFactory>();
 
         services.AddSingleton<IClientAnalyticsService, ClientAnalyticsService>();
 
-        // 2. Ð¡ÐµÑ€Ð²Ð¸ÑÑ‹ UI Ð¸ Ð‘Ð¸Ð»Ð´ÐµÑ€Ñ‹
+        // 2. Сервисы UI и Билдеры
         services.AddTransient<IFilePickerService, FilePickerService>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.VlessRealityBuilder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.Hysteria2Builder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrustTunnelBuilder>();
+
+        // ДОБАВЛЕНЫ НОВЫЕ ПРОТОКОЛЫ
+        services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrojanBuilder>();
+        services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.ShadowsocksBuilder>();
 
         // 3. ViewModels
         services.AddSingleton<CabinetViewModel>();

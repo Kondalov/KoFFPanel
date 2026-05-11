@@ -14,7 +14,6 @@ public partial class CoreDeploymentService
 {
     public static string GenerateTrustTunnelVpnToml(ServerInbound inbound)
     {
-        // ВАЖНО: Никаких отступов в начале строк! Rust TOML парсер в v1.0.33 крайне чувствителен.
         string toml = $@"listen_address = ""0.0.0.0:{inbound.Port}""
 ipv6_available = true
 allow_private_network_connections = false
@@ -50,7 +49,6 @@ direct = {{}}";
 
     public static string GenerateTrustTunnelHostsToml(string sni, string certPath, string keyPath)
     {
-        // ИСПРАВЛЕНИЕ: Используем относительные пути как в рабочей инструкции пользователя
         string toml = $@"[[main_hosts]]
 hostname = ""{sni}""
 cert_chain_path = ""certs/cert.pem""
@@ -62,6 +60,10 @@ private_key_path = ""certs/key.pem""";
     private JsonObject? BuildSingBoxInbound(ServerInbound inboundDb, JsonNode? settings)
     {
         string protocol = inboundDb.Protocol.ToLower();
+
+        // FOOLPROOF ЗАЩИТА: Принудительная конвертация порта в int, чтобы избежать ошибки парсера
+        int safePort = Convert.ToInt32(inboundDb.Port);
+
         if (protocol == "vless")
         {
             return new JsonObject
@@ -69,8 +71,8 @@ private_key_path = ""certs/key.pem""";
                 ["type"] = "vless",
                 ["tag"] = inboundDb.Tag,
                 ["listen"] = "0.0.0.0",
-                ["listen_port"] = inboundDb.Port,
-                ["users"] = new JsonArray(),
+                ["listen_port"] = safePort,
+                ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["uuid"] = "00000000-0000-0000-0000-000000000000" } },
                 ["tls"] = new JsonObject
                 {
                     ["enabled"] = true,
@@ -87,16 +89,13 @@ private_key_path = ""certs/key.pem""";
         }
         else if (protocol == "hysteria2")
         {
-            // ИСПРАВЛЕНИЕ: Sing-box нативно поддерживает бинд TCP (VLESS) и UDP (Hysteria2) на один порт!
-            // Убираем костыль с iptables PREROUTING и смещением порта.
-            int internalPort = inboundDb.Port;
             return new JsonObject
             {
                 ["type"] = "hysteria2",
                 ["tag"] = inboundDb.Tag,
                 ["listen"] = "0.0.0.0",
-                ["listen_port"] = internalPort,
-                ["users"] = new JsonArray(),
+                ["listen_port"] = safePort,
+                ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } },
                 ["tls"] = new JsonObject
                 {
                     ["enabled"] = true,
@@ -107,19 +106,55 @@ private_key_path = ""certs/key.pem""";
                 ["obfs"] = new JsonObject { ["type"] = "salamander", ["password"] = settings?["obfsPassword"]?.ToString() }
             };
         }
+        else if (protocol == "trojan")
+        {
+            return new JsonObject
+            {
+                ["type"] = "trojan",
+                ["tag"] = inboundDb.Tag,
+                ["listen"] = "0.0.0.0",
+                ["listen_port"] = safePort,
+                ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } },
+                ["tls"] = new JsonObject
+                {
+                    ["enabled"] = true,
+                    ["certificate_path"] = settings?["certPath"]?.ToString(),
+                    ["key_path"] = settings?["keyPath"]?.ToString()
+                }
+            };
+        }
+        else if (protocol == "shadowsocks")
+        {
+            return new JsonObject
+            {
+                ["type"] = "shadowsocks",
+                ["tag"] = inboundDb.Tag,
+                ["listen"] = "0.0.0.0",
+                ["listen_port"] = safePort,
+                ["method"] = settings?["method"]?.ToString() ?? "aes-256-gcm",
+                ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } }
+            };
+        }
         return null;
     }
 
     private JsonObject? BuildXrayInbound(ServerInbound inboundDb, JsonNode? settings)
     {
-        if (inboundDb.Protocol.ToLower() == "vless")
+        string protocol = inboundDb.Protocol.ToLower();
+        int safePort = Convert.ToInt32(inboundDb.Port);
+
+        if (protocol == "vless")
         {
             return new JsonObject
             {
                 ["protocol"] = "vless",
                 ["listen"] = "0.0.0.0",
-                ["port"] = inboundDb.Port,
-                ["settings"] = new JsonObject { ["clients"] = new JsonArray(), ["decryption"] = "none" },
+                ["port"] = safePort,
+                ["settings"] = new JsonObject
+                {
+                    ["clients"] = new JsonArray { new JsonObject { ["email"] = "init", ["id"] = "00000000-0000-0000-0000-000000000000" } },
+                    ["decryption"] = "none"
+                },
                 ["streamSettings"] = new JsonObject
                 {
                     ["network"] = "tcp",
@@ -132,6 +167,50 @@ private_key_path = ""certs/key.pem""";
                         ["privateKey"] = settings?["privateKey"]?.ToString(),
                         ["shortIds"] = new JsonArray { settings?["shortId"]?.ToString() }
                     }
+                }
+            };
+        }
+        else if (protocol == "trojan")
+        {
+            return new JsonObject
+            {
+                ["protocol"] = "trojan",
+                ["listen"] = "0.0.0.0",
+                ["port"] = safePort,
+                ["settings"] = new JsonObject
+                {
+                    ["clients"] = new JsonArray { new JsonObject { ["email"] = "init", ["password"] = "init_pass" } }
+                },
+                ["streamSettings"] = new JsonObject
+                {
+                    ["network"] = "tcp",
+                    ["security"] = "tls",
+                    ["tlsSettings"] = new JsonObject
+                    {
+                        ["certificates"] = new JsonArray
+                        {
+                            new JsonObject
+                            {
+                                ["certificateFile"] = settings?["certPath"]?.ToString(),
+                                ["keyFile"] = settings?["keyPath"]?.ToString()
+                            }
+                        }
+                    }
+                }
+            };
+        }
+        else if (protocol == "shadowsocks")
+        {
+            return new JsonObject
+            {
+                ["protocol"] = "shadowsocks",
+                ["listen"] = "0.0.0.0",
+                ["port"] = safePort,
+                ["settings"] = new JsonObject
+                {
+                    ["method"] = settings?["method"]?.ToString() ?? "aes-256-gcm",
+                    ["clients"] = new JsonArray { new JsonObject { ["email"] = "init", ["password"] = "init_pass" } },
+                    ["network"] = "tcp,udp"
                 }
             };
         }

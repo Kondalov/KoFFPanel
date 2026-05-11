@@ -42,26 +42,28 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         return dbUsers;
     }
 
-    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true)
+    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true, bool isTrojan = false, bool isShadowsocks = false)
     {
         try { SshGuard.ThrowIfInvalid(name, null); } catch (Exception ex) { return (false, ex.Message, ""); }
         if (await _dbContext.Clients.AnyAsync(c => c.Email == name && c.ServerIp == serverIp)) return (false, "Уже есть!", "");
-        
-        var newUser = new VpnClient 
-        { 
-            Email = name, 
-            Uuid = Guid.NewGuid().ToString(), 
-            ServerIp = serverIp, 
-            TrafficLimit = limit, 
-            ExpiryDate = expiry, 
-            IsP2PBlocked = p2p, 
+
+        var newUser = new VpnClient
+        {
+            Email = name,
+            Uuid = Guid.NewGuid().ToString(),
+            ServerIp = serverIp,
+            TrafficLimit = limit,
+            ExpiryDate = expiry,
+            IsP2PBlocked = p2p,
             IsVlessEnabled = isVless,
             IsHysteria2Enabled = isHy2,
             IsTrustTunnelEnabled = isTt,
-            IsActive = true 
+            IsTrojanEnabled = isTrojan,             // ИСПРАВЛЕНИЕ
+            IsShadowsocksEnabled = isShadowsocks,   // ИСПРАВЛЕНИЕ
+            IsActive = true
         };
         _dbContext.Clients.Add(newUser); await _dbContext.SaveChangesAsync();
-        
+
         var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
         var root = JsonNode.Parse(rawJson);
         if (root != null)
@@ -71,6 +73,24 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
             return (res.IsSuccess, res.Message, (await _dbContext.Clients.FirstOrDefaultAsync(u => u.Uuid == newUser.Uuid))?.VlessLink ?? "");
         }
         return (false, "Ошибка чтения конфига сервера", "");
+    }
+
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, string note, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true, bool isTrojan = false, bool isShadowsocks = false)
+    {
+        var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
+        if (user == null) return false;
+
+        user.TrafficLimit = limit; user.ExpiryDate = expiry; user.IsP2PBlocked = p2p; user.Note = note;
+        user.IsVlessEnabled = isVless; user.IsHysteria2Enabled = isHy2; user.IsTrustTunnelEnabled = isTt;
+        user.IsTrojanEnabled = isTrojan; user.IsShadowsocksEnabled = isShadowsocks; // ИСПРАВЛЕНИЕ
+        await _dbContext.SaveChangesAsync();
+
+        var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
+        var root = JsonNode.Parse(rawJson);
+        if (root == null) return false;
+
+        await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
+        return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;
     }
 
     public async Task<(bool IsSuccess, string Message)> RemoveUserAsync(ISshService ssh, string serverIp, string name)
@@ -100,22 +120,6 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
 
         await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-    }
-
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, string note, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true)
-    {
-        var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
-        if (user == null) return false;
-        user.TrafficLimit = limit; user.ExpiryDate = expiry; user.IsP2PBlocked = p2p; user.Note = note;
-        user.IsVlessEnabled = isVless; user.IsHysteria2Enabled = isHy2; user.IsTrustTunnelEnabled = isTt;
-        await _dbContext.SaveChangesAsync();
-
-        var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
-        var root = JsonNode.Parse(rawJson);
-        if (root == null) return false;
-
-        await RebuildInboundsAsync(root, serverIp); await ApplyP2PRulesAsync(root, serverIp);
-        return (await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }))).IsSuccess;
     }
 
     public async Task SaveTrafficToDbAsync(string ip, IEnumerable<VpnClient> clients)

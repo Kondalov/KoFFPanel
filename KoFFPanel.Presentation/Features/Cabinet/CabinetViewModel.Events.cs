@@ -23,13 +23,10 @@ public partial class CabinetViewModel
             return;
         }
 
-        // ИСПРАВЛЕНИЕ: Обновляем выбранный сервер свежими данными (с новыми Inbounds)
         SelectedServer = message.Server;
-
         ISshService? ssh = _currentMonitoringSsh;
         bool isTempSsh = false;
 
-        // Если текущий SSH недоступен (например, из-за рестарта сети), создаем временный
         if (ssh == null || !ssh.IsConnected)
         {
             _logger.Log("USER-SYNC", "Мониторинг недоступен. Создаю временное SSH подключение...");
@@ -61,12 +58,10 @@ public partial class CabinetViewModel
 
         try
         {
-            // Сначала синхронизируем основное ядро
             bool coreSyncSuccess = isSingBox ? await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients) :
-                                   (isTrustTunnel ? await _trustTunnelUserManager.SyncUsersToCoreAsync(ssh, Clients) : 
+                                   (isTrustTunnel ? await _trustTunnelUserManager.SyncUsersToCoreAsync(ssh, Clients) :
                                    await _userManager.SyncUsersToCoreAsync(ssh, Clients));
 
-            // ДОПОЛНИТЕЛЬНО: Если на сервере установлен TrustTunnel как второй протокол, синхронизируем и его!
             bool hasTrustTunnelExtra = SelectedServer.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel");
             if (hasTrustTunnelExtra && !isTrustTunnel)
             {
@@ -78,14 +73,17 @@ public partial class CabinetViewModel
                 var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                 var updatedUsers = freshContext.Clients.AsNoTracking().Where(c => c.ServerIp == ip).ToList();
 
-                // ИСПРАВЛЕНИЕ: Итерируемся по свежим данным из БД (updatedUsers), а не по старым из памяти (Clients),
-                // чтобы на сервер подписок отправлялись актуальные ссылки с правильным маскировочным доменом.
                 foreach (var client in updatedUsers)
                 {
                     var links = new List<string>();
-                    if (client.IsTrustTunnelEnabled && !string.IsNullOrEmpty(client.TrustTunnelLink) && client.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TrustTunnelLink);
+
+                    // ДОБАВЛЕНЫ НОВЫЕ ПРОТОКОЛЫ ДЛЯ ОТПРАВКИ В HTTPS-ПОДПИСКУ
                     if (client.IsVlessEnabled && !string.IsNullOrEmpty(client.VlessLink) && client.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.VlessLink);
                     if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link) && client.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) links.Add(client.Hysteria2Link);
+                    if (client.IsTrojanEnabled && !string.IsNullOrEmpty(client.TrojanLink) && client.TrojanLink.StartsWith("trojan://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TrojanLink);
+                    if (client.IsShadowsocksEnabled && !string.IsNullOrEmpty(client.ShadowsocksLink) && client.ShadowsocksLink.StartsWith("ss://", StringComparison.OrdinalIgnoreCase)) links.Add(client.ShadowsocksLink);
+                    if (client.IsTrustTunnelEnabled && !string.IsNullOrEmpty(client.TrustTunnelLink) && client.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TrustTunnelLink);
+
                     await _subscriptionService.UpdateUserSubscriptionAsync(ssh, client.Uuid ?? "", links);
                 }
 
@@ -96,9 +94,9 @@ public partial class CabinetViewModel
             }
         }
         catch (Exception ex) { _logger.Log("USER-SYNC", $"Ошибка: {ex.Message}"); }
-        finally 
-        { 
-            if (isTempSsh) ssh.Disconnect(); 
+        finally
+        {
+            if (isTempSsh) ssh.Disconnect();
         }
     }
 }

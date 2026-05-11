@@ -4,6 +4,7 @@ using KoFFPanel.Domain.Entities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -102,24 +103,24 @@ echo 'READY|Сервер готов к установке.'
             else
             {
                 string cleanupCmd = $@"
-                {sudoPrefix}systemctl stop sing-box xray 2>/dev/null || true
-                {sudoPrefix}systemctl disable sing-box xray 2>/dev/null || true
-                {sudoPrefix}pkill -9 sing-box 2>/dev/null || true
-                {sudoPrefix}pkill -9 xray 2>/dev/null || true
-                
-                # ЗАЩИТА ОТ ДУРАКА: Если ядро запущено в Docker, оно тоже может занимать порты
-                if command -v docker >/dev/null 2>&1; then
-                    {sudoPrefix}docker ps -q --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
-                    {sudoPrefix}docker ps -aq --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker rm 2>/dev/null || true
-                    # Также убиваем контейнеры, слушающие порт 443 напрямую
-                    {sudoPrefix}docker ps -q | xargs -i {sudoPrefix}docker inspect -f '{{{{.Id}}}} {{{{.HostConfig.PortBindings}}}}' {{}} | grep ':443' | awk '{{print $1}}' | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
-                fi
+            {sudoPrefix}systemctl stop sing-box xray 2>/dev/null || true
+            {sudoPrefix}systemctl disable sing-box xray 2>/dev/null || true
+            {sudoPrefix}pkill -9 sing-box 2>/dev/null || true
+            {sudoPrefix}pkill -9 xray 2>/dev/null || true
+            
+            # ЗАЩИТА ОТ ДУРАКА: Если ядро запущено в Docker, оно тоже может занимать порты
+            if command -v docker >/dev/null 2>&1; then
+                {sudoPrefix}docker ps -q --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
+                {sudoPrefix}docker ps -aq --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker rm 2>/dev/null || true
+                # Также убиваем контейнеры, слушающие порт 443 напрямую
+                {sudoPrefix}docker ps -q | xargs -i {sudoPrefix}docker inspect -f '{{{{.Id}}}} {{{{.HostConfig.PortBindings}}}}' {{}} | grep ':443' | awk '{{print $1}}' | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
+            fi
 
-                {sudoPrefix}fuser -k -9 443/tcp 443/udp 8080/tcp 2>/dev/null || true
-                {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray
-                {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box && {sudoPrefix}chmod 777 /var/log/sing-box
-                sleep 1
-            ";
+            {sudoPrefix}fuser -k -9 443/tcp 443/udp 8080/tcp 2>/dev/null || true
+            {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray
+            {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box && {sudoPrefix}chmod 777 /var/log/sing-box
+            sleep 1
+        ";
                 await ssh.ExecuteCommandAsync(cleanupCmd);
 
                 if (string.Equals(coreName, "xray", StringComparison.OrdinalIgnoreCase))
@@ -182,10 +183,7 @@ echo 'READY|Сервер готов к установке.'
             else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
 
             await LogStep("[6/7] Настройка микросервиса подписок (HTTPS Ready)...");
-
-            // === ИСПРАВЛЕНИЕ: Обязательно передаем домен перед деплоем сервиса подписок ===
             _subscriptionService.SetCustomDomain(profile.CustomDomain ?? string.Empty);
-
             await _subscriptionService.InitializeServerAsync(ssh);
             _profileRepository.UpdateProfile(profile);
 
@@ -195,12 +193,33 @@ echo 'READY|Сервер готов к установке.'
             {
                 await LogStep($"Очистка возможных зависших процессов на порту {inbound.Port}...");
                 string killCmd = $@"
-                {sudoPrefix}fuser -k -9 {inbound.Port}/tcp 2>/dev/null || true
-                {sudoPrefix}fuser -k -9 {inbound.Port}/udp 2>/dev/null || true
-                PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true)
-                if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi
-            ";
+            {sudoPrefix}fuser -k -9 {inbound.Port}/tcp 2>/dev/null || true
+            {sudoPrefix}fuser -k -9 {inbound.Port}/udp 2>/dev/null || true
+            PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true)
+            if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi
+        ";
                 await ssh.ExecuteCommandAsync(killCmd);
+            }
+
+            // ФИКС: Перед перезапуском проверяем конфиг командой ядра
+            string checkCmd = coreType.ToLower() == "sing-box"
+                ? $"{sudoPrefix}sing-box check -c /etc/sing-box/config.json 2>&1"
+                : $"{sudoPrefix}xray run -test -config /usr/local/etc/xray/config.json 2>&1";
+
+            var checkRes = await ssh.ExecuteCommandAsync(checkCmd);
+
+            if (checkRes.ToLower().Contains("error") || checkRes.ToLower().Contains("fatal"))
+            {
+                await LogStep("КРИТИЧЕСКАЯ ОШИБКА: Сгенерированный конфиг невалиден! Откат...");
+                if (coreType.ToLower() == "sing-box")
+                {
+                    await ssh.ExecuteCommandAsync($"{sudoPrefix}cp /etc/sing-box/config.backup.json /etc/sing-box/config.json 2>/dev/null || true");
+                }
+                else
+                {
+                    await ssh.ExecuteCommandAsync($"{sudoPrefix}cp /usr/local/etc/xray/config.backup.json /usr/local/etc/xray/config.json 2>/dev/null || true");
+                }
+                return (false, "Ошибка валидации конфига. Система откачена к рабочему состоянию.");
             }
 
             await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload && {sudoPrefix}systemctl enable {coreName} --now && {sudoPrefix}systemctl restart {coreName}");

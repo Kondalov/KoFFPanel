@@ -41,11 +41,8 @@ public partial class CabinetViewModel
             if (window.DataContext is AddClientViewModel vm)
             {
                 vm.Initialize(server.IpAddress ?? "");
-
-                // Открываем окно
                 window.ShowDialog();
 
-                // === ИСПРАВЛЕНИЕ: Проверяем флаг успешности вместо DialogResult ===
                 if (vm.IsSuccess)
                 {
                     ServerStatus = $"Добавление клиента {vm.ClientName}...";
@@ -54,41 +51,36 @@ public partial class CabinetViewModel
 
                     bool success; string msg; string vlessLink;
 
-                    if (IsSingBoxActive())
-                    {
-                        (success, msg, vlessLink) = await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled);
-                    }
-                    else if (IsTrustTunnelActive())
-                    {
-                        (success, msg, vlessLink) = await _trustTunnelUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked);
-                    }
-                    else
-                    {
-                        (success, msg, vlessLink) = await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked);
-                    }
+                    if (IsSingBoxActive()) (success, msg, vlessLink) = await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled, vm.IsTrojanEnabled, vm.IsShadowsocksEnabled);
+                    else if (IsTrustTunnelActive()) (success, msg, vlessLink) = await _trustTunnelUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked);
+                    else (success, msg, vlessLink) = await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled, vm.IsTrojanEnabled, vm.IsShadowsocksEnabled);
 
                     if (success)
                     {
-                        var links = new List<string>();
-                        if (!string.IsNullOrEmpty(vlessLink)) links.Add(vlessLink);
-                        await _subscriptionService.UpdateUserSubscriptionAsync(ssh, vm.ClientName, links);
+                        // ИСПРАВЛЕНИЕ: Достаем свежего юзера из БД со всеми сгенерированными ссылками
+                        var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                        var freshClient = await freshContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Email == vm.ClientName && c.ServerIp == ip);
+
+                        if (freshClient != null)
+                        {
+                            var activeLinks = new List<string>();
+                            if (freshClient.IsVlessEnabled && !string.IsNullOrEmpty(freshClient.VlessLink)) activeLinks.Add(freshClient.VlessLink);
+                            if (freshClient.IsHysteria2Enabled && !string.IsNullOrEmpty(freshClient.Hysteria2Link)) activeLinks.Add(freshClient.Hysteria2Link);
+                            if (freshClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(freshClient.TrustTunnelLink)) activeLinks.Add(freshClient.TrustTunnelLink);
+                            if (freshClient.IsTrojanEnabled && !string.IsNullOrEmpty(freshClient.TrojanLink)) activeLinks.Add(freshClient.TrojanLink);
+                            if (freshClient.IsShadowsocksEnabled && !string.IsNullOrEmpty(freshClient.ShadowsocksLink)) activeLinks.Add(freshClient.ShadowsocksLink);
+
+                            await _subscriptionService.UpdateUserSubscriptionAsync(ssh, freshClient.Uuid ?? "", activeLinks);
+                        }
 
                         ServerStatus = $"Онлайн (Клиент {vm.ClientName} добавлен!)";
                         await LoadUsersAsync();
                     }
-                    else
-                    {
-                        ServerStatus = $"Ошибка: {msg}";
-                        _logger?.Log("ADD-CLIENT", $"Ошибка создания на сервере: {msg}");
-                    }
+                    else ServerStatus = $"Ошибка: {msg}";
                 }
             }
         }
-        catch (Exception ex)
-        {
-            ServerStatus = "Ошибка приложения при добавлении.";
-            _logger?.Log("ADD-CLIENT-CRASH", ex.Message);
-        }
+        catch (Exception ex) { ServerStatus = "Ошибка приложения."; }
     }
 
     [RelayCommand]
@@ -161,55 +153,49 @@ public partial class CabinetViewModel
 
             if (window.DataContext is AddClientViewModel vm)
             {
-                vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked, client.IsVlessEnabled, client.IsHysteria2Enabled, client.IsTrustTunnelEnabled);
-
-                // Открываем окно
+                vm.LoadForEdit(email, client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked, client.IsVlessEnabled, client.IsHysteria2Enabled, client.IsTrustTunnelEnabled, client.IsTrojanEnabled, client.IsShadowsocksEnabled);
                 window.ShowDialog();
 
-                // === ИСПРАВЛЕНИЕ: Проверяем флаг успешности вместо DialogResult ===
                 if (vm.IsSuccess)
                 {
                     long newLimit = (long)(vm.TrafficLimitGb * 1024L * 1024 * 1024);
-
                     bool success;
-                    if (IsSingBoxActive())
-                    {
-                        success = await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled);
-                    }
-                    else if (IsTrustTunnelActive())
-                    {
-                        success = await _trustTunnelUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked);
-                    }
-                    else
-                    {
-                        success = await _userManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled);
-                    }
+
+                    if (IsSingBoxActive()) success = await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled, vm.IsTrojanEnabled, vm.IsShadowsocksEnabled);
+                    else if (IsTrustTunnelActive()) success = await _trustTunnelUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked);
+                    else success = await _userManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled, vm.IsTrojanEnabled, vm.IsShadowsocksEnabled);
 
                     if (success)
                     {
-                        // Обновляем модель в UI
-                        client.TrafficLimit = newLimit;
-                        client.ExpiryDate = vm.ExpiryDate;
-                        client.Note = vm.Note;
-                        client.IsP2PBlocked = vm.IsP2PBlocked;
-                        client.IsVlessEnabled = vm.IsVlessEnabled;
-                        client.IsHysteria2Enabled = vm.IsHysteria2Enabled;
-                        client.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
+                        // Обновляем UI
+                        client.TrafficLimit = newLimit; client.ExpiryDate = vm.ExpiryDate; client.Note = vm.Note;
+                        client.IsP2PBlocked = vm.IsP2PBlocked; client.IsVlessEnabled = vm.IsVlessEnabled;
+                        client.IsHysteria2Enabled = vm.IsHysteria2Enabled; client.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
+                        client.IsTrojanEnabled = vm.IsTrojanEnabled; client.IsShadowsocksEnabled = vm.IsShadowsocksEnabled;
+
+                        // ИСПРАВЛЕНИЕ: Обновляем HTTPS-подписку (раньше этого здесь не было)
+                        var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                        var freshClient = await freshContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Email == email && c.ServerIp == ip);
+
+                        if (freshClient != null)
+                        {
+                            var activeLinks = new List<string>();
+                            if (freshClient.IsVlessEnabled && !string.IsNullOrEmpty(freshClient.VlessLink)) activeLinks.Add(freshClient.VlessLink);
+                            if (freshClient.IsHysteria2Enabled && !string.IsNullOrEmpty(freshClient.Hysteria2Link)) activeLinks.Add(freshClient.Hysteria2Link);
+                            if (freshClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(freshClient.TrustTunnelLink)) activeLinks.Add(freshClient.TrustTunnelLink);
+                            if (freshClient.IsTrojanEnabled && !string.IsNullOrEmpty(freshClient.TrojanLink)) activeLinks.Add(freshClient.TrojanLink);
+                            if (freshClient.IsShadowsocksEnabled && !string.IsNullOrEmpty(freshClient.ShadowsocksLink)) activeLinks.Add(freshClient.ShadowsocksLink);
+
+                            await _subscriptionService.UpdateUserSubscriptionAsync(ssh, freshClient.Uuid ?? "", activeLinks);
+                        }
 
                         ServerStatus = "Онлайн (Лимиты обновлены)";
                     }
-                    else
-                    {
-                        ServerStatus = "Ошибка обновления лимитов.";
-                    }
+                    else ServerStatus = "Ошибка обновления лимитов.";
                 }
             }
         }
-        catch (Exception ex)
-        {
-            ServerStatus = "Ошибка приложения при редактировании.";
-            _logger?.Log("EDIT-CLIENT-CRASH", ex.Message);
-        }
+        catch (Exception ex) { ServerStatus = "Ошибка приложения."; }
     }
 
     [RelayCommand]
@@ -252,53 +238,36 @@ public partial class CabinetViewModel
 
         if (window.DataContext is ClientProtocolsViewModel vm)
         {
-            string ip = server.IpAddress ?? "";
-            vm.Initialize(client, _subscriptionService.GetSubscriptionUrl(ip, client.Uuid ?? ""));
+            vm.Initialize(client, _subscriptionService.GetSubscriptionUrl(server.IpAddress ?? "", client.Uuid ?? ""));
 
             vm.SaveCallback = async (updatedClient) =>
             {
                 ServerStatus = $"Сохранение настроек {updatedClient.Email}...";
-                string ip = server.IpAddress ?? "";
-                
-                // === 2026 MODERNIZATION: Полная синхронизация ===
-                // Передаем весь список клиентов в менеджер, он сам обновит БД и конфиг ядра
-                bool syncSuccess;
-                if (IsSingBoxActive() && _currentMonitoringSsh != null)
-                {
-                    syncSuccess = await _singBoxUserManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients);
-                }
-                else if (_currentMonitoringSsh != null)
-                {
-                    syncSuccess = await _userManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients);
-                }
-                else syncSuccess = false;
+                bool syncSuccess = IsSingBoxActive() && _currentMonitoringSsh != null ? await _singBoxUserManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients) :
+                                   (_currentMonitoringSsh != null ? await _userManager.SyncUsersToCoreAsync(_currentMonitoringSsh, Clients) : false);
 
                 if (syncSuccess)
                 {
-                    // ИСПРАВЛЕНИЕ: Берем свежие ссылки из БД после генерации, чтобы не отправлять старые (с IP) на сервер
                     var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                     var freshClient = freshContext.Clients.AsNoTracking().FirstOrDefault(c => c.Uuid == updatedClient.Uuid);
-                    
-                    if (freshClient != null)
+
+                    if (freshClient != null && _currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
                     {
                         var activeLinks = new List<string>();
-                        if (freshClient.IsVlessEnabled && !string.IsNullOrEmpty(freshClient.VlessLink) && freshClient.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(freshClient.VlessLink);
-                        if (freshClient.IsHysteria2Enabled && !string.IsNullOrEmpty(freshClient.Hysteria2Link) && freshClient.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(freshClient.Hysteria2Link);
-                        if (freshClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(freshClient.TrustTunnelLink) && freshClient.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) activeLinks.Add(freshClient.TrustTunnelLink);
+                        if (freshClient.IsVlessEnabled && !string.IsNullOrEmpty(freshClient.VlessLink)) activeLinks.Add(freshClient.VlessLink);
+                        if (freshClient.IsHysteria2Enabled && !string.IsNullOrEmpty(freshClient.Hysteria2Link)) activeLinks.Add(freshClient.Hysteria2Link);
+                        if (freshClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(freshClient.TrustTunnelLink)) activeLinks.Add(freshClient.TrustTunnelLink);
+                        // ИСПРАВЛЕНИЕ: Добавлены Trojan и Shadowsocks
+                        if (freshClient.IsTrojanEnabled && !string.IsNullOrEmpty(freshClient.TrojanLink)) activeLinks.Add(freshClient.TrojanLink);
+                        if (freshClient.IsShadowsocksEnabled && !string.IsNullOrEmpty(freshClient.ShadowsocksLink)) activeLinks.Add(freshClient.ShadowsocksLink);
 
-                        if (_currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)
-                        {
-                            await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, freshClient.Uuid ?? "", activeLinks);
-                        }
+                        await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, freshClient.Uuid ?? "", activeLinks);
                     }
 
                     await LoadUsersAsync();
-                    ServerStatus = $"Онлайн (Настройки для {updatedClient.Email} сохранены)";
+                    ServerStatus = $"Онлайн (Настройки сохранены)";
                 }
-                else
-                {
-                    ServerStatus = "Ошибка синхронизации с ядром.";
-                }
+                else ServerStatus = "Ошибка синхронизации с ядром.";
             };
         }
         window.ShowDialog();

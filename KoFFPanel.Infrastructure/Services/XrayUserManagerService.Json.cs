@@ -1,11 +1,11 @@
+using KoFFPanel.Application.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
-using KoFFPanel.Application.Interfaces;
-using Microsoft.EntityFrameworkCore;
 
 namespace KoFFPanel.Infrastructure.Services;
 
@@ -17,104 +17,121 @@ public partial class XrayUserManagerService
         var inbounds = root["inbounds"]?.AsArray();
         if (inbounds == null) return;
 
-        bool hasReality = false;
-        bool hasXHttp = false;
-        foreach (var inbound in inbounds.OfType<JsonObject>()) {
-            if ("vless".Equals(inbound["protocol"]?.ToString(), StringComparison.OrdinalIgnoreCase)) {
-                var net = inbound["streamSettings"]?["network"]?.ToString();
-                if ("tcp".Equals(net, StringComparison.OrdinalIgnoreCase)) hasReality = true;
-                if ("xhttp".Equals(net, StringComparison.OrdinalIgnoreCase) || "quic".Equals(net, StringComparison.OrdinalIgnoreCase)) hasXHttp = true;
-            }
-        }
+        var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
+        string displayServer = !string.IsNullOrWhiteSpace(profile?.ConnectionNode) ? profile.ConnectionNode.Trim() : serverIp;
 
-        foreach (var inbound in inbounds.OfType<JsonObject>()) {
-            if ("vless".Equals(inbound["protocol"]?.ToString(), StringComparison.OrdinalIgnoreCase)) {
-                var net = inbound["streamSettings"]?["network"]?.ToString();
-                bool isXHttp = "xhttp".Equals(net, StringComparison.OrdinalIgnoreCase) || "quic".Equals(net, StringComparison.OrdinalIgnoreCase);
-                
+        foreach (var inbound in inbounds.OfType<JsonObject>().ToList())
+        {
+            string protocol = inbound["protocol"]?.ToString() ?? "";
+            var net = inbound["streamSettings"]?["network"]?.ToString();
+            bool isXHttp = "xhttp".Equals(net, StringComparison.OrdinalIgnoreCase) || "quic".Equals(net, StringComparison.OrdinalIgnoreCase);
+
+            if ("vless".Equals(protocol, StringComparison.OrdinalIgnoreCase))
+            {
+                var targetUsers = dbUsers.Where(u => u.IsActive && (!isXHttp ? u.IsVlessEnabled : u.IsTrustTunnelEnabled)).ToList();
                 var clients = new JsonArray();
-                var targetUsers = dbUsers.Where(u => u.IsActive && (!isXHttp ? u.IsVlessEnabled : u.IsTrustTunnelEnabled));
 
-                foreach (var u in targetUsers)
+                if (targetUsers.Any())
                 {
-                    var clientObj = new JsonObject { ["id"] = u.Uuid, ["email"] = u.Email };
-                    if (!isXHttp) clientObj["flow"] = "xtls-rprx-vision";
-                    clients.Add(clientObj);
+                    foreach (var u in targetUsers)
+                    {
+                        var clientObj = new JsonObject { ["id"] = u.Uuid, ["email"] = u.Email };
+                        if (!isXHttp) clientObj["flow"] = "xtls-rprx-vision";
+                        clients.Add(clientObj);
+                    }
+                }
+                else
+                {
+                    clients.Add(new JsonObject { ["id"] = "00000000-0000-0000-0000-000000000000", ["email"] = "init" });
                 }
 
                 if (inbound["settings"] is JsonObject s) s["clients"] = clients;
-                await UpdateXrayLinksAsync(inbound, dbUsers, serverIp, ssh, isXHttp);
+                await UpdateXrayVlessLinksAsync(inbound, dbUsers, displayServer, ssh, isXHttp);
+            }
+            else if ("trojan".Equals(protocol, StringComparison.OrdinalIgnoreCase))
+            {
+                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsTrojanEnabled).ToList();
+                var clients = new JsonArray();
+
+                if (targetUsers.Any())
+                {
+                    foreach (var u in targetUsers)
+                        clients.Add(new JsonObject { ["password"] = u.Uuid, ["email"] = u.Email });
+                }
+                else
+                {
+                    clients.Add(new JsonObject { ["password"] = "init_pass", ["email"] = "init" });
+                }
+
+                if (inbound["settings"] is JsonObject s) s["clients"] = clients;
+                UpdateTrojanLinks(inbound, dbUsers, displayServer);
+            }
+            else if ("shadowsocks".Equals(protocol, StringComparison.OrdinalIgnoreCase))
+            {
+                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsShadowsocksEnabled).ToList();
+                var clients = new JsonArray();
+
+                if (targetUsers.Any())
+                {
+                    foreach (var u in targetUsers)
+                        clients.Add(new JsonObject { ["password"] = u.Uuid, ["email"] = u.Email });
+                }
+                else
+                {
+                    clients.Add(new JsonObject { ["password"] = "init_pass", ["email"] = "init" });
+                }
+
+                if (inbound["settings"] is JsonObject s) s["clients"] = clients;
+                UpdateShadowsocksLinks(inbound, dbUsers, displayServer);
             }
         }
 
         await ApplyP2PRulesAsync(root, dbUsers);
-
-        // Если Reality не найден в конфиге, помечаем это в ссылках
-        if (!hasReality) 
-        {
-            foreach (var u in dbUsers) 
-            {
-                if (string.IsNullOrEmpty(u.VlessLink) || u.VlessLink.Contains("не установлен"))
-                    u.VlessLink = "VLESS-Reality не найден в конфиге сервера";
-            }
-        }
-
-        foreach (var u in dbUsers) 
-        {
-            u.Hysteria2Link = "Не поддерживается в Xray (используйте Sing-Box)";
-            if (!hasXHttp) u.TrustTunnelLink = "TrustTunnel не активен (установлен Xray-Reality)";
-        }
         await _dbContext.SaveChangesAsync();
     }
 
-    private async Task ApplyP2PRulesAsync(JsonNode root, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers)
+    private void UpdateTrojanLinks(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string displayServer)
     {
-        var rules = root["routing"]?["rules"]?.AsArray();
-        if (rules == null) return;
+        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
+        int port = 4434;
+        if (inbound["port"] != null) int.TryParse(inbound["port"]!.ToString(), out port);
+        string sni = inbound["streamSettings"]?["tlsSettings"]?["serverName"]?.ToString() ?? "bing.com";
 
-        // Удаляем старые правила блокировки торрентов
-        var toRemove = rules.Where(r => r?["outboundTag"]?.ToString() == "block" && (r?["protocol"]?.ToString().Contains("bittorrent") == true || r?["domain"] != null)).ToList();
-        foreach (var r in toRemove) rules.Remove(r);
-
-        var blockedUsers = dbUsers.Where(u => u.IsP2PBlocked).Select(u => u.Email).ToList();
-        if (blockedUsers.Any())
+        foreach (var u in dbUsers)
         {
-            var userArray = new JsonArray();
-            foreach (var email in blockedUsers) userArray.Add(email);
-            
-            // Правило для протокола BitTorrent
-            rules.Add(new JsonObject 
-            { 
-                ["type"] = "field", 
-                ["user"] = userArray.DeepClone(), 
-                ["protocol"] = new JsonArray("bittorrent"), 
-                ["outboundTag"] = "block" 
-            });
-
-            // Правило для доменов
-            rules.Add(new JsonObject 
-            { 
-                ["type"] = "field", 
-                ["user"] = userArray.DeepClone(), 
-                ["domain"] = new JsonArray("domain:nnmclub.to", "domain:rutracker.org", "domain:rutor.info", "domain:kinozal.tv", "domain:tapochek.net", "keyword:torrent"), 
-                ["outboundTag"] = "block" 
-            });
+            string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
+            u.TrojanLink = $"trojan://{u.Uuid}@{safeIp}:{port}?security=tls&sni={sni}&type=tcp&alpn=http/1.1,h2&allowInsecure=1#{encodedName}";
         }
     }
 
-    private async Task UpdateXrayLinksAsync(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string displayServer, ISshService ssh, bool isQuic)
+    private void UpdateShadowsocksLinks(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string displayServer)
     {
-        int port = (int?)inbound["port"] ?? (isQuic ? 4433 : 443);
+        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
+        int port = 8388;
+        if (inbound["port"] != null) int.TryParse(inbound["port"]!.ToString(), out port);
+        string method = inbound["settings"]?["method"]?.ToString() ?? "aes-256-gcm";
+
+        foreach (var u in dbUsers)
+        {
+            string credentials = $"{method}:{u.Uuid}";
+            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
+            string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
+            u.ShadowsocksLink = $"ss://{base64Creds}@{safeIp}:{port}#{encodedName}";
+        }
+    }
+
+    private async Task UpdateXrayVlessLinksAsync(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string displayServer, ISshService ssh, bool isQuic)
+    {
+        int port = isQuic ? 4433 : 443;
+        if (inbound["port"] != null) int.TryParse(inbound["port"]!.ToString(), out port);
+
         string safeIp = displayServer.Contains(':') && !displayServer.StartsWith('[') ? $"[{displayServer}]" : displayServer;
 
         if (!isQuic)
         {
             var rs = inbound["streamSettings"]?["realitySettings"];
             string sid = rs?["shortIds"]?[0]?.ToString() ?? "";
-
-            // ИСПРАВЛЕНИЕ: Fallback должен строго совпадать с тем, что генерирует ядро (www.microsoft.com)
             string sni = rs?["serverNames"]?[0]?.ToString() ?? "www.microsoft.com";
-
             string pk = rs?["privateKey"]?.ToString() ?? "";
             string pub = "";
 
@@ -128,17 +145,41 @@ public partial class XrayUserManagerService
             foreach (var u in dbUsers)
             {
                 string encodedName = Uri.EscapeDataString($"KoFFPanel_{u.Email}");
+                // ИСПРАВЛЕНО: заменено {shortId} на {sid}
                 u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pub}&fp=chrome&sni={sni}&sid={sid}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
             }
         }
-        else
+    }
+
+    private async Task ApplyP2PRulesAsync(JsonNode root, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers)
+    {
+        var rules = root["routing"]?["rules"]?.AsArray();
+        if (rules == null) return;
+
+        var toRemove = rules.Where(r => r?["outboundTag"]?.ToString() == "block" && (r?["protocol"]?.ToString().Contains("bittorrent") == true || r?["domain"] != null)).ToList();
+        foreach (var r in toRemove) rules.Remove(r);
+
+        var blockedUsers = dbUsers.Where(u => u.IsP2PBlocked).Select(u => u.Email).ToList();
+        if (blockedUsers.Any())
         {
-            string sni = inbound["streamSettings"]?["tlsSettings"]?["serverName"]?.ToString() ?? "vpn.endpoint";
-            foreach (var u in dbUsers)
+            var userArray = new JsonArray();
+            foreach (var email in blockedUsers) userArray.Add(email);
+
+            rules.Add(new JsonObject
             {
-                string encodedName = Uri.EscapeDataString($"TrustTunnel_{u.Email}");
-                u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=xhttp&security=tls&sni={sni}&alpn=h3#{encodedName}";
-            }
+                ["type"] = "field",
+                ["user"] = userArray.DeepClone(),
+                ["protocol"] = new JsonArray("bittorrent"),
+                ["outboundTag"] = "block"
+            });
+
+            rules.Add(new JsonObject
+            {
+                ["type"] = "field",
+                ["user"] = userArray.DeepClone(),
+                ["domain"] = new JsonArray("domain:nnmclub.to", "domain:rutracker.org", "domain:rutor.info", "domain:kinozal.tv", "domain:tapochek.net", "keyword:torrent"),
+                ["outboundTag"] = "block"
+            });
         }
     }
 
@@ -146,24 +187,42 @@ public partial class XrayUserManagerService
     {
         string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
 
-        // ИСПРАВЛЕНИЕ: Добавлен StringComparison для соответствия строгим правилам .NET 10
         string b64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(newJson.Replace("\r", "", StringComparison.OrdinalIgnoreCase)));
-
         await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {s} tee /tmp/config_users_test.json >/dev/null");
 
         string testResult = await ssh.ExecuteCommandAsync("/usr/local/bin/xray run -test -config /tmp/config_users_test.json 2>&1");
 
-        // ИСПРАВЛЕНИЕ: Добавлен StringComparison.OrdinalIgnoreCase в метод Contains
         if (!testResult.Contains("Configuration OK", StringComparison.OrdinalIgnoreCase))
         {
             return (false, "Ошибка теста Xray! Конфиг не прошел валидацию.");
         }
 
-        // ИСПРАВЛЕНИЕ: Отказ от деструктивного killall -9.
-        // Даем возможность Xray завершить текущие сессии мягко (Graceful Shutdown)
-        // и безопасно перезапускаем службу штатным средством Systemd.
-        string applyCmd = $"{s} cp /usr/local/etc/xray/config.json /usr/local/etc/xray/config.backup.json; " +
-                          $"{s} mv /tmp/config_users_test.json /usr/local/etc/xray/config.json; " +
+        // ИСПРАВЛЕНИЕ: Автоматический парсинг портов и открытие Firewall
+        var ports = new HashSet<int>();
+        try
+        {
+            var parsed = JsonNode.Parse(newJson);
+            var inbounds = parsed?["inbounds"]?.AsArray();
+            if (inbounds != null)
+            {
+                foreach (var inbound in inbounds)
+                {
+                    var portToken = inbound["port"] ?? inbound["listen_port"];
+                    if (portToken != null && int.TryParse(portToken.ToString(), out int p)) ports.Add(p);
+                }
+            }
+        }
+        catch { }
+
+        string fwCmds = "";
+        foreach (var p in ports)
+        {
+            fwCmds += $"{s} ufw allow {p}/tcp 2>/dev/null; {s} ufw allow {p}/udp 2>/dev/null; {s} iptables -I INPUT -p tcp --dport {p} -j ACCEPT 2>/dev/null; {s} iptables -I INPUT -p udp --dport {p} -j ACCEPT 2>/dev/null; ";
+        }
+
+        string applyCmd = $"{fwCmds} " +
+                          $"{s} \\cp -f /usr/local/etc/xray/config.json /usr/local/etc/xray/config.backup.json; " +
+                          $"{s} \\mv -f /tmp/config_users_test.json /usr/local/etc/xray/config.json; " +
                           $"{s} systemctl restart xray";
 
         await ssh.ExecuteCommandAsync(applyCmd);
