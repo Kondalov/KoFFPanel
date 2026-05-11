@@ -40,10 +40,7 @@ public partial class SingBoxUserManagerService
                     foreach (var u in targetUsers)
                         usersArray.Add(isQuic ? new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid } : new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid, ["flow"] = "xtls-rprx-vision" });
                 }
-                else
-                {
-                    usersArray.Add(new JsonObject { ["name"] = "init", ["uuid"] = "00000000-0000-0000-0000-000000000000" });
-                }
+                else usersArray.Add(new JsonObject { ["name"] = "init", ["uuid"] = "00000000-0000-0000-0000-000000000000" });
 
                 inbound["users"] = usersArray;
                 UpdateVlessLinks(inbound, dbUsers, displayServer, serverIp, isQuic);
@@ -52,16 +49,11 @@ public partial class SingBoxUserManagerService
             {
                 var targetUsers = dbUsers.Where(u => u.IsActive && u.IsHysteria2Enabled).ToList();
                 var usersArray = new JsonArray();
-
                 if (targetUsers.Any())
                 {
-                    foreach (var u in targetUsers)
-                        usersArray.Add(new JsonObject { ["name"] = u.Email, ["password"] = u.Uuid });
+                    foreach (var u in targetUsers) usersArray.Add(new JsonObject { ["name"] = u.Email, ["password"] = u.Uuid });
                 }
-                else
-                {
-                    usersArray.Add(new JsonObject { ["name"] = "init", ["password"] = "init_pass" });
-                }
+                else usersArray.Add(new JsonObject { ["name"] = "init", ["password"] = "init_pass" });
 
                 inbound["users"] = usersArray;
                 UpdateHysteria2Links(inbound, dbUsers, displayServer);
@@ -70,16 +62,11 @@ public partial class SingBoxUserManagerService
             {
                 var targetUsers = dbUsers.Where(u => u.IsActive && u.IsTrojanEnabled).ToList();
                 var usersArray = new JsonArray();
-
                 if (targetUsers.Any())
                 {
-                    foreach (var u in targetUsers)
-                        usersArray.Add(new JsonObject { ["password"] = u.Uuid, ["name"] = u.Email });
+                    foreach (var u in targetUsers) usersArray.Add(new JsonObject { ["password"] = u.Uuid, ["name"] = u.Email });
                 }
-                else
-                {
-                    usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
-                }
+                else usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
 
                 inbound["users"] = usersArray;
                 UpdateTrojanLinks(inbound, dbUsers, displayServer);
@@ -88,17 +75,13 @@ public partial class SingBoxUserManagerService
             {
                 var targetUsers = dbUsers.Where(u => u.IsActive && u.IsShadowsocksEnabled).ToList();
                 var usersArray = new JsonArray();
-
                 if (targetUsers.Any())
                 {
-                    foreach (var u in targetUsers)
-                        usersArray.Add(new JsonObject { ["password"] = u.Uuid, ["name"] = u.Email });
+                    foreach (var u in targetUsers) usersArray.Add(new JsonObject { ["password"] = u.Uuid, ["name"] = u.Email });
                 }
-                else
-                {
-                    usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
-                }
+                else usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
 
+                // ИСПРАВЛЕНИЕ: Удалена вставка невалидного поля 'transport' для shadowsocks
                 inbound["users"] = usersArray;
                 UpdateShadowsocksLinks(inbound, dbUsers, displayServer);
             }
@@ -118,8 +101,8 @@ public partial class SingBoxUserManagerService
         foreach (var u in dbUsers)
         {
             string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
-            // Добавлен ALPN для совместимости с Hiddify 4.1.1
-            u.TrojanLink = $"trojan://{u.Uuid}@{safeIp}:{port}?security=tls&sni={sni}&type=tcp&alpn=http/1.1,h2&allowInsecure=1#{encodedName}";
+            // ИСПРАВЛЕНИЕ: Добавлен insecure=1 для современных клиентов Hiddify
+            u.TrojanLink = $"trojan://{u.Uuid}@{safeIp}:{port}?security=tls&sni={sni}&type=tcp&alpn=http/1.1,h2&allowInsecure=1&insecure=1#{encodedName}";
         }
     }
 
@@ -133,8 +116,17 @@ public partial class SingBoxUserManagerService
         foreach (var u in dbUsers)
         {
             string credentials = $"{method}:{u.Uuid}";
-            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
+
+            // ИСТИННЫЙ СТАНДАРТ SIP002: Base64Url кодирование ТОЛЬКО связки method:password.
+            // Замена + на -, / на _ и удаление = на конце обязательны для парсеров Hiddify/v2rayNG.
+            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials))
+                .Replace("+", "-")
+                .Replace("/", "_")
+                .TrimEnd('=');
+
             string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
+
+            // Формат: ss://[base64url]@[ip]:[port]#[name]
             u.ShadowsocksLink = $"ss://{base64Creds}@{safeIp}:{port}#{encodedName}";
         }
     }

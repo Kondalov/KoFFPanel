@@ -41,7 +41,11 @@ public partial class ShadowsocksBuilder : IProtocolBuilder
         string encodedName = Uri.EscapeDataString($"KoFFPanel-{clientEmail}");
 
         string credentials = $"{method}:{clientUuid}";
-        string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
+
+        string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials))
+            .Replace("+", "-")
+            .Replace("/", "_")
+            .TrimEnd('=');
 
         return $"ss://{base64Creds}@{safeIp}:{inbound.Port}#{encodedName}";
     }

@@ -76,12 +76,11 @@ public partial class XrayUserManagerService
                     foreach (var u in targetUsers)
                         clients.Add(new JsonObject { ["password"] = u.Uuid, ["email"] = u.Email });
                 }
-                else
-                {
-                    clients.Add(new JsonObject { ["password"] = "init_pass", ["email"] = "init" });
-                }
+                else clients.Add(new JsonObject { ["password"] = "init_pass", ["email"] = "init" });
 
                 if (inbound["settings"] is JsonObject s) s["clients"] = clients;
+
+                // ИСПРАВЛЕНИЕ: Удалена ошибочная вставка streamSettings (WebSocket) для Shadowsocks в Xray
                 UpdateShadowsocksLinks(inbound, dbUsers, displayServer);
             }
         }
@@ -100,7 +99,8 @@ public partial class XrayUserManagerService
         foreach (var u in dbUsers)
         {
             string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
-            u.TrojanLink = $"trojan://{u.Uuid}@{safeIp}:{port}?security=tls&sni={sni}&type=tcp&alpn=http/1.1,h2&allowInsecure=1#{encodedName}";
+            // ИСПРАВЛЕНИЕ: Добавлен insecure=1
+            u.TrojanLink = $"trojan://{u.Uuid}@{safeIp}:{port}?security=tls&sni={sni}&type=tcp&alpn=http/1.1,h2&allowInsecure=1&insecure=1#{encodedName}";
         }
     }
 
@@ -114,7 +114,12 @@ public partial class XrayUserManagerService
         foreach (var u in dbUsers)
         {
             string credentials = $"{method}:{u.Uuid}";
-            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
+
+            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials))
+                .Replace("+", "-")
+                .Replace("/", "_")
+                .TrimEnd('=');
+
             string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
             u.ShadowsocksLink = $"ss://{base64Creds}@{safeIp}:{port}#{encodedName}";
         }
