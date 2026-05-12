@@ -13,42 +13,31 @@ public class AppDbContext : DbContext
     public DbSet<ClientConnectionLog> ConnectionLogs { get; set; }
     public DbSet<ClientViolationLog> ViolationLogs { get; set; }
 
-    public AppDbContext()
-    {
-    }
+    // ДОБАВЛЕНА НОВАЯ ТАБЛИЦА ФРОД-СКОРИНГА
+    public DbSet<ClientBehaviorLog> BehaviorLogs { get; set; }
+
+    public AppDbContext() { }
 
     public void InitializeDatabaseOptimization()
     {
         try
         {
-            // === 2026 MODERNIZATION: Автоматические миграции вместо ручных ALTER TABLE ===
             Database.Migrate();
-
-            // Включаем WAL режим для параллельного чтения/записи (Боты + Логи)
             Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
             Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;");
-
-            // Быстрая проверка целостности при каждом запуске
             var result = Database.ExecuteSqlRaw("PRAGMA integrity_check;");
-            // В случае успеха SQLite возвращает строки с "ok", если есть проблемы - ошибки вывалятся
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[DB-OPTIMIZE-ERROR] Ошибка инициализации БД: {ex.Message}");
-            throw; // Критическая ошибка БД должна быть обработана
+            System.Diagnostics.Debug.WriteLine($"[DB-OPTIMIZE-ERROR] Ошибка: {ex.Message}");
+            throw;
         }
     }
 
-    /// <summary>
-    /// Конфигурация контекста базы данных.
-    /// </summary>
-    /// <param name="optionsBuilder">Построитель опций контекста базы данных.</param>
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        // 2026 STABILITY FIX: Используем AppContext.BaseDirectory для гарантии совпадения путей
         string dbPath = Path.Combine(AppContext.BaseDirectory, "koffpanel_users.db");
         System.Diagnostics.Debug.WriteLine($"[DB-CONFIG] Target Path: {dbPath}");
-
         string dbPassword = MasterKeyService.Instance.GetMasterPassword();
         optionsBuilder.UseSqlite($"Data Source={dbPath};Password={dbPassword};Pooling=True;");
     }
@@ -60,10 +49,13 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<VpnClient>().Ignore(c => c.StatusString);
         modelBuilder.Entity<VpnClient>().Ignore(c => c.LastOnlineString);
         modelBuilder.Entity<VpnClient>().Ignore(c => c.Country);
-        modelBuilder.Entity<VpnClient>().Ignore(c => c.AvatarPath); // Защита от краша EF Core
+        modelBuilder.Entity<VpnClient>().Ignore(c => c.AvatarPath);
 
         modelBuilder.Entity<ClientTrafficLog>().HasIndex(t => new { t.ServerIp, t.Email, t.Date });
         modelBuilder.Entity<ClientConnectionLog>().HasIndex(c => new { c.ServerIp, c.Email, c.IpAddress });
         modelBuilder.Entity<ClientViolationLog>().HasIndex(v => new { v.ServerIp, v.Email });
+
+        // Индекс для быстрой выборки аналитики за месяц
+        modelBuilder.Entity<ClientBehaviorLog>().HasIndex(b => new { b.ServerIp, b.Email, b.Date }).IsUnique();
     }
 }

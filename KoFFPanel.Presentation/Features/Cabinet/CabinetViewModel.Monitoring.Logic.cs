@@ -1,9 +1,10 @@
-﻿using System;
+﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Domain.Entities;
+using Microsoft.Extensions.DependencyInjection;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using KoFFPanel.Domain.Entities;
-using KoFFPanel.Application.Interfaces;
 using System.IO;
 
 namespace KoFFPanel.Presentation.Features.Cabinet;
@@ -218,22 +219,15 @@ public partial class CabinetViewModel
 
         if (!isSingBox && !isTrustTunnel)
         {
-            // Для Xray получаем точную статистику через API ядра
             trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
-
-            // FOOLPROOF ЗАЩИТА: Если по API идет трафик, значит юзер 100% онлайн, даже если его уже нет в логах (logrotate/долгий стрим)
             foreach (var kvp in trafficStats)
             {
                 long prev = _previousTrafficStats.TryGetValue(kvp.Key, out long p) ? p : 0;
-                if (kvp.Value > prev)
-                {
-                    activeUsernames.Add(kvp.Key);
-                }
+                if (kvp.Value > prev) activeUsernames.Add(kvp.Key);
             }
             return trafficStats;
         }
 
-        // Логика для Sing-Box и TrustTunnel (расчет по общему сетевому интерфейсу IFACE)
         trafficStats = new Dictionary<string, long>();
         string netBytesCmd = "IFACE=$(ip route | grep default | awk '{print $5}' | head -n1); echo $(( $(cat /sys/class/net/$IFACE/statistics/rx_bytes 2>/dev/null || echo 0) + $(cat /sys/class/net/$IFACE/statistics/tx_bytes 2>/dev/null || echo 0) ))";
 
@@ -243,32 +237,21 @@ public partial class CabinetViewModel
             if (_previousTotalServerBytes > 0 && currentTotalServerBytes > _previousTotalServerBytes)
             {
                 long delta = currentTotalServerBytes - _previousTotalServerBytes;
+                var recentlyActive = Clients.Where(c => c.LastOnline.HasValue && (DateTime.Now - c.LastOnline.Value).TotalMinutes <= 3).Select(c => c.Email ?? "").ToList();
+                foreach (var u in activeUsernames) if (!recentlyActive.Contains(u)) recentlyActive.Add(u);
 
-                // Умный алгоритм: распределяем трафик на всех, кто светился в последние 3 минуты
-                var recentlyActive = Clients
-                    .Where(c => c.LastOnline.HasValue && (DateTime.Now - c.LastOnline.Value).TotalMinutes <= 3)
-                    .Select(c => c.Email ?? "")
-                    .ToList();
-
-                foreach (var u in activeUsernames)
-                {
-                    if (!recentlyActive.Contains(u)) recentlyActive.Add(u);
-                }
-
-                if (recentlyActive.Count > 0 && delta > 10240) // Игнорируем фоновый шум ОС (менее 10KB)
+                if (recentlyActive.Count > 0 && delta > 10240)
                 {
                     long bytesPerUser = delta / recentlyActive.Count;
                     foreach (var uname in recentlyActive)
                     {
                         trafficStats[uname] = (_previousTrafficStats.TryGetValue(uname, out long p) ? p : 0) + bytesPerUser;
-                        // Искусственно продлеваем активность сессии, чтобы UI не моргал
                         activeUsernames.Add(uname);
                     }
                 }
             }
             _previousTotalServerBytes = currentTotalServerBytes;
         }
-
         return trafficStats;
     }
 
@@ -280,14 +263,20 @@ public partial class CabinetViewModel
         XrayLogs = $"=== СИСТЕМНЫЙ ЖУРНАЛ ===\n{journalLogs.Trim()}\n\n=== ACCESS.LOG ===\n{accessLogs.Trim()}\n\n=== ТЕСТ ПАРСЕРА ===\n{grepTest.Trim()}";
     }
 
-    private bool ProcessClientsAfterCycle(Dictionary<string, long> trafficStats, HashSet<string> activeUsernames, List<UserOnlineInfo> allOnlineStats, Dictionary<string, long> trafficBatch, List<(string, string, string)> connectionBatch)
+    // ИЗМЕНЕНИЕ: Метод стал асинхронным (Task<bool>), чтобы дождаться ответа от БД Антифрода
+    private async Task<bool> ProcessClientsAfterCycleAsync(Dictionary<string, long> trafficStats, HashSet<string> activeUsernames, List<UserOnlineInfo> allOnlineStats, Dictionary<string, long> trafficBatch, List<(string, string, string)> connectionBatch)
     {
         bool dbNeedsUpdate = false;
         if (DateTime.Today != _currentDay) { _dailyIps.Clear(); _currentDay = DateTime.Today; }
 
+        // Достаем наш новый сервис напрямую из провайдера
+        var antiFraudService = _serviceProvider.GetRequiredService<IAntiFraudService>();
+
         foreach (var client in Clients)
         {
             string email = client.Email ?? "Unknown";
+            string currentIp = "";
+
             if (trafficStats.TryGetValue(email, out long currentBytes))
             {
                 long prev = _previousTrafficStats.TryGetValue(email, out long p) ? p : 0;
@@ -299,61 +288,49 @@ public partial class CabinetViewModel
             if (activeUsernames.Contains(email))
             {
                 var log = allOnlineStats.FirstOrDefault(s => s.Email == email);
-                // FOOLPROOF: Если allOnlineStats пуст из-за таймаута SSH, сохраняем минимум 1 активную сессию (раз юзер есть в activeUsernames)
                 client.ActiveConnections = log != null && log.ActiveSessions > 0 ? log.ActiveSessions : 1;
                 client.LastOnline = DateTime.Now;
 
                 if (log != null)
                 {
                     client.LastIp = log.LastIp;
+                    currentIp = log.LastIp ?? "";
                     if (!string.IsNullOrEmpty(log.Country)) client.Country = log.Country;
                     connectionBatch.Add((email, log.LastIp ?? "", client.Country ?? ""));
                 }
             }
             else
             {
-                // Мягкая деградация (сглаживание). Ждем 3 минуты перед тем, как визуально "отключить" пользователя.
                 client.ActiveConnections = (client.LastOnline.HasValue && (DateTime.Now - client.LastOnline.Value).TotalMinutes <= 3) ? 1 : 0;
             }
 
-            if (CheckAntiFraudAndLimits(client, trafficStats.TryGetValue(email, out long d) ? d : 0)) dbNeedsUpdate = true;
+            // Передаем собранные данные в умный алгоритм
+            long trafficDelta = trafficStats.TryGetValue(email, out long d) ? d : 0;
+            if (await CheckAntiFraudAndLimitsAsync(client, trafficDelta, currentIp, antiFraudService)) dbNeedsUpdate = true;
         }
         return dbNeedsUpdate;
     }
 
-    private bool CheckAntiFraudAndLimits(VpnClient client, long delta)
+    private async Task<bool> CheckAntiFraudAndLimitsAsync(VpnClient client, long delta, string currentIp, IAntiFraudService antiFraudService)
     {
         if (!client.IsActive) return false;
         bool isExceeded = client.TrafficLimit > 0 && client.TrafficUsed >= client.TrafficLimit;
         bool isExpired = client.ExpiryDate.HasValue && client.ExpiryDate.Value.Date <= DateTime.Now.Date;
         if (isExceeded || isExpired) { client.IsActive = false; _ = BlockUserAsync(client, isExceeded ? "Превышен лимит" : "Истек срок"); return true; }
 
-        if (client.IsAntiFraudEnabled && client.ActiveConnections > 0)
+        if (client.IsAntiFraudEnabled && client.ActiveConnections > 0 && SelectedServer != null)
         {
-            string reason = GetAntiFraudReason(client, delta);
-            if (!string.IsNullOrEmpty(reason)) { client.IsActive = false; client.Note = reason; _ = BlockUserAsync(client, reason); return true; }
+            // Здесь происходит магия скоринга: проверяем ASN, Geo-прыжки и лимиты
+            var (isFraud, reason) = await antiFraudService.EvaluateClientAsync(SelectedServer.IpAddress ?? "", client, currentIp, delta);
+            if (isFraud)
+            {
+                client.IsActive = false;
+                client.Note = reason;
+                _ = BlockUserAsync(client, reason);
+                return true;
+            }
         }
         return false;
-    }
-
-    private string GetAntiFraudReason(VpnClient client, long delta)
-    {
-        string email = client.Email ?? ""; string currentIp = client.LastIp ?? "";
-        if (!string.IsNullOrEmpty(currentIp)) { if (!_dailyIps.ContainsKey(email)) _dailyIps[email] = new HashSet<string>(); _dailyIps[email].Add(currentIp); }
-
-        bool geoJump = false;
-        string curCode = (client.Country?.Length >= 2) ? client.Country.Substring(client.Country.Length - 2) : "";
-        if (!string.IsNullOrEmpty(curCode))
-        {
-            if (_lastKnownCountry.TryGetValue(email, out string? lastC) && lastC != curCode && _lastKnownCountryTime.TryGetValue(email, out DateTime lastT) && (DateTime.Now - lastT).TotalHours < 2) geoJump = true;
-            if (!geoJump) { _lastKnownCountry[email] = curCode; _lastKnownCountryTime[email] = DateTime.Now; }
-        }
-
-        if (client.ActiveConnections > 2) return "ФРОД: >2 Устройств";
-        if (_dailyIps.ContainsKey(email) && _dailyIps[email].Count > 5) return "ФРОД: >5 IP за сутки";
-        if (geoJump) return "ФРОД: Резкая смена страны";
-        if (delta > 1073741824L) return "ФРОД: Скачок трафика";
-        return "";
     }
 
     private async Task LoadUsersAsync()

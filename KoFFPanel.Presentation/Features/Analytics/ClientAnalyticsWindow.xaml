@@ -20,6 +20,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -47,12 +48,27 @@
             </StackPanel>
         </Border>
 
-        <TabControl Grid.Row="1"
+        <Border Grid.Row="1"
+                Background="#1aff4444"
+                BorderBrush="#33ff4444"
+                BorderThickness="1"
+                CornerRadius="6"
+                HorizontalAlignment="Right"
+                Margin="0,15,20,0">
+            <Button Command="{Binding OpenFraudScoringCommand}"
+                    Content="🛡 Открыть Фрод-скоринг (за 30 дней)"
+                    Foreground="#ff4444"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="15,6"
+                    Cursor="Hand" />
+        </Border>
+
+        <TabControl Grid.Row="2"
                     Margin="20"
                     Background="Transparent"
                     BorderThickness="0"
                     Foreground="White">
-
             <TabItem>
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal"

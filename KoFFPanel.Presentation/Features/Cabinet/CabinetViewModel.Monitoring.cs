@@ -176,19 +176,20 @@ public partial class CabinetViewModel
         var trafficBatch = new Dictionary<string, long>();
         var connectionBatch = new List<(string Email, string Ip, string Country)>();
 
-        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        bool dbNeedsUpdate = false;
+
+        // ИЗМЕНЕНО: InvokeAsync позволяет нам безопасно обращаться к БД из UI-потока
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
         {
             UpdateUiAfterCycle(actualDisplayCore, coreStatusStr, coreStats, journalLogs, accessLogs, grepTest);
 
-            // ИСПРАВЛЕНИЕ: Если fallback пустой (нет связи), мы НЕ перезаписываем ядро!
             if (SelectedServer != null && !string.IsNullOrWhiteSpace(fallback))
             {
-                string detectedCoreType = SelectedServer.CoreType; // Берем текущее как дефолт
+                string detectedCoreType = SelectedServer.CoreType;
                 if (sbActive) detectedCoreType = "sing-box";
                 else if (xrActive) detectedCoreType = "xray";
                 else if (ttActive) detectedCoreType = "trusttunnel";
 
-                // Обновляем ядро в БД ТОЛЬКО если 100% подтверждено наличие хотя бы одного активного процесса
                 if (SelectedServer.CoreType != detectedCoreType && (sbActive || xrActive || ttActive))
                 {
                     _logger.Log("MONITORING", $"[FOOLPROOF] Обнаружено расхождение ядра! БД: {SelectedServer.CoreType}, Реал: {detectedCoreType}. Обновляем...");
@@ -197,7 +198,8 @@ public partial class CabinetViewModel
                 }
             }
 
-            bool dbNeedsUpdate = ProcessClientsAfterCycle(trafficStats, activeUsernames, allOnlineStats, trafficBatch, connectionBatch);
+            // Вызов нашего нового умного метода
+            dbNeedsUpdate = await ProcessClientsAfterCycleAsync(trafficStats, activeUsernames, allOnlineStats, trafficBatch, connectionBatch);
 
             if (dbNeedsUpdate && SelectedServer != null)
             {

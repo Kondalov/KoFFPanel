@@ -57,13 +57,14 @@ public static class DependencyInjection
         services.AddTransient<KoFFPanel.Application.Services.ProtocolFactory>();
 
         services.AddSingleton<IClientAnalyticsService, ClientAnalyticsService>();
+        services.AddTransient<IAntiFraudService, AntiFraudService>();
 
         // 2. Сервисы UI и Билдеры
         services.AddTransient<IFilePickerService, FilePickerService>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.VlessRealityBuilder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.Hysteria2Builder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrustTunnelBuilder>();
-
+        services.AddTransient<FraudScoringWindow>();
         // ДОБАВЛЕНЫ НОВЫЕ ПРОТОКОЛЫ
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrojanBuilder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.ShadowsocksBuilder>();

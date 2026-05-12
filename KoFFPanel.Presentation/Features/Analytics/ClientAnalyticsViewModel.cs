@@ -5,7 +5,8 @@ using System;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
-
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 using System.Runtime.Versioning;
 
 namespace KoFFPanel.Presentation.Features.Analytics;
@@ -44,6 +45,7 @@ public partial class ClientAnalyticsViewModel : ObservableObject
 {
     private readonly IClientAnalyticsService _analyticsService;
     private readonly IAppLogger _logger;
+    private readonly IServiceProvider _serviceProvider;
     private string _serverIp = "";
     private string _email = "";
 
@@ -55,11 +57,12 @@ public partial class ClientAnalyticsViewModel : ObservableObject
     [ObservableProperty] private ObservableCollection<ConnectionItemUI> _connectionLogs = new();
     [ObservableProperty] private ObservableCollection<ViolationItemUI> _violationLogs = new();
 
-    // Обязательно добавляем IAppLogger в конструктор для мощной телеметрии!
-    public ClientAnalyticsViewModel(IClientAnalyticsService analyticsService, IAppLogger logger)
+    // ОБНОВЛЕННЫЙ КОНСТРУКТОР: Добавили IServiceProvider для вызова новых окон
+    public ClientAnalyticsViewModel(IClientAnalyticsService analyticsService, IAppLogger logger, IServiceProvider serviceProvider)
     {
         _analyticsService = analyticsService;
         _logger = logger;
+        _serviceProvider = serviceProvider;
     }
 
     public void Initialize(string serverIp, string email)
@@ -68,6 +71,27 @@ public partial class ClientAnalyticsViewModel : ObservableObject
         _email = email;
         Title = $"Аналитика пользователя: {email}";
         _ = LoadDataAsync();
+    }
+
+    // НОВЫЙ МЕТОД: Команда для открытия окна фрод-скоринга
+    [RelayCommand]
+    private void OpenFraudScoring()
+    {
+        var window = _serviceProvider.GetRequiredService<FraudScoringWindow>();
+
+        // Привязываем окно к главному, чтобы оно красиво открывалось по центру
+        if (System.Windows.Application.Current.MainWindow != null)
+        {
+            window.Owner = System.Windows.Application.Current.MainWindow;
+        }
+
+        // Передаем IP сервера и Email юзера в новое окно, чтобы оно знало, кого проверять
+        if (window.DataContext is FraudScoringViewModel vm)
+        {
+            vm.Initialize(_serverIp, _email);
+        }
+
+        window.ShowDialog();
     }
 
     private async Task LoadDataAsync()
