@@ -35,10 +35,22 @@ public partial class ProtocolSetupItem : ObservableObject
 
     public bool IsTrustTunnel => Builder.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase);
 
-    public ProtocolSetupItem(IProtocolBuilder builder)
+    public ProtocolSetupItem(IProtocolBuilder builder, string existingAdminUuid = "")
     {
         Builder = builder;
-        if (IsTrustTunnel) GenerateTtPassword();
+
+        if (IsTrustTunnel)
+        {
+            // Умный UI: Если в базе уже есть UUID, показываем его. Если сервер чистый - генерируем.
+            if (!string.IsNullOrWhiteSpace(existingAdminUuid))
+            {
+                TtPassword = existingAdminUuid;
+            }
+            else
+            {
+                GenerateTtPassword();
+            }
+        }
     }
 
     [CommunityToolkit.Mvvm.Input.RelayCommand]
@@ -148,10 +160,27 @@ public partial class DeployWizardViewModel : ObservableObject{
 
         if (IsCustomSelected) return;
 
+        // === ИСПРАВЛЕНИЕ: Получаем реальный UUID из базы, чтобы UI не врал ===
+        string existingAdminUuid = "";
+        if (_server != null && !string.IsNullOrEmpty(_server.IpAddress))
+        {
+            try
+            {
+                using (var db = new KoFFPanel.Infrastructure.Data.AppDbContext())
+                {
+                    var admin = db.Clients.FirstOrDefault(c => c.ServerIp == _server.IpAddress && c.Email == "ADMIN");
+                    if (admin != null) existingAdminUuid = admin.Uuid;
+                }
+            }
+            catch { }
+        }
+        // ====================================================================
+
         var builders = _protocolFactory.GetAvailableProtocols(GetSelectedCoreType());
         foreach (var builder in builders)
         {
-            var item = new ProtocolSetupItem(builder);
+            // Передаем реальный UUID в элемент UI
+            var item = new ProtocolSetupItem(builder, existingAdminUuid);
 
             if (_server?.Inbounds != null)
             {
@@ -163,7 +192,6 @@ public partial class DeployWizardViewModel : ObservableObject{
                     item.IsValid = true;
                     item.ValidationMessage = "Установлен (Включите для переустановки)";
                 }
-                // Для TrustTunnel задаем порт 5443 по умолчанию
                 else if (builder.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase))
                 {
                     item.PortText = "5443";

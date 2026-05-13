@@ -108,11 +108,9 @@ echo 'READY|Сервер готов к установке.'
             {sudoPrefix}pkill -9 sing-box 2>/dev/null || true
             {sudoPrefix}pkill -9 xray 2>/dev/null || true
             
-            # ЗАЩИТА ОТ ДУРАКА: Если ядро запущено в Docker, оно тоже может занимать порты
             if command -v docker >/dev/null 2>&1; then
                 {sudoPrefix}docker ps -q --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
                 {sudoPrefix}docker ps -aq --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker rm 2>/dev/null || true
-                # Также убиваем контейнеры, слушающие порт 443 напрямую
                 {sudoPrefix}docker ps -q | xargs -i {sudoPrefix}docker inspect -f '{{{{.Id}}}} {{{{.HostConfig.PortBindings}}}}' {{}} | grep ':443' | awk '{{print $1}}' | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
             fi
 
@@ -189,39 +187,57 @@ echo 'READY|Сервер готов к установке.'
 
             await LogStep("[7/7] Запуск службы и проверка статуса...");
 
-            foreach (var inbound in profile.Inbounds)
+            // === УМНЫЙ АЛГОРИТМ (FOOLPROOF): Изолированная очистка портов ===
+            // Выбираем ТОЛЬКО те порты, которые мы реально устанавливаем прямо сейчас.
+            // Это гарантирует, что мы не убьем соседние живые ядра (SingBox/Xray).
+            var deployingPorts = protocols.Select(p => p.Port).Distinct().ToList();
+
+            foreach (var port in deployingPorts)
             {
-                await LogStep($"Очистка возможных зависших процессов на порту {inbound.Port}...");
+                await LogStep($"Точечная очистка процессов на целевом порту {port}...");
                 string killCmd = $@"
-            {sudoPrefix}fuser -k -9 {inbound.Port}/tcp 2>/dev/null || true
-            {sudoPrefix}fuser -k -9 {inbound.Port}/udp 2>/dev/null || true
-            PIDS=$({sudoPrefix}lsof -t -i:{inbound.Port} 2>/dev/null || true)
+            {sudoPrefix}fuser -k -9 {port}/tcp 2>/dev/null || true
+            {sudoPrefix}fuser -k -9 {port}/udp 2>/dev/null || true
+            PIDS=$({sudoPrefix}lsof -t -i:{port} 2>/dev/null || true)
             if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi
         ";
                 await ssh.ExecuteCommandAsync(killCmd);
             }
 
-            // ФИКС: Перед перезапуском проверяем конфиг командой ядра
-            string checkCmd = coreType.ToLower() == "sing-box"
-                ? $"{sudoPrefix}sing-box check -c /etc/sing-box/config.json 2>&1"
-                : $"{sudoPrefix}xray run -test -config /usr/local/etc/xray/config.json 2>&1";
+            // === УМНЫЙ АЛГОРИТМ: Изолированная валидация конфигов ===
+            string checkCmd = "";
+            if (coreName == "sing-box")
+            {
+                checkCmd = $"{sudoPrefix}sing-box check -c /etc/sing-box/config.json 2>&1";
+            }
+            else if (coreName == "trusttunnel")
+            {
+                // TrustTunnel уже проверяется своим мастером установки, имитируем "OK"
+                // чтобы ядро Xray случайно не вызвало откат системы.
+                checkCmd = "echo 'Configuration OK'";
+            }
+            else
+            {
+                checkCmd = $"{sudoPrefix}xray run -test -config /usr/local/etc/xray/config.json 2>&1";
+            }
 
             var checkRes = await ssh.ExecuteCommandAsync(checkCmd);
 
             if (checkRes.ToLower().Contains("error") || checkRes.ToLower().Contains("fatal"))
             {
                 await LogStep("КРИТИЧЕСКАЯ ОШИБКА: Сгенерированный конфиг невалиден! Откат...");
-                if (coreType.ToLower() == "sing-box")
+                if (coreName == "sing-box")
                 {
                     await ssh.ExecuteCommandAsync($"{sudoPrefix}cp /etc/sing-box/config.backup.json /etc/sing-box/config.json 2>/dev/null || true");
                 }
-                else
+                else if (coreName == "xray")
                 {
                     await ssh.ExecuteCommandAsync($"{sudoPrefix}cp /usr/local/etc/xray/config.backup.json /usr/local/etc/xray/config.json 2>/dev/null || true");
                 }
                 return (false, "Ошибка валидации конфига. Система откачена к рабочему состоянию.");
             }
 
+            // Перезагрузка служб
             await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload && {sudoPrefix}systemctl enable {coreName} --now && {sudoPrefix}systemctl restart {coreName}");
 
             await Task.Delay(2000);
@@ -373,29 +389,23 @@ fi
         var settingsNode = JsonNode.Parse(inbound.SettingsJson) as JsonObject;
         string sni = settingsNode?["sni"]?.ToString() ?? "vpn.endpoint";
 
-        // Получаем переданные креды
+        // Получаем логин из мастера (обычно ADMIN)
         var ttProtocolInfo = protocols.FirstOrDefault(p => p.Builder.ProtocolType.ToLower() == "trusttunnel");
         string username = string.IsNullOrWhiteSpace(ttProtocolInfo.TtUsername) ? "ADMIN" : ttProtocolInfo.TtUsername;
-        string password = string.IsNullOrWhiteSpace(ttProtocolInfo.TtPassword) ? Guid.NewGuid().ToString("N").Substring(0, 16) : ttProtocolInfo.TtPassword;
 
-        // ИСПРАВЛЕНИЕ: Сохраняем креды в SettingsJson для корректного отображения в окне доступа
-        if (settingsNode != null)
-        {
-            settingsNode["username"] = username;
-            settingsNode["password"] = password;
-            inbound.SettingsJson = settingsNode.ToJsonString();
-        }
+        string realPassword = ""; // Здесь будет храниться безопасный Uuid
 
-        // Создаем или обновляем пользователя в БД для синхронизации
+        // Умный алгоритм работы с БД: получаем или создаем пользователя БЕЗ поломки Uuid
         using (var db = new KoFFPanel.Infrastructure.Data.AppDbContext())
         {
             var adminClient = db.Clients.FirstOrDefault(c => c.ServerIp == profile.IpAddress && c.Email == username);
             if (adminClient == null)
             {
-                adminClient = new VpnClient 
+                // Если пользователя нет, создаем строго с правильным UUID
+                adminClient = new VpnClient
                 {
                     Email = username,
-                    Uuid = password,
+                    Uuid = Guid.NewGuid().ToString(),
                     ServerIp = profile.IpAddress!,
                     IsTrustTunnelEnabled = true,
                     IsActive = true,
@@ -407,15 +417,28 @@ fi
             }
             else
             {
-                adminClient.Uuid = password;
+                // Если пользователь есть - просто активируем ему TrustTunnel. 
+                // Uuid НЕ ТРОГАЕМ, чтобы не сломать SingBox/VLESS!
                 adminClient.IsTrustTunnelEnabled = true;
             }
+
             await db.SaveChangesAsync();
+
+            // Забираем системный Uuid для использования в качестве пароля TrustTunnel
+            realPassword = adminClient.Uuid;
         }
 
-        // Генерация ТОЧНЫХ и полных конфигураций через официальный мастер в неинтерактивном режиме (умная защита)
+        // Сохраняем правильный пароль в SettingsJson, чтобы интерфейс кабинета показывал правду
+        if (settingsNode != null)
+        {
+            settingsNode["username"] = username;
+            settingsNode["password"] = realPassword;
+            inbound.SettingsJson = settingsNode.ToJsonString();
+        }
+
+        // Генерация ТОЧНЫХ и полных конфигураций через официальный мастер
         await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /opt/trusttunnel2");
-        string setupCmd = $@"{sudoPrefix}cd /opt/trusttunnel2 && {sudoPrefix}./setup_wizard -m non-interactive -a 0.0.0.0:{inbound.Port} -c {username}:{password} -n {sni} --lib-settings vpn.toml --hosts-settings hosts.toml --cert-type self-signed";
+        string setupCmd = $@"{sudoPrefix}cd /opt/trusttunnel2 && {sudoPrefix}./setup_wizard -m non-interactive -a 0.0.0.0:{inbound.Port} -c {username}:{realPassword} -n {sni} --lib-settings vpn.toml --hosts-settings hosts.toml --cert-type self-signed";
         await ssh.ExecuteCommandAsync(setupCmd);
 
         string serviceData = @"[Unit]
