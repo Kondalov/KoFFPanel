@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddTransient<IXrayConfiguratorService, XrayConfiguratorService>();
         services.AddTransient<IXrayUserManagerService, XrayUserManagerService>();
         services.AddDbContext<Infrastructure.Data.AppDbContext>(ServiceLifetime.Transient);
+        services.AddTransient<FraudScoringViewModel>();
 
         // 2026 MODERNIZATION: Регистрация новых сервисов БД
         services.AddSingleton<LogBufferService>();
@@ -93,6 +94,7 @@ public static class DependencyInjection
         services.AddTransient<ServerSelectionWindow>();
         services.AddTransient<ClientProtocolsWindow>();
         services.AddTransient<InstallationSuccessWindow>();
+        services.AddTransient<FraudScoringWindow>();
 
         // 5. Pages / Components
         services.AddSingleton<DashboardView>();
