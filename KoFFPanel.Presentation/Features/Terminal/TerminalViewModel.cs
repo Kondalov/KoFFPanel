@@ -288,5 +288,6 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
         _readCts?.Cancel();
         _readCts?.Dispose();
         _shellStream?.Dispose();
+        (_sshService as IDisposable)?.Dispose();
     }
 }

@@ -216,10 +216,14 @@ public class SshService : ISshService, IDisposable
             }, null);
 
             var executeTask = tcs.Task;
-            var delayTask = Task.Delay(actualTimeout, cancellationToken);
+
+            // ИСПРАВЛЕНИЕ: Создаем отменяемый delayTask, чтобы предотвратить утечку памяти
+            using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var delayTask = Task.Delay(actualTimeout, delayCts.Token);
 
             if (await Task.WhenAny(executeTask, delayTask) == executeTask)
             {
+                delayCts.Cancel(); // Очищаем таймер из памяти, т.к. команда выполнена успешно
                 long duration = Environment.TickCount64 - startTick;
                 _logger.Log("SSH-CMD-TRACE", $"[УСПЕХ] Команда выполнена за {duration} мс");
                 return await executeTask;

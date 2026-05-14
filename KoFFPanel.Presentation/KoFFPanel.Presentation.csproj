@@ -35,7 +35,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="koffpanel_users.db">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
     <None Update="MasterPassword_DO_NOT_SHARE.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

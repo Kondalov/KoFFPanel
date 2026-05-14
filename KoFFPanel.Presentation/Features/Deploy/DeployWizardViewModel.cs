@@ -8,14 +8,13 @@ using KoFFPanel.Application.Services;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Services;
 using KoFFPanel.Presentation.Messages;
-using KoFFPanel.Presentation.Services; // НОВЫЙ USING ДЛЯ СЕРВИСА ОКОН
+using KoFFPanel.Presentation.Services;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
-
 using System.Runtime.Versioning;
 
 namespace KoFFPanel.Presentation.Features.Deploy;
@@ -63,14 +62,15 @@ public partial class ProtocolSetupItem : ObservableObject
 }
 
 [SupportedOSPlatform("windows")]
-public partial class DeployWizardViewModel : ObservableObject{
+public partial class DeployWizardViewModel : ObservableObject, IDisposable
+{
     private readonly ISshService _ssh;
     private readonly ProtocolFactory _protocolFactory;
     private readonly ISmartPortValidator _portValidator;
     private readonly IAppLogger _logger;
     private readonly ICoreDeploymentService _deploymentService;
     private readonly IProfileRepository _profileRepository;
-    private readonly IServerSelectionService _serverSelectionService; // НОВЫЙ СЕРВИС ДЛЯ ЧИСТОЙ АРХИТЕКТУРЫ
+    private readonly IServerSelectionService _serverSelectionService;
     private VpnProfile _server = null!;
 
     public Action? CloseAction { get; set; }
@@ -93,7 +93,7 @@ public partial class DeployWizardViewModel : ObservableObject{
         IAppLogger logger,
         ICoreDeploymentService deploymentService,
         IProfileRepository profileRepository,
-        IServerSelectionService serverSelectionService) // ИНЪЕКЦИЯ НОВОГО СЕРВИСА
+        IServerSelectionService serverSelectionService)
     {
         _ssh = ssh;
         _protocolFactory = protocolFactory;
@@ -361,7 +361,11 @@ public partial class DeployWizardViewModel : ObservableObject{
         StatusMessage = $"Подключение к {targetServer.IpAddress}...";
         _logger.Log("WIZARD-TRACE", $"[INFO] Изменен целевой сервер. Переподключение к {targetServer.IpAddress}");
 
-        _ssh.Disconnect();
+        if (_ssh is IDisposable disposableDisconnect)
+        {
+            disposableDisconnect.Dispose();
+        }
+
         var connectResult = await _ssh.ConnectAsync(targetServer.IpAddress!, targetServer.Port, targetServer.Username!, targetServer.Password!, targetServer.KeyPath ?? string.Empty);
 
         if (connectResult != "SUCCESS")
@@ -400,5 +404,18 @@ public partial class DeployWizardViewModel : ObservableObject{
         }
 
         return true;
+    }
+
+    public void Dispose()
+    {
+        // ИСПРАВЛЕНИЕ: Безопасное приведение типа интерфейса к IDisposable
+        if (_ssh != null && _ssh.IsConnected)
+        {
+            if (_ssh is IDisposable disposableSsh)
+            {
+                disposableSsh.Dispose();
+                _logger.Log("WIZARD-TRACE", "[INFO] SSH соединение мастера развертывания успешно закрыто.");
+            }
+        }
     }
 }
