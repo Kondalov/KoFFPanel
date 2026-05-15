@@ -103,19 +103,29 @@ public partial class CabinetViewModel
         string ip = server.IpAddress ?? "";
         ServerStatus = $"Удаление {email}...";
 
-        bool success; string msg;
-        if (IsSingBoxActive()) (success, msg) = await _singBoxUserManager.RemoveUserAsync(ssh, ip, email);
-        else if (IsTrustTunnelActive()) (success, msg) = await _trustTunnelUserManager.RemoveUserAsync(ssh, ip, email);
-        else (success, msg) = await _userManager.RemoveUserAsync(ssh, ip, email);
-
-        if (success)
+        try
         {
-            System.Windows.Application.Current.Dispatcher.Invoke(() => Clients.Remove(client));
-            await _subscriptionService.DeleteUserSubscriptionAsync(ssh, uuid);
+            bool success; string msg;
+            if (IsSingBoxActive()) (success, msg) = await _singBoxUserManager.RemoveUserAsync(ssh, ip, email);
+            else if (IsTrustTunnelActive()) (success, msg) = await _trustTunnelUserManager.RemoveUserAsync(ssh, ip, email);
+            else (success, msg) = await _userManager.RemoveUserAsync(ssh, ip, email);
 
-            ServerStatus = $"Онлайн (Клиент {email} успешно удален)";
+            if (success)
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() => Clients.Remove(client));
+                await _subscriptionService.DeleteUserSubscriptionAsync(ssh, uuid);
+                ServerStatus = $"Онлайн (Клиент {email} успешно удален)";
+            }
+            else
+            {
+                ServerStatus = $"Ошибка удаления: {msg}";
+            }
         }
-        else ServerStatus = $"Ошибка удаления: {msg}";
+        catch (Exception ex)
+        {
+            _logger.Log("CLIENT-DELETE-ERR", $"Критический сбой: {ex.Message}");
+            ServerStatus = "Сбой связи при удалении.";
+        }
     }
 
     [RelayCommand]
@@ -130,18 +140,34 @@ public partial class CabinetViewModel
         string ip = server.IpAddress ?? "";
         ServerStatus = $"{(newState ? "Активация" : "Деактивация")} {email}...";
 
-        bool success; string msg;
-        if (IsSingBoxActive()) (success, msg) = await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, newState);
-        else if (IsTrustTunnelActive()) (success, msg) = await _trustTunnelUserManager.ToggleUserStatusAsync(ssh, ip, email, newState);
-        else (success, msg) = await _userManager.ToggleUserStatusAsync(ssh, ip, email, newState);
-
-        if (success)
+        try
         {
-            client.IsActive = newState;
-            if (newState && (client.Note?.StartsWith("ФРОД:") == true || client.Note == "Превышен лимит" || client.Note == "Истек срок")) client.Note = "";
-            ServerStatus = $"Онлайн ({email} {(newState ? "активирован" : "отключен")})";
+            bool success; string msg;
+            if (IsSingBoxActive()) (success, msg) = await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, newState);
+            else if (IsTrustTunnelActive()) (success, msg) = await _trustTunnelUserManager.ToggleUserStatusAsync(ssh, ip, email, newState);
+            else (success, msg) = await _userManager.ToggleUserStatusAsync(ssh, ip, email, newState);
+
+            if (success)
+            {
+                client.IsActive = newState;
+                if (newState && (client.Note?.StartsWith("ФРОД:") == true || client.Note == "Превышен лимит" || client.Note == "Истек срок")) client.Note = "";
+                ServerStatus = $"Онлайн ({email} {(newState ? "активирован" : "отключен")})";
+            }
+            else
+            {
+                ServerStatus = $"Ошибка: {msg}";
+            }
         }
-        else ServerStatus = $"Ошибка: {msg}";
+        catch (System.Text.Json.JsonException jsonEx)
+        {
+            _logger.Log("CLIENT-TOGGLE-ERR", $"Ошибка парсинга конфига (возможно сервер не вернул данные): {jsonEx.Message}");
+            ServerStatus = "Сбой чтения конфига. Повторите попытку.";
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("CLIENT-TOGGLE-ERR", $"Критический сбой SSH: {ex.Message}");
+            ServerStatus = "Обрыв связи с сервером.";
+        }
     }
 
     [RelayCommand]

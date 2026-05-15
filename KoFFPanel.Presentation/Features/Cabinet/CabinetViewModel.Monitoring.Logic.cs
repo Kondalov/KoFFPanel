@@ -314,19 +314,32 @@ public partial class CabinetViewModel
     private async Task<bool> CheckAntiFraudAndLimitsAsync(VpnClient client, long delta, string currentIp, IAntiFraudService antiFraudService)
     {
         if (!client.IsActive) return false;
+
+        // Лимиты трафика и срок действия остаются с авто-баном (это биллинг)
         bool isExceeded = client.TrafficLimit > 0 && client.TrafficUsed >= client.TrafficLimit;
         bool isExpired = client.ExpiryDate.HasValue && client.ExpiryDate.Value.Date <= DateTime.Now.Date;
-        if (isExceeded || isExpired) { client.IsActive = false; _ = BlockUserAsync(client, isExceeded ? "Превышен лимит" : "Истек срок"); return true; }
+        if (isExceeded || isExpired)
+        {
+            client.IsActive = false;
+            _ = BlockUserAsync(client, isExceeded ? "Превышен лимит" : "Истек срок");
+            return true;
+        }
 
+        // АНТИФРОД: Теперь работает в режиме наблюдения (Observation Mode)
         if (client.IsAntiFraudEnabled && client.ActiveConnections > 0 && SelectedServer != null)
         {
-            // Здесь происходит магия скоринга: проверяем ASN, Geo-прыжки и лимиты
             var (isFraud, reason) = await antiFraudService.EvaluateClientAsync(SelectedServer.IpAddress ?? "", client, currentIp, delta);
-            if (isFraud)
+
+            // Автоматическая блокировка убрана. Мы только пишем причину в столбец Note.
+            if (isFraud && client.Note != reason)
             {
-                client.IsActive = false;
                 client.Note = reason;
-                _ = BlockUserAsync(client, reason);
+                return true; // Возвращаем true, чтобы UI обновился и записал заметку в БД
+            }
+            else if (!isFraud && client.Note != null && client.Note.StartsWith("ФРОД"))
+            {
+                // Очищаем заметку, если юзер перестал нарушать и его риск упал ниже 100%
+                client.Note = "";
                 return true;
             }
         }

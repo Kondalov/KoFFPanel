@@ -16,7 +16,6 @@ public class AntiFraudService : IAntiFraudService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAppLogger _logger;
 
-    // В памяти храним последние ASN и Гео для каждого пользователя для быстрого детектирования прыжков
     private static readonly Dictionary<string, HashSet<string>> _dailyAsns = new();
     private static readonly Dictionary<string, string> _lastCountryCode = new();
     private static readonly Dictionary<string, DateTime> _lastCountryTime = new();
@@ -62,11 +61,9 @@ public class AntiFraudService : IAntiFraudService
     {
         string email = log.Email;
 
-        // 1. Макс сессии
         if (client.ActiveConnections > log.MaxConcurrentSessions)
             log.MaxConcurrentSessions = client.ActiveConnections;
 
-        // 2. ASN анализ (Mock: в реале тут MaxMind ASN Reader, пока используем эвристику подсетей)
         string subnetAsn = GetMockAsnFromIp(currentIp);
         if (!_dailyAsns.ContainsKey(email)) _dailyAsns[email] = new HashSet<string>();
         if (!string.IsNullOrEmpty(subnetAsn) && _dailyAsns[email].Add(subnetAsn))
@@ -74,34 +71,63 @@ public class AntiFraudService : IAntiFraudService
             log.UniqueAsnCount = _dailyAsns[email].Count;
         }
 
-        // 3. Geo Jump (Impossible Travel)
-        string curCode = client.Country ?? "";
-        if (curCode.Length >= 2)
+        // Вызов нового, защищенного метода проверки геолокации
+        UpdateGeoMetrics(log, email, client.Country);
+
+        if (trafficDelta > 1073741824L)
+            log.BytesUsedSpike += trafficDelta;
+    }
+
+    private void UpdateGeoMetrics(ClientBehaviorLog log, string email, string? rawCountry)
+    {
+        string curCode = GetValidCountryCode(rawCountry);
+
+        // Если страна не определилась (например, мобильный интернет без Geo-данных), просто игнорируем
+        if (string.IsNullOrEmpty(curCode)) return;
+
+        // Если это первое подключение юзера, просто запоминаем его страну
+        if (!_lastCountryCode.TryGetValue(email, out string? lastCode) || string.IsNullOrEmpty(lastCode))
         {
-            curCode = curCode.Substring(curCode.Length - 2);
-            if (_lastCountryCode.TryGetValue(email, out string? lastCode) && lastCode != curCode)
-            {
-                if (_lastCountryTime.TryGetValue(email, out DateTime lastTime) && (DateTime.Now - lastTime).TotalHours < 2)
-                {
-                    log.GeoJumpsCount++;
-                }
-            }
             _lastCountryCode[email] = curCode;
             _lastCountryTime[email] = DateTime.Now;
+            return;
         }
 
-        // 4. Трафик спайки
-        if (trafficDelta > 1073741824L) // > 1 GB за цикл
-            log.BytesUsedSpike += trafficDelta;
+        // Если страна РЕАЛЬНО сменилась на другую валидную страну
+        if (lastCode != curCode)
+        {
+            if (_lastCountryTime.TryGetValue(email, out DateTime lastTime) && (DateTime.Now - lastTime).TotalHours < 2)
+            {
+                log.GeoJumpsCount++;
+                _logger.Log("ANTIFRAUD", $"Зафиксирован GeoJump для {email}: {lastCode} -> {curCode}");
+            }
+            _lastCountryCode[email] = curCode;
+        }
+
+        // Всегда обновляем время последней активности для этой страны
+        _lastCountryTime[email] = DateTime.Now;
+    }
+
+    private string GetValidCountryCode(string? rawCountry)
+    {
+        if (string.IsNullOrWhiteSpace(rawCountry)) return "";
+
+        string code = rawCountry.Trim();
+        if (code.Length >= 2) code = code.Substring(code.Length - 2).ToUpperInvariant();
+
+        // Исключаем пустые значения, анонимные прокси и небуквенные символы
+        if (code == "??" || code == "A1" || code == "O1" || !code.All(char.IsLetter))
+            return "";
+
+        return code;
     }
 
     private void CalculateRiskScore(ClientBehaviorLog log)
     {
         int score = 0;
 
-        // Умная математика весов
-        if (log.MaxConcurrentSessions > 2) score += (log.MaxConcurrentSessions - 2) * 40;
-        if (log.UniqueAsnCount > 3) score += (log.UniqueAsnCount - 3) * 20; // 3 легитимных провайдера в день - норма
+        if (log.MaxConcurrentSessions > 8) score += (log.MaxConcurrentSessions - 8) * 10;
+        if (log.UniqueAsnCount > 3) score += (log.UniqueAsnCount - 3) * 20;
         if (log.GeoJumpsCount > 0) score += log.GeoJumpsCount * 80;
         if (log.BytesUsedSpike > 0) score += 30;
 

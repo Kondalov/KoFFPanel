@@ -383,7 +383,7 @@
                           BorderThickness="0"
                           GridLinesVisibility="None"
                           IsReadOnly="True"
-                          Foreground="White"
+                          Foreground="Transparent"
                           CanUserResizeColumns="True"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Hidden"
@@ -706,7 +706,7 @@
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="History24"
                                                ToolTip="Последний вход"
-                                               Foreground="#B3FFFFFF" />
+                                               Foreground="#B3FFFF" />
                             </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
