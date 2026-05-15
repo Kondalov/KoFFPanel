@@ -169,6 +169,32 @@ public class AntiFraudService : IAntiFraudService
         }
     }
 
+    public async Task ResetDailyRiskAsync(string serverIp, string email, CancellationToken token = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        var today = DateTime.Today;
+        var log = await db.BehaviorLogs.FirstOrDefaultAsync(x => x.ServerIp == serverIp && x.Email == email && x.Date == today, token);
+
+        if (log != null)
+        {
+            // Полный сброс метрик за день
+            log.RiskScore = 0;
+            log.MaxConcurrentSessions = 0;
+            log.UniqueAsnCount = 0;
+            log.GeoJumpsCount = 0;
+            log.BytesUsedSpike = 0;
+
+            await db.SaveChangesAsync(token);
+
+            // Очищаем кэши в памяти, чтобы прыжки не засчитались сразу после сброса
+            _dailyAsns.Remove(email);
+            _lastCountryCode.Remove(email);
+            _logger.Log("ANTIFRAUD-RESET", $"Риск-скоринг для {email} полностью сброшен администратором.");
+        }
+    }
+
     private void ClearInMemCachesForNewDay(string email)
     {
         _dailyAsns.Remove(email);

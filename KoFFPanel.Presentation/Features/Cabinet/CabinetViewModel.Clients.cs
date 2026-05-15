@@ -179,6 +179,9 @@ public partial class CabinetViewModel
 
         try
         {
+            // 1. Запоминаем, была ли пометка о фроде ДО открытия окна редактирования
+            bool hadFraudNote = client.Note?.StartsWith("ФРОД", StringComparison.OrdinalIgnoreCase) == true;
+
             var window = _serviceProvider.GetRequiredService<AddClientWindow>();
             if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
 
@@ -199,6 +202,15 @@ public partial class CabinetViewModel
 
                     if (success)
                     {
+                        // 2. УМНЫЙ АЛГОРИТМ ПРОВЕРКИ СБРОСА
+                        // Если пометка была, а теперь заметка пустая — обнуляем риск-скоринг
+                        bool isNoteClearedManually = hadFraudNote && string.IsNullOrWhiteSpace(vm.Note);
+                        if (isNoteClearedManually)
+                        {
+                            var antiFraud = _serviceProvider.GetRequiredService<IAntiFraudService>();
+                            await antiFraud.ResetDailyRiskAsync(ip, email);
+                        }
+
                         client.TrafficLimit = newLimit; client.ExpiryDate = vm.ExpiryDate; client.Note = vm.Note;
                         client.IsP2PBlocked = vm.IsP2PBlocked; client.IsVlessEnabled = vm.IsVlessEnabled;
                         client.IsHysteria2Enabled = vm.IsHysteria2Enabled; client.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
