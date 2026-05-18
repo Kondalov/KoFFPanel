@@ -70,17 +70,17 @@ private_key_path = ""certs/key.pem""";
             {
                 ["type"] = "vless",
                 ["tag"] = inboundDb.Tag,
-                ["listen"] = "0.0.0.0",
+                ["listen"] = "::",
                 ["listen_port"] = safePort,
-                ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["uuid"] = "00000000-0000-0000-0000-000000000000" } },
+                ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["uuid"] = "00000000-0000-0000-0000-000000000000", ["flow"] = "xtls-rprx-vision" } },
                 ["tls"] = new JsonObject
                 {
                     ["enabled"] = true,
-                    ["server_name"] = settings?["sni"]?.ToString(),
+                    ["server_name"] = settings?["sni"]?.ToString() ?? "google.com",
                     ["reality"] = new JsonObject
                     {
                         ["enabled"] = true,
-                        ["handshake"] = new JsonObject { ["server"] = settings?["sni"]?.ToString(), ["server_port"] = 443 },
+                        ["handshake"] = new JsonObject { ["server"] = settings?["sni"]?.ToString() ?? "google.com", ["server_port"] = 443 },
                         ["private_key"] = settings?["privateKey"]?.ToString(),
                         ["short_id"] = new JsonArray { settings?["shortId"]?.ToString() }
                     }
@@ -93,7 +93,7 @@ private_key_path = ""certs/key.pem""";
             {
                 ["type"] = "hysteria2",
                 ["tag"] = inboundDb.Tag,
-                ["listen"] = "0.0.0.0",
+                ["listen"] = "::",
                 ["listen_port"] = safePort,
                 ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } },
                 ["tls"] = new JsonObject
@@ -103,7 +103,7 @@ private_key_path = ""certs/key.pem""";
                     ["certificate_path"] = settings?["certPath"]?.ToString(),
                     ["key_path"] = settings?["keyPath"]?.ToString()
                 },
-                ["obfs"] = new JsonObject { ["type"] = "salamander", ["password"] = settings?["obfsPassword"]?.ToString() }
+                ["obfs"] = new JsonObject { ["type"] = "salamander", ["password"] = settings?["obfsPassword"]?.ToString() ?? "obfs_pass" }
             };
         }
         else if (protocol == "trojan")
@@ -112,12 +112,13 @@ private_key_path = ""certs/key.pem""";
             {
                 ["type"] = "trojan",
                 ["tag"] = inboundDb.Tag,
-                ["listen"] = "0.0.0.0",
+                ["listen"] = "::",
                 ["listen_port"] = safePort,
                 ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } },
                 ["tls"] = new JsonObject
                 {
                     ["enabled"] = true,
+                    ["server_name"] = settings?["sni"]?.ToString() ?? "bing.com",
                     ["certificate_path"] = settings?["certPath"]?.ToString(),
                     ["key_path"] = settings?["keyPath"]?.ToString()
                 }
@@ -129,7 +130,7 @@ private_key_path = ""certs/key.pem""";
             {
                 ["type"] = "shadowsocks",
                 ["tag"] = inboundDb.Tag,
-                ["listen"] = "0.0.0.0",
+                ["listen"] = "::",
                 ["listen_port"] = safePort,
                 ["method"] = settings?["method"]?.ToString() ?? "aes-256-gcm",
                 ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } }

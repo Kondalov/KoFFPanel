@@ -115,8 +115,8 @@ echo 'READY|Сервер готов к установке.'
             fi
 
             {sudoPrefix}fuser -k -9 443/tcp 443/udp 8080/tcp 2>/dev/null || true
-            {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray
-            {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box && {sudoPrefix}chmod 777 /var/log/sing-box
+            {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray /etc/koff
+            {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box /etc/koff && {sudoPrefix}chmod 777 /var/log/sing-box
             sleep 1
         ";
                 await ssh.ExecuteCommandAsync(cleanupCmd);
@@ -477,7 +477,7 @@ WantedBy=multi-user.target";
             baseConfig["log"] = new JsonObject { ["level"] = "info", ["timestamp"] = true, ["output"] = "/var/log/sing-box/access.log" }; 
             baseConfig["inbounds"] = inboundsArray;
             baseConfig["outbounds"] = new JsonArray { new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, new JsonObject { ["type"] = "block", ["tag"] = "block" } };
-            baseConfig["route"] = new JsonObject { ["rules"] = new JsonArray() };
+            baseConfig["route"] = new JsonObject { ["rules"] = new JsonArray(), ["final"] = "direct" };
             baseConfig["experimental"] = new JsonObject 
             { 
                 ["clash_api"] = new JsonObject 
@@ -517,7 +517,7 @@ LimitNOFILE=infinity
 [Install]
 WantedBy=multi-user.target";
 
-        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceData))}' | base64 -d | {sudoPrefix}tee /etc/systemd/system/{bin}.service > /dev/null");
+        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceData.Replace("\r", "")))}' | base64 -d | {sudoPrefix}tee /etc/systemd/system/{bin}.service > /dev/null");
         await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload");
     }
 }

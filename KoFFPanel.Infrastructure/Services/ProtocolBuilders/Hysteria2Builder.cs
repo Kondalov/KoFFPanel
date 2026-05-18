@@ -19,6 +19,10 @@ public class Hysteria2Builder : IProtocolBuilder
         // Магия генерации самоподписанного TLS-сертификата (нужен для Hy2)
         string certPath = $"/etc/sing-box/hy2_{port}.crt";
         string keyPath = $"/etc/sing-box/hy2_{port}.key";
+        
+        // FOOLPROOF: Гарантируем наличие директории перед генерацией openssl
+        await ssh.ExecuteCommandAsync("mkdir -p /etc/sing-box");
+        
         string certCmd = $"openssl req -x509 -nodes -newkey rsa:2048 -keyout {keyPath} -out {certPath} -days 3650 -subj \"/CN=bing.com\" 2>/dev/null";
         await ssh.ExecuteCommandAsync(certCmd);
 

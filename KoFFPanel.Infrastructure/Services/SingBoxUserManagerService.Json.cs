@@ -226,8 +226,8 @@ public partial class SingBoxUserManagerService
                 if (blockedNames.Any())
                 {
                     rulesArray.Insert(0, new JsonObject { ["action"] = "sniff" });
-                    if (domains.Any()) rulesArray.Insert(1, new JsonObject { ["auth_user"] = JsonSerializer.SerializeToNode(blockedNames), ["domain_keyword"] = JsonSerializer.SerializeToNode(domains), ["outbound"] = "block" });
-                    rulesArray.Insert(2, new JsonObject { ["auth_user"] = JsonSerializer.SerializeToNode(blockedNames), ["protocol"] = "bittorrent", ["outbound"] = "block" });
+                    if (domains.Any()) rulesArray.Insert(1, new JsonObject { ["user"] = JsonSerializer.SerializeToNode(blockedNames), ["domain_keyword"] = JsonSerializer.SerializeToNode(domains), ["outbound"] = "block" });
+                    rulesArray.Insert(2, new JsonObject { ["user"] = JsonSerializer.SerializeToNode(blockedNames), ["protocol"] = "bittorrent", ["outbound"] = "block" });
                 }
             }
         }

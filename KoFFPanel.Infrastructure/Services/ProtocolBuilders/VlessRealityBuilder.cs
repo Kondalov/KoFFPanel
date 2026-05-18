@@ -16,7 +16,7 @@ public class VlessRealityBuilder : IProtocolBuilder
 
     public async Task<ServerInbound> GenerateNewInboundAsync(ISshService ssh, int port)
     {
-        string keyCmd = "if command -v sing-box >/dev/null 2>&1; then sing-box generate reality-keypair; else /usr/local/bin/xray x25519; fi";
+        string keyCmd = "if [ -f /usr/local/bin/sing-box ]; then /usr/local/bin/sing-box generate reality-keypair; elif command -v sing-box >/dev/null 2>&1; then sing-box generate reality-keypair; else /usr/local/bin/xray x25519; fi";
         string keypairOutput = await ssh.ExecuteCommandAsync(keyCmd);
 
         string privateKey = "";
@@ -25,10 +25,10 @@ public class VlessRealityBuilder : IProtocolBuilder
         var lines = keypairOutput.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
         foreach (var line in lines)
         {
-            if (line.StartsWith("Private", StringComparison.OrdinalIgnoreCase))
+            if (line.Contains("Private", StringComparison.OrdinalIgnoreCase))
                 privateKey = line.Split(':')[1].Trim();
 
-            if (line.StartsWith("Public", StringComparison.OrdinalIgnoreCase))
+            if (line.Contains("Public", StringComparison.OrdinalIgnoreCase))
                 publicKey = line.Split(':')[1].Trim();
         }
 
