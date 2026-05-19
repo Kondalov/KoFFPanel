@@ -101,8 +101,7 @@ public partial class SingBoxUserManagerService
         foreach (var u in dbUsers)
         {
             string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
-            // ИСПРАВЛЕНИЕ: Добавлен insecure=1 для современных клиентов Hiddify
-            u.TrojanLink = $"trojan://{u.Uuid}@{safeIp}:{port}?security=tls&sni={sni}&type=tcp&alpn=http/1.1,h2&allowInsecure=1&insecure=1#{encodedName}";
+            u.TrojanLink = $"trojan://{u.Uuid}@{safeIp}:{port}?security=tls&sni={sni}&type=tcp&alpn=h2&allowInsecure=1&insecure=1#{encodedName}";
         }
     }
 
@@ -116,17 +115,12 @@ public partial class SingBoxUserManagerService
         foreach (var u in dbUsers)
         {
             string credentials = $"{method}:{u.Uuid}";
-
-            // ИСТИННЫЙ СТАНДАРТ SIP002: Base64Url кодирование ТОЛЬКО связки method:password.
-            // Замена + на -, / на _ и удаление = на конце обязательны для парсеров Hiddify/v2rayNG.
-            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials))
-                .Replace("+", "-")
-                .Replace("/", "_")
-                .TrimEnd('=');
-
+            
+            // ИСПРАВЛЕНИЕ: Формат ss://base64(method:password)@host:port#name
+            // Это стандарт, который гарантированно понимает Hiddify 4.1.1
+            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials)).TrimEnd('=');
             string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
-
-            // Формат: ss://[base64url]@[ip]:[port]#[name]
+            
             u.ShadowsocksLink = $"ss://{base64Creds}@{safeIp}:{port}#{encodedName}";
         }
     }
@@ -177,6 +171,7 @@ public partial class SingBoxUserManagerService
         foreach (var u in dbUsers)
         {
             string encodedName = Uri.EscapeDataString($"SB_HY2_{u.Email}");
+            // ИСПРАВЛЕНИЕ: Hiddify использует hy2://
             u.Hysteria2Link = $"hy2://{u.Uuid}@{safeIp}:{port}?sni={sni}&insecure=1{obfs}&alpn=h3#{encodedName}";
         }
     }

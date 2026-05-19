@@ -42,10 +42,9 @@ public partial class ShadowsocksBuilder : IProtocolBuilder
 
         string credentials = $"{method}:{clientUuid}";
 
-        string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials))
-            .Replace("+", "-")
-            .Replace("/", "_")
-            .TrimEnd('=');
+        // ИСПРАВЛЕНИЕ: Используем стандартный Base64 для SIP002 (без замены + на - и / на _)
+        // Некоторые клиенты (Hiddify) не понимают Base64URL в userinfo.
+        string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
 
         return $"ss://{base64Creds}@{safeIp}:{inbound.Port}#{encodedName}";
     }

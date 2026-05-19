@@ -100,7 +100,7 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_error(500, 'Internal Server Error')
 
     def log_message(self, format, *args):
-        pass
+        print(f'{self.client_address[0]} - {self.command} {self.path} - {args[1]}')
 
 socketserver.TCPServer.allow_reuse_address = True
 try:
@@ -155,10 +155,10 @@ WantedBy=multi-user.target";
                 await InitializeServerAsync(ssh);
             }
 
-            var validLinks = links != null ? links.Where(l => !string.IsNullOrWhiteSpace(l)).ToList() : new List<string>();
+            var validLinks = links != null ? links.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).ToList() : new List<string>();
             string combinedLinks = !validLinks.Any()
-                ? "vless://00000000-0000-0000-0000-000000000000@127.0.0.1:443?encryption=none&security=none&type=tcp#KoFFPanel_Wait\n"
-                : string.Join("\n", validLinks) + "\n";
+                ? "vless://00000000-0000-0000-0000-000000000000@127.0.0.1:443?encryption=none&security=none&type=tcp#KoFFPanel_Wait"
+                : string.Join("\n", validLinks);
 
             string finalBase64Payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(combinedLinks));
             

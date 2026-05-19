@@ -114,12 +114,11 @@ echo 'READY|Сервер готов к установке.'
                 {sudoPrefix}docker ps -q | xargs -i {sudoPrefix}docker inspect -f '{{{{.Id}}}} {{{{.HostConfig.PortBindings}}}}' {{}} | grep ':443' | awk '{{print $1}}' | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
             fi
 
-            {sudoPrefix}fuser -k -9 443/tcp 443/udp 8080/tcp 2>/dev/null || true
             {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray /etc/koff
             {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box /etc/koff && {sudoPrefix}chmod 777 /var/log/sing-box
             sleep 1
         ";
-                await ssh.ExecuteCommandAsync(cleanupCmd);
+                await ssh.ExecuteCommandAsync(cleanupCmd, TimeSpan.FromSeconds(60));
 
                 if (string.Equals(coreName, "xray", StringComparison.OrdinalIgnoreCase))
                 {
@@ -201,7 +200,7 @@ echo 'READY|Сервер готов к установке.'
             PIDS=$({sudoPrefix}lsof -t -i:{port} 2>/dev/null || true)
             if [ -n ""$PIDS"" ]; then {sudoPrefix}kill -9 $PIDS 2>/dev/null || true; fi
         ";
-                await ssh.ExecuteCommandAsync(killCmd);
+                await ssh.ExecuteCommandAsync(killCmd, TimeSpan.FromSeconds(30));
             }
 
             // === УМНЫЙ АЛГОРИТМ: Изолированная валидация конфигов ===
