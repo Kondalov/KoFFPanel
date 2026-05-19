@@ -58,10 +58,18 @@ import http.server, socketserver, os, sys
 from urllib.parse import urlparse
 
 class H(http.server.BaseHTTPRequestHandler):
+    def do_HEAD(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain; charset=utf-8')
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
+        self.end_headers()
+
     def do_GET(self):
         try:
             parsed_path = urlparse(self.path)
             p = parsed_path.path.strip('/')
+            
+            print(f'DEBUG: Request path: {self.path}, Cleaned path: {p}')
             
             if p == 'ping':
                 self.send_response(200)

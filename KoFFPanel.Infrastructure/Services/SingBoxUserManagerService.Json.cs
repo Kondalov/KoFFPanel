@@ -26,11 +26,22 @@ public partial class SingBoxUserManagerService
         foreach (var inbound in inbounds.OfType<JsonObject>().ToList())
         {
             var type = inbound["type"]?.ToString();
+            var inboundDb = profile?.Inbounds.FirstOrDefault(i => i.Tag == inbound["tag"]?.ToString() || (i.Protocol == type && i.Port.ToString() == inbound["listen_port"]?.ToString()));
+            var settingsDb = inboundDb != null ? JsonNode.Parse(inboundDb.SettingsJson) : null;
 
             if (type == "vless")
             {
                 var isQuic = "quic".Equals(inbound["transport"]?["type"]?.ToString(), StringComparison.OrdinalIgnoreCase) ||
                              "xhttp".Equals(inbound["transport"]?["type"]?.ToString(), StringComparison.OrdinalIgnoreCase);
+
+                // Синхронизация Reality ключей из БД в конфиг
+                if (settingsDb != null && inbound["tls"]?["reality"] != null)
+                {
+                    inbound["tls"]!["reality"]!["private_key"] = settingsDb["privateKey"]?.ToString();
+                    inbound["tls"]!["reality"]!["short_id"] = new JsonArray { settingsDb["shortId"]?.ToString() };
+                    inbound["tls"]!["server_name"] = settingsDb["sni"]?.ToString() ?? "google.com";
+                    inbound["tls"]!["reality"]!["handshake"]!["server"] = settingsDb["sni"]?.ToString() ?? "google.com";
+                }
 
                 var targetUsers = dbUsers.Where(u => u.IsActive && ((!isQuic && u.IsVlessEnabled) || (isQuic && u.IsTrustTunnelEnabled))).ToList();
                 var usersArray = new JsonArray();
@@ -47,6 +58,13 @@ public partial class SingBoxUserManagerService
             }
             else if (type == "hysteria2")
             {
+                // Синхронизация Obfs пароля из БД в конфиг
+                if (settingsDb != null && inbound["obfs"] != null)
+                {
+                    inbound["obfs"]!["password"] = settingsDb["obfsPassword"]?.ToString();
+                    inbound["tls"]!["server_name"] = settingsDb["sni"]?.ToString() ?? "bing.com";
+                }
+
                 var targetUsers = dbUsers.Where(u => u.IsActive && u.IsHysteria2Enabled).ToList();
                 var usersArray = new JsonArray();
                 if (targetUsers.Any())
@@ -60,6 +78,12 @@ public partial class SingBoxUserManagerService
             }
             else if (type == "trojan")
             {
+                // Синхронизация SNI из БД в конфиг
+                if (settingsDb != null && inbound["tls"] != null)
+                {
+                    inbound["tls"]!["server_name"] = settingsDb["sni"]?.ToString() ?? "bing.com";
+                }
+
                 var targetUsers = dbUsers.Where(u => u.IsActive && u.IsTrojanEnabled).ToList();
                 var usersArray = new JsonArray();
                 if (targetUsers.Any())
@@ -73,6 +97,12 @@ public partial class SingBoxUserManagerService
             }
             else if (type == "shadowsocks")
             {
+                // Синхронизация метода из БД в конфиг
+                if (settingsDb != null)
+                {
+                    inbound["method"] = settingsDb["method"]?.ToString() ?? "aes-256-gcm";
+                }
+
                 var targetUsers = dbUsers.Where(u => u.IsActive && u.IsShadowsocksEnabled).ToList();
                 var usersArray = new JsonArray();
                 if (targetUsers.Any())
@@ -81,7 +111,6 @@ public partial class SingBoxUserManagerService
                 }
                 else usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
 
-                // ИСПРАВЛЕНИЕ: Удалена вставка невалидного поля 'transport' для shadowsocks
                 inbound["users"] = usersArray;
                 UpdateShadowsocksLinks(inbound, dbUsers, displayServer);
             }
@@ -117,8 +146,7 @@ public partial class SingBoxUserManagerService
             string credentials = $"{method}:{u.Uuid}";
             
             // ИСПРАВЛЕНИЕ: Формат ss://base64(method:password)@host:port#name
-            // Это стандарт, который гарантированно понимает Hiddify 4.1.1
-            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials)).TrimEnd('=');
+            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
             string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
             
             u.ShadowsocksLink = $"ss://{base64Creds}@{safeIp}:{port}#{encodedName}";
@@ -171,7 +199,6 @@ public partial class SingBoxUserManagerService
         foreach (var u in dbUsers)
         {
             string encodedName = Uri.EscapeDataString($"SB_HY2_{u.Email}");
-            // ИСПРАВЛЕНИЕ: Hiddify использует hy2://
             u.Hysteria2Link = $"hy2://{u.Uuid}@{safeIp}:{port}?sni={sni}&insecure=1{obfs}&alpn=h3#{encodedName}";
         }
     }
@@ -241,8 +268,6 @@ public partial class SingBoxUserManagerService
             return (false, "Ошибка теста конфига!");
         }
 
-        // ИСПРАВЛЕНИЕ: Автоматический парсинг портов и открытие Firewall
-        // Это навсегда решит проблему тайм-аутов для новых протоколов.
         var ports = new HashSet<int>();
         try
         {

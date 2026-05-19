@@ -96,6 +96,7 @@ private_key_path = ""certs/key.pem""";
                 ["listen"] = "::",
                 ["listen_port"] = safePort,
                 ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } },
+                ["ignore_client_bandwidth"] = true, // MODERN 2026
                 ["tls"] = new JsonObject
                 {
                     ["enabled"] = true,
@@ -133,7 +134,7 @@ private_key_path = ""certs/key.pem""";
                 ["listen"] = "::",
                 ["listen_port"] = safePort,
                 ["method"] = settings?["method"]?.ToString() ?? "aes-256-gcm",
-                ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } }
+                ["password"] = "init_pass" // ИСПРАВЛЕНИЕ: Топ-левел пароль для совместимости
             };
         }
         return null;
