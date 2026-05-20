@@ -9,6 +9,7 @@ using KoFFPanel.Presentation.Features.Analytics;
 using KoFFPanel.Presentation.Features.Management;
 using KoFFPanel.Presentation.Features.Config;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using System;
 
 using System.Runtime.Versioning;
@@ -31,7 +32,31 @@ public static class DependencyInjection
         services.AddTransient<ICoreDeploymentService, CoreDeploymentService>();
         services.AddTransient<IXrayConfiguratorService, XrayConfiguratorService>();
         services.AddTransient<IXrayUserManagerService, XrayUserManagerService>();
-        services.AddDbContext<Infrastructure.Data.AppDbContext>(ServiceLifetime.Transient);
+
+        // Настройка пути к БД с жестким разделением сред (Dev / Prod)
+#if DEBUG
+        string dbFileName = "koffpanel_users_dev.db";
+        string configFolderName = "KoFFPanel_Dev";
+#else
+        string dbFileName = "koffpanel_users.db";
+        string configFolderName = "KoFFPanel";
+#endif
+
+        string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string basePath = System.IO.Path.Combine(appDataPath, configFolderName);
+
+        if (!System.IO.Directory.Exists(basePath))
+        {
+            System.IO.Directory.CreateDirectory(basePath);
+        }
+
+        string dbPath = System.IO.Path.Combine(basePath, dbFileName);
+        string dbPassword = KoFFPanel.Infrastructure.Services.MasterKeyService.Instance.GetMasterPassword();
+
+        services.AddDbContext<Infrastructure.Data.AppDbContext>(options =>
+            options.UseSqlite($"Data Source={dbPath};Password={dbPassword};Pooling=True;"),
+            ServiceLifetime.Transient);
+
         services.AddTransient<FraudScoringViewModel>();
 
         // 2026 MODERNIZATION: Регистрация новых сервисов БД

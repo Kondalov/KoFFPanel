@@ -34,12 +34,8 @@ public class AppDbContext : DbContext
         }
     }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options)
     {
-        string dbPath = Path.Combine(AppContext.BaseDirectory, "koffpanel_users.db");
-        System.Diagnostics.Debug.WriteLine($"[DB-CONFIG] Target Path: {dbPath}");
-        string dbPassword = MasterKeyService.Instance.GetMasterPassword();
-        optionsBuilder.UseSqlite($"Data Source={dbPath};Password={dbPassword};Pooling=True;");
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

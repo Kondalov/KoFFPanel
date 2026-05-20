@@ -12,11 +12,19 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
     {
         var optionsBuilder = new DbContextOptionsBuilder<AppDbContext>();
 
-        string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "koffpanel_users.db");
+        string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string basePath = Path.Combine(appDataPath, "KoFFPanel_Dev");
+
+        if (!Directory.Exists(basePath))
+        {
+            Directory.CreateDirectory(basePath);
+        }
+
+        string dbPath = Path.Combine(basePath, "koffpanel_users_dev.db");
         string dbPassword = MasterKeyService.Instance.GetMasterPassword();
 
         optionsBuilder.UseSqlite($"Data Source={dbPath};Password={dbPassword};Pooling=True;");
 
-        return new AppDbContext();
+        return new AppDbContext(optionsBuilder.Options);
     }
 }

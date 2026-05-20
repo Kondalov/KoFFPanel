@@ -18,7 +18,15 @@ public class ProfileRepository : IProfileRepository
 
     public ProfileRepository()
     {
-        _appDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KoFFPanel");
+        string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+#if DEBUG
+        string configFolderName = "KoFFPanel_Dev";
+#else
+        string configFolderName = "KoFFPanel";
+#endif
+
+        _appDataFolder = Path.Combine(appDataPath, configFolderName);
         _dbFilePath = Path.Combine(_appDataFolder, "ProfilesDB.json");
     }
 
