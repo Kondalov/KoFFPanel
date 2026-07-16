@@ -1,4 +1,4 @@
-﻿<UserControl x:Class="KoFFPanel.Presentation.Views.Components.ClientTableControl"
+<UserControl x:Class="KoFFPanel.Presentation.Views.Components.ClientTableControl"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
@@ -385,36 +385,30 @@
                           IsReadOnly="True"
                           Foreground="Transparent"
                           CanUserResizeColumns="True"
-                          HorizontalScrollBarVisibility="Disabled"
+                          HorizontalScrollBarVisibility="Hidden"
                           VerticalScrollBarVisibility="Hidden"
                           ScrollViewer.CanContentScroll="True"
                           ColumnHeaderStyle="{StaticResource StandardDataGridHeader}"
-                          CellStyle="{StaticResource StandardDataGridCell}">
-
-                    <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow"
-                               BasedOn="{StaticResource {x:Type DataGridRow}}">
-                            <Setter Property="Background"
-                                    Value="Transparent" />
-                            <Setter Property="BorderBrush"
-                                    Value="#0AFFFFFF" />
-                            <Setter Property="BorderThickness"
-                                    Value="0,0,0,1" />
-                            <Setter Property="Margin"
-                                    Value="0,2" />
+                          CellStyle="{StaticResource StandardDataGridCell}"
+                          RowStyle="{StaticResource StandardDataGridRow}">
+                    <DataGrid.Resources>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="Transparent" />
+                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="Transparent" />
+                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="Transparent" />
+                        <Style TargetType="ScrollBar">
                             <Style.Triggers>
-                                <Trigger Property="IsMouseOver"
-                                         Value="True">
-                                    <Setter Property="Background"
-                                            Value="#0800f2ff" />
+                                <Trigger Property="Orientation" Value="Horizontal">
+                                    <Setter Property="Height" Value="0" />
+                                    <Setter Property="Opacity" Value="0" />
+                                    <Setter Property="Visibility" Value="Collapsed" />
                                 </Trigger>
                             </Style.Triggers>
                         </Style>
-                    </DataGrid.RowStyle>
+                    </DataGrid.Resources>
 
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Width="*"
-                                                MinWidth="200">
+                                                MinWidth="60">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="Person24"
                                                ToolTip="Пользователь"
@@ -524,7 +518,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="Auto"
-                                                MinWidth="130">
+                                                MinWidth="50">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="Location24"
                                                ToolTip="Последний IP"
@@ -544,7 +538,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="Auto"
-                                                MinWidth="90">
+                                                MinWidth="40">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="Globe24"
                                                ToolTip="Локация"
@@ -566,7 +560,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="Auto"
-                                                MinWidth="130">
+                                                MinWidth="50">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="Laptop24"
                                                ToolTip="Устройства"
@@ -655,7 +649,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="Auto"
-                                                MinWidth="160">
+                                                MinWidth="50">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="DataBarHorizontal24"
                                                ToolTip="Трафик"
@@ -702,7 +696,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="Auto"
-                                                MinWidth="130">
+                                                MinWidth="50">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="History24"
                                                ToolTip="Последний вход"
@@ -721,7 +715,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="Auto"
-                                                MinWidth="60">
+                                                MinWidth="35">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="ShieldCheckmark24"
                                                ToolTip="Антифрод (Авто-бан)"
@@ -739,7 +733,7 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="Auto"
-                                                MinWidth="220">
+                                                MinWidth="70">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="Settings24"
                                                ToolTip="Действия"
