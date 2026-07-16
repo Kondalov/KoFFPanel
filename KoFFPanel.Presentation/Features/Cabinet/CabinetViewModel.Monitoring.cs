@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -178,8 +178,15 @@ public partial class CabinetViewModel
 
         bool dbNeedsUpdate = false;
 
-        // ИЗМЕНЕНО: InvokeAsync позволяет нам безопасно обращаться к БД из UI-потока
-        await System.Windows.Application.Current.Dispatcher.InvokeAsync(async () =>
+        // 1. Быстрый снимок данных клиентов в UI-потоке (<0.1 мс) для безопасных расчетов в фоне
+        var snapshots = await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+            Clients.Select(c => new ClientCycleSnapshot(c, c.Email ?? "Unknown", c.IsActive, c.IsAntiFraudEnabled, c.TrafficLimit, c.TrafficUsed, c.ExpiryDate, c.Note, c.LastOnline, c.Country)).ToList());
+
+        // 2. Все тяжелые EF Core SQLite запросы и расчеты антифрода выполняем в фоновом потоке
+        var cycleResults = await EvaluateClientsInBackgroundAsync(snapshots, trafficStats, activeUsernames, allOnlineStats, trafficBatch, connectionBatch);
+
+        // 3. Мгновенное обновление свойств UI в главном потоке без запросов к БД
+        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
         {
             UpdateUiAfterCycle(actualDisplayCore, coreStatusStr, coreStats, journalLogs, accessLogs, grepTest);
 
@@ -198,8 +205,7 @@ public partial class CabinetViewModel
                 }
             }
 
-            // Вызов нашего нового умного метода
-            dbNeedsUpdate = await ProcessClientsAfterCycleAsync(trafficStats, activeUsernames, allOnlineStats, trafficBatch, connectionBatch);
+            dbNeedsUpdate = ApplyClientResultsToUi(cycleResults);
 
             if (dbNeedsUpdate && SelectedServer != null)
             {

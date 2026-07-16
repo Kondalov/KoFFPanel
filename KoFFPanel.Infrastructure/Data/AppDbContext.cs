@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Domain.Entities;
+using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -17,6 +17,16 @@ public class AppDbContext : DbContext
     public DbSet<ClientBehaviorLog> BehaviorLogs { get; set; }
 
     public AppDbContext() { }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if (!optionsBuilder.IsConfigured)
+        {
+            string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "koffpanel_users.db");
+            string dbPassword = MasterKeyService.Instance.GetMasterPassword();
+            optionsBuilder.UseSqlite($"Data Source={dbPath};Password={dbPassword};Pooling=True;");
+        }
+    }
 
     public void InitializeDatabaseOptimization()
     {

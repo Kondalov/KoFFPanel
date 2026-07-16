@@ -3,15 +3,15 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  Title="{Binding WindowTitle}"
-                 Height="820"
-                 Width="600"
+                 Height="680"
+                 Width="540"
                  WindowStartupLocation="CenterOwner"
                  WindowBackdropType="None"
                  Background="#0a0a0a"
                  ExtendsContentIntoTitleBar="True"
                  ResizeMode="CanResize"
-                 MinHeight="600"
-                 MinWidth="500">
+                 MinHeight="520"
+                 MinWidth="460">
 
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
@@ -106,10 +106,9 @@
             </StackPanel>
 
             <ScrollViewer Grid.Row="1"
-                          VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled"
-                          Margin="0,0,-12,0">
-                <StackPanel Margin="0,0,12,0">
+                          VerticalScrollBarVisibility="Hidden"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
                     <StackPanel>
                         <StackPanel.Style>
                             <Style TargetType="StackPanel">
@@ -138,7 +137,7 @@
                                     <TextBlock Text="🌐"
                                                FontSize="16"
                                                Margin="0,0,8,0" />
-                                    <TextBlock Text="HTTP ПОДПИСКА (Hiddify / v2rayNG)"
+                                    <TextBlock Text="HTTPS ПОДПИСКА (Hiddify и другие)"
                                                Foreground="#00f2ff"
                                                FontSize="16"
                                                FontWeight="Bold" />

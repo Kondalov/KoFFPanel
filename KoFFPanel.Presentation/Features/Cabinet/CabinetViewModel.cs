@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using KoFFPanel.Application.Interfaces;
@@ -248,8 +248,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         CpuUsage = 0; RamUsage = 0; SsdUsage = 0; PingMs = 0; Uptime = "N/A"; LoadAverage = "0.0"; NetworkSpeed = "0 Mbps";
         XrayProcesses = 0; TcpConnections = 0; SynRecv = 0; XrayStatus = "Ожидание..."; XrayLogs = "Ожидание логов...";
 
-        Clients.Clear();
-
         if (value != null)
         {
             ActiveCoreTitle = value.CoreType == "sing-box" ? "Ядро (Sing-box)" : (value.CoreType == "trusttunnel" ? "Ядро (TrustTunnel)" : "Ядро (Xray-core)");
@@ -260,7 +258,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
                 var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
 
                 var dbUsers = dbContext.Clients.Where(c => c.ServerIp == currentIp).ToList();
-                foreach (var u in dbUsers) Clients.Add(u);
+                SyncClientsCollection(dbUsers);
 
                 _logger.Log("DB-LOAD", $"Успешно загружено {Clients.Count} клиентов для сервера {currentIp} из базы данных SQLite.");
             }
@@ -272,6 +270,10 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
             NavigateToDashboard();
             _monitoringCts = new CancellationTokenSource();
             _ = StartMonitoringLoopAsync(value, _monitoringCts.Token);
+        }
+        else
+        {
+            SyncClientsCollection(Enumerable.Empty<VpnClient>());
         }
     }
 

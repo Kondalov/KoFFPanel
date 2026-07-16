@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.Messaging;
+using CommunityToolkit.Mvvm.Messaging;
 using KoFFPanel.Presentation.Messages;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Application.Interfaces;
@@ -51,10 +51,7 @@ public partial class CabinetViewModel
         string ip = SelectedServer.IpAddress ?? "";
         var dbUsers = dbContext.Clients.Where(c => c.ServerIp == ip).ToList();
 
-        System.Windows.Application.Current.Dispatcher.Invoke(() => {
-            Clients.Clear();
-            foreach (var u in dbUsers) Clients.Add(u);
-        });
+        System.Windows.Application.Current.Dispatcher.Invoke(() => SyncClientsCollection(dbUsers));
 
         try
         {
@@ -88,7 +85,7 @@ public partial class CabinetViewModel
                 }
 
                 System.Windows.Application.Current.Dispatcher.Invoke(() => {
-                    Clients.Clear(); foreach (var u in updatedUsers) Clients.Add(u);
+                    SyncClientsCollection(updatedUsers);
                     ServerStatus = $"Онлайн (Синхронизировано {Clients.Count})";
                 });
             }

@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -145,27 +145,32 @@ public class AntiFraudService : IAntiFraudService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
         var limitDate = DateTime.Today.AddDays(-30);
-        var rawLogs = await db.BehaviorLogs.AsNoTracking().Where(x => x.ServerIp == serverIp && x.Email == email).ToListAsync(token);
 
-        return rawLogs.Where(x => x.Date >= limitDate).OrderByDescending(x => x.Date).ToList();
+        return await db.BehaviorLogs
+            .AsNoTracking()
+            .Where(x => x.ServerIp == serverIp && x.Email == email && x.Date >= limitDate)
+            .OrderByDescending(x => x.Date)
+            .ToListAsync(token);
     }
 
     public async Task ExecuteMonthlyRetentionPolicyAsync(CancellationToken token = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
         var thresholdDate = DateTime.Today.AddDays(-30);
-        var oldLogs = await db.BehaviorLogs.ToListAsync(token);
-        var toRemove = oldLogs.Where(x => x.Date < thresholdDate).ToList();
 
-        if (toRemove.Any())
+        try
         {
-            db.BehaviorLogs.RemoveRange(toRemove);
-            await db.SaveChangesAsync(token);
-            _logger.Log("ANTIFRAUD-CLEANUP", $"Удалено {toRemove.Count} устаревших скоринг-записей.");
+            int deletedLogs = await db.BehaviorLogs.Where(x => x.Date < thresholdDate).ExecuteDeleteAsync(token);
+            if (deletedLogs > 0)
+            {
+                _logger.Log("ANTIFRAUD-CLEANUP", $"Удалено {deletedLogs} устаревших скоринг-записей.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("ANTIFRAUD-ERR", $"Ошибка при очистке устаревших скоринг-записей: {ex.Message}");
         }
     }
 

@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -263,87 +263,162 @@ public partial class CabinetViewModel
         XrayLogs = $"=== СИСТЕМНЫЙ ЖУРНАЛ ===\n{journalLogs.Trim()}\n\n=== ACCESS.LOG ===\n{accessLogs.Trim()}\n\n=== ТЕСТ ПАРСЕРА ===\n{grepTest.Trim()}";
     }
 
-    // ИЗМЕНЕНИЕ: Метод стал асинхронным (Task<bool>), чтобы дождаться ответа от БД Антифрода
-    private async Task<bool> ProcessClientsAfterCycleAsync(Dictionary<string, long> trafficStats, HashSet<string> activeUsernames, List<UserOnlineInfo> allOnlineStats, Dictionary<string, long> trafficBatch, List<(string, string, string)> connectionBatch)
+    private record ClientCycleSnapshot(
+        VpnClient ClientRef,
+        string Email,
+        bool IsActive,
+        bool IsAntiFraudEnabled,
+        long TrafficLimit,
+        long TrafficUsed,
+        DateTime? ExpiryDate,
+        string? Note,
+        DateTime? LastOnline,
+        string? Country
+    );
+
+    private record ClientCycleResult(
+        VpnClient ClientRef,
+        string Email,
+        long Delta,
+        int ActiveConnections,
+        DateTime? LastOnline,
+        string? LastIp,
+        string? Country,
+        bool ShouldDeactivate,
+        string? BlockReason,
+        bool UpdateNote,
+        string? NewNote
+    );
+
+    private async Task<List<ClientCycleResult>> EvaluateClientsInBackgroundAsync(
+        List<ClientCycleSnapshot> snapshots,
+        Dictionary<string, long> trafficStats,
+        HashSet<string> activeUsernames,
+        List<UserOnlineInfo> allOnlineStats,
+        Dictionary<string, long> trafficBatch,
+        List<(string, string, string)> connectionBatch)
     {
-        bool dbNeedsUpdate = false;
         if (DateTime.Today != _currentDay) { _dailyIps.Clear(); _currentDay = DateTime.Today; }
-
-        // Достаем наш новый сервис напрямую из провайдера
         var antiFraudService = _serviceProvider.GetRequiredService<IAntiFraudService>();
+        var results = new List<ClientCycleResult>();
 
-        foreach (var client in Clients)
+        foreach (var snapshot in snapshots)
         {
-            string email = client.Email ?? "Unknown";
+            string email = snapshot.Email;
             string currentIp = "";
+            long delta = 0;
+            int activeConnections = snapshot.IsActive ? 0 : 0;
+            DateTime? lastOnline = snapshot.LastOnline;
+            string? lastIp = null;
+            string? country = snapshot.Country;
+            long newTrafficUsed = snapshot.TrafficUsed;
 
             if (trafficStats.TryGetValue(email, out long currentBytes))
             {
                 long prev = _previousTrafficStats.TryGetValue(email, out long p) ? p : 0;
-                long delta = currentBytes >= prev ? currentBytes - prev : currentBytes;
-                if (delta > 0) { client.TrafficUsed += delta; dbNeedsUpdate = true; trafficBatch[email] = delta; }
+                delta = currentBytes >= prev ? currentBytes - prev : currentBytes;
+                if (delta > 0)
+                {
+                    newTrafficUsed += delta;
+                    trafficBatch[email] = delta;
+                }
                 _previousTrafficStats[email] = currentBytes;
             }
 
             if (activeUsernames.Contains(email))
             {
                 var log = allOnlineStats.FirstOrDefault(s => s.Email == email);
-                client.ActiveConnections = log != null && log.ActiveSessions > 0 ? log.ActiveSessions : 1;
-                client.LastOnline = DateTime.Now;
+                activeConnections = log != null && log.ActiveSessions > 0 ? log.ActiveSessions : 1;
+                lastOnline = DateTime.Now;
 
                 if (log != null)
                 {
-                    client.LastIp = log.LastIp;
+                    lastIp = log.LastIp;
                     currentIp = log.LastIp ?? "";
-                    if (!string.IsNullOrEmpty(log.Country)) client.Country = log.Country;
-                    connectionBatch.Add((email, log.LastIp ?? "", client.Country ?? ""));
+                    if (!string.IsNullOrEmpty(log.Country)) country = log.Country;
+                    connectionBatch.Add((email, log.LastIp ?? "", country ?? ""));
                 }
             }
             else
             {
-                client.ActiveConnections = (client.LastOnline.HasValue && (DateTime.Now - client.LastOnline.Value).TotalMinutes <= 3) ? 1 : 0;
+                activeConnections = (snapshot.LastOnline.HasValue && (DateTime.Now - snapshot.LastOnline.Value).TotalMinutes <= 3) ? 1 : 0;
             }
 
-            // Передаем собранные данные в умный алгоритм
-            long trafficDelta = trafficStats.TryGetValue(email, out long d) ? d : 0;
-            if (await CheckAntiFraudAndLimitsAsync(client, trafficDelta, currentIp, antiFraudService)) dbNeedsUpdate = true;
+            bool shouldDeactivate = false;
+            string? blockReason = null;
+            bool updateNote = false;
+            string? newNote = null;
+
+            if (snapshot.IsActive)
+            {
+                bool isExceeded = snapshot.TrafficLimit > 0 && newTrafficUsed >= snapshot.TrafficLimit;
+                bool isExpired = snapshot.ExpiryDate.HasValue && snapshot.ExpiryDate.Value.Date <= DateTime.Now.Date;
+
+                if (isExceeded || isExpired)
+                {
+                    shouldDeactivate = true;
+                    blockReason = isExceeded ? "Превышен лимит" : "Истек срок";
+                }
+                else if (snapshot.IsAntiFraudEnabled && activeConnections > 0 && SelectedServer != null)
+                {
+                    var tempClient = new VpnClient
+                    {
+                        Email = snapshot.Email,
+                        IsAntiFraudEnabled = snapshot.IsAntiFraudEnabled,
+                        ActiveConnections = activeConnections,
+                        Country = country ?? ""
+                    };
+
+                    var (isFraud, reason) = await antiFraudService.EvaluateClientAsync(SelectedServer.IpAddress ?? "", tempClient, currentIp, delta);
+
+                    if (isFraud && snapshot.Note != reason)
+                    {
+                        updateNote = true;
+                        newNote = reason;
+                    }
+                    else if (!isFraud && snapshot.Note != null && snapshot.Note.StartsWith("ФРОД"))
+                    {
+                        updateNote = true;
+                        newNote = "";
+                    }
+                }
+            }
+
+            results.Add(new ClientCycleResult(snapshot.ClientRef, email, delta, activeConnections, lastOnline, lastIp, country, shouldDeactivate, blockReason, updateNote, newNote));
         }
-        return dbNeedsUpdate;
+
+        return results;
     }
 
-    private async Task<bool> CheckAntiFraudAndLimitsAsync(VpnClient client, long delta, string currentIp, IAntiFraudService antiFraudService)
+    private bool ApplyClientResultsToUi(List<ClientCycleResult> results)
     {
-        if (!client.IsActive) return false;
-
-        // Лимиты трафика и срок действия остаются с авто-баном (это биллинг)
-        bool isExceeded = client.TrafficLimit > 0 && client.TrafficUsed >= client.TrafficLimit;
-        bool isExpired = client.ExpiryDate.HasValue && client.ExpiryDate.Value.Date <= DateTime.Now.Date;
-        if (isExceeded || isExpired)
+        bool dbNeedsUpdate = false;
+        foreach (var r in results)
         {
-            client.IsActive = false;
-            _ = BlockUserAsync(client, isExceeded ? "Превышен лимит" : "Истек срок");
-            return true;
-        }
-
-        // АНТИФРОД: Теперь работает в режиме наблюдения (Observation Mode)
-        if (client.IsAntiFraudEnabled && client.ActiveConnections > 0 && SelectedServer != null)
-        {
-            var (isFraud, reason) = await antiFraudService.EvaluateClientAsync(SelectedServer.IpAddress ?? "", client, currentIp, delta);
-
-            // Автоматическая блокировка убрана. Мы только пишем причину в столбец Note.
-            if (isFraud && client.Note != reason)
+            var client = r.ClientRef;
+            if (r.Delta > 0)
             {
-                client.Note = reason;
-                return true; // Возвращаем true, чтобы UI обновился и записал заметку в БД
+                client.TrafficUsed += r.Delta;
+                dbNeedsUpdate = true;
             }
-            else if (!isFraud && client.Note != null && client.Note.StartsWith("ФРОД"))
+            if (client.ActiveConnections != r.ActiveConnections) client.ActiveConnections = r.ActiveConnections;
+            if (client.LastOnline != r.LastOnline) client.LastOnline = r.LastOnline;
+            if (r.LastIp != null && client.LastIp != r.LastIp) client.LastIp = r.LastIp;
+            if (r.Country != null && client.Country != r.Country) client.Country = r.Country;
+
+            if (r.ShouldDeactivate && client.IsActive)
             {
-                // Очищаем заметку, если юзер перестал нарушать и его риск упал ниже 100%
-                client.Note = "";
-                return true;
+                client.IsActive = false;
+                dbNeedsUpdate = true;
+                _ = BlockUserAsync(client, r.BlockReason ?? "Блокировка");
+            }
+            else if (r.UpdateNote && client.Note != r.NewNote)
+            {
+                client.Note = r.NewNote ?? "";
+                dbNeedsUpdate = true;
             }
         }
-        return false;
+        return dbNeedsUpdate;
     }
 
     private async Task LoadUsersAsync()
@@ -353,7 +428,7 @@ public partial class CabinetViewModel
         string ip = server.IpAddress ?? "";
         var realUsers = server.CoreType == "sing-box" ? await _singBoxUserManager.GetUsersAsync(ssh, ip) :
                         (server.CoreType == "trusttunnel" ? await _trustTunnelUserManager.GetUsersAsync(ssh, ip) : await _userManager.GetUsersAsync(ssh, ip));
-        System.Windows.Application.Current.Dispatcher.Invoke(() => { Clients.Clear(); foreach (var u in realUsers) Clients.Add(u); });
+        System.Windows.Application.Current.Dispatcher.Invoke(() => SyncClientsCollection(realUsers));
     }
 
     private async Task BlockUserAsync(VpnClient client, string reason)

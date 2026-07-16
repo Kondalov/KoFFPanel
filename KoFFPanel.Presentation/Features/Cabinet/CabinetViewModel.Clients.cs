@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Domain.Entities;
+using KoFFPanel.Domain.Entities;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Presentation.Features.Cabinet;
 using KoFFPanel.Presentation.Features.Bot;
@@ -313,5 +313,61 @@ public partial class CabinetViewModel
             };
         }
         window.ShowDialog();
+    }
+
+    private void SyncClientsCollection(IEnumerable<VpnClient> newUsers)
+    {
+        var incomingList = newUsers.ToList();
+        var existingMap = Clients.Where(c => !string.IsNullOrEmpty(c.Email)).ToDictionary(c => c.Email, c => c, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var newClient in incomingList)
+        {
+            string email = newClient.Email ?? "";
+            if (string.IsNullOrEmpty(email)) continue;
+
+            if (existingMap.TryGetValue(email, out var existing))
+            {
+                if (existing.Id != newClient.Id) existing.Id = newClient.Id;
+                if (existing.ServerIp != newClient.ServerIp) existing.ServerIp = newClient.ServerIp;
+                if (existing.AvatarPath != newClient.AvatarPath) existing.AvatarPath = newClient.AvatarPath;
+                if (existing.IsAntiFraudEnabled != newClient.IsAntiFraudEnabled) existing.IsAntiFraudEnabled = newClient.IsAntiFraudEnabled;
+                if (existing.IsP2PBlocked != newClient.IsP2PBlocked) existing.IsP2PBlocked = newClient.IsP2PBlocked;
+                if (existing.Uuid != newClient.Uuid) existing.Uuid = newClient.Uuid;
+                if (existing.Country != newClient.Country) existing.Country = newClient.Country;
+                if (existing.ExpiryDate != newClient.ExpiryDate) existing.ExpiryDate = newClient.ExpiryDate;
+                if (existing.Protocol != newClient.Protocol) existing.Protocol = newClient.Protocol;
+                if (existing.IsActive != newClient.IsActive) existing.IsActive = newClient.IsActive;
+                if (existing.VlessLink != newClient.VlessLink) existing.VlessLink = newClient.VlessLink;
+                if (existing.IsVlessEnabled != newClient.IsVlessEnabled) existing.IsVlessEnabled = newClient.IsVlessEnabled;
+                if (existing.IsHysteria2Enabled != newClient.IsHysteria2Enabled) existing.IsHysteria2Enabled = newClient.IsHysteria2Enabled;
+                if (existing.Hysteria2Link != newClient.Hysteria2Link) existing.Hysteria2Link = newClient.Hysteria2Link;
+                if (existing.IsTrustTunnelEnabled != newClient.IsTrustTunnelEnabled) existing.IsTrustTunnelEnabled = newClient.IsTrustTunnelEnabled;
+                if (existing.TrustTunnelLink != newClient.TrustTunnelLink) existing.TrustTunnelLink = newClient.TrustTunnelLink;
+                if (existing.IsTrojanEnabled != newClient.IsTrojanEnabled) existing.IsTrojanEnabled = newClient.IsTrojanEnabled;
+                if (existing.TrojanLink != newClient.TrojanLink) existing.TrojanLink = newClient.TrojanLink;
+                if (existing.IsShadowsocksEnabled != newClient.IsShadowsocksEnabled) existing.IsShadowsocksEnabled = newClient.IsShadowsocksEnabled;
+                if (existing.ShadowsocksLink != newClient.ShadowsocksLink) existing.ShadowsocksLink = newClient.ShadowsocksLink;
+                if (existing.TrafficUsed != newClient.TrafficUsed) existing.TrafficUsed = newClient.TrafficUsed;
+                if (existing.TrafficLimit != newClient.TrafficLimit) existing.TrafficLimit = newClient.TrafficLimit;
+                if (existing.Note != newClient.Note) existing.Note = newClient.Note;
+                if (existing.LastIp != newClient.LastIp) existing.LastIp = newClient.LastIp;
+                if (existing.ActiveConnections != newClient.ActiveConnections) existing.ActiveConnections = newClient.ActiveConnections;
+                if (existing.LastOnline != newClient.LastOnline) existing.LastOnline = newClient.LastOnline;
+            }
+            else
+            {
+                Clients.Add(newClient);
+            }
+        }
+
+        var incomingEmails = new HashSet<string>(incomingList.Where(u => !string.IsNullOrEmpty(u.Email)).Select(u => u.Email), StringComparer.OrdinalIgnoreCase);
+        for (int i = Clients.Count - 1; i >= 0; i--)
+        {
+            var client = Clients[i];
+            if (!string.IsNullOrEmpty(client.Email) && !incomingEmails.Contains(client.Email))
+            {
+                Clients.RemoveAt(i);
+            }
+        }
     }
 }

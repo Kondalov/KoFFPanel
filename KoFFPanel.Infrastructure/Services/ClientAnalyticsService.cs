@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -49,13 +49,13 @@ public class ClientAnalyticsService : IClientAnalyticsService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var limitDate = DateTime.Today.AddDays(-days);
 
-        // ЗАЩИТА ОТ ДУРАКА: SQLite криво сравнивает даты в формате TEXT.
-        // Выгружаем логи юзера (их не больше 30) в память и фильтруем через строгий C#!
-        var allUserLogs = await db.TrafficLogs.AsNoTracking().Where(x => x.ServerIp == serverIp && x.Email == email).ToListAsync();
-
-        var filtered = allUserLogs.Where(x => x.Date >= limitDate).OrderByDescending(x => x.Date).ToList();
-        _logger.Log("ANALYTICS-READ", $"Загружено {filtered.Count} логов трафика для {email}");
-        return filtered;
+        var logs = await db.TrafficLogs
+            .AsNoTracking()
+            .Where(x => x.ServerIp == serverIp && x.Email == email && x.Date >= limitDate)
+            .OrderByDescending(x => x.Date)
+            .ToListAsync();
+        _logger.Log("ANALYTICS-READ", $"Загружено {logs.Count} логов трафика для {email}");
+        return logs;
     }
 
     public async Task<List<ClientConnectionLog>> GetConnectionLogsAsync(string serverIp, string email)
@@ -72,12 +72,14 @@ public class ClientAnalyticsService : IClientAnalyticsService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
         var limitDate = DateTime.Today.AddDays(-30);
-        var allLogs = await db.ViolationLogs.AsNoTracking().Where(x => x.ServerIp == serverIp && x.Email == email).ToListAsync();
 
-        var filtered = allLogs.Where(x => x.Date >= limitDate).OrderByDescending(x => x.Date).ToList();
-        return filtered;
+        var logs = await db.ViolationLogs
+            .AsNoTracking()
+            .Where(x => x.ServerIp == serverIp && x.Email == email && x.Date >= limitDate)
+            .OrderByDescending(x => x.Date)
+            .ToListAsync();
+        return logs;
     }
 
     public async Task CleanupOldLogsAsync()
@@ -90,23 +92,14 @@ public class ClientAnalyticsService : IClientAnalyticsService
 
         try
         {
-            // Фильтруем в памяти, чтобы избежать крашей SQLite (TEXT Date comparison)
-            var oldTraffic = await db.TrafficLogs.ToListAsync();
-            var trafficToRemove = oldTraffic.Where(x => x.Date < thresholdDate).ToList();
-            db.TrafficLogs.RemoveRange(trafficToRemove);
+            // Используем ExecuteDeleteAsync для мгновенного удаления на стороне БД без загрузки в память
+            int deletedTraffic = await db.TrafficLogs.Where(x => x.Date < thresholdDate).ExecuteDeleteAsync();
+            int deletedConnections = await db.ConnectionLogs.Where(x => x.LastSeen < thresholdDate).ExecuteDeleteAsync();
+            int deletedViolations = await db.ViolationLogs.Where(x => x.Date < thresholdDate).ExecuteDeleteAsync();
 
-            var oldConnections = await db.ConnectionLogs.ToListAsync();
-            var connToRemove = oldConnections.Where(x => x.LastSeen < thresholdDate).ToList();
-            db.ConnectionLogs.RemoveRange(connToRemove);
-
-            var oldViolations = await db.ViolationLogs.ToListAsync();
-            var violToRemove = oldViolations.Where(x => x.Date < thresholdDate).ToList();
-            db.ViolationLogs.RemoveRange(violToRemove);
-
-            if (trafficToRemove.Any() || connToRemove.Any() || violToRemove.Any())
+            if (deletedTraffic > 0 || deletedConnections > 0 || deletedViolations > 0)
             {
-                await db.SaveChangesAsync();
-                _logger.Log("ANALYTICS-CLEANUP", $"♻️ Очистка завершена. Удалено: Трафик({trafficToRemove.Count}), IP({connToRemove.Count}), Нарушения({violToRemove.Count}).");
+                _logger.Log("ANALYTICS-CLEANUP", $"♻️ Очистка завершена. Удалено: Трафик({deletedTraffic}), IP({deletedConnections}), Нарушения({deletedViolations}).");
             }
         }
         catch (Exception ex)

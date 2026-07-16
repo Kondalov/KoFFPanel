@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
 using System.Runtime.Versioning;
@@ -23,6 +23,7 @@ public partial class AddClientViewModel : ObservableObject
     [ObservableProperty] private bool _isShadowsocksEnabled = false;
 
     [ObservableProperty] private bool _isP2PBlocked = true;
+    [ObservableProperty] private bool _areProtocolsExpanded = false;
 
     [ObservableProperty] private string _windowTitle = "Добавить пользователя";
     [ObservableProperty] private string _actionButtonText = "Создать";
@@ -41,6 +42,7 @@ public partial class AddClientViewModel : ObservableObject
         ExpiryDate = DateTime.Now.AddMonths(1);
         Note = "";
         IsP2PBlocked = true;
+        AreProtocolsExpanded = false;
 
         IsVlessEnabled = true;
         IsHysteria2Enabled = true;
@@ -56,6 +58,7 @@ public partial class AddClientViewModel : ObservableObject
         IsEditMode = true;
         WindowTitle = "Редактировать пользователя";
         ActionButtonText = "Сохранить";
+        AreProtocolsExpanded = false;
 
         ClientName = currentName;
         TrafficLimitGb = (int)(currentLimitBytes / 1024 / 1024 / 1024);
@@ -68,6 +71,12 @@ public partial class AddClientViewModel : ObservableObject
         IsTrustTunnelEnabled = isTt;
         IsTrojanEnabled = isTrojan;
         IsShadowsocksEnabled = isShadowsocks;
+    }
+
+    [RelayCommand]
+    private void ToggleProtocols()
+    {
+        AreProtocolsExpanded = !AreProtocolsExpanded;
     }
 
     [RelayCommand]
