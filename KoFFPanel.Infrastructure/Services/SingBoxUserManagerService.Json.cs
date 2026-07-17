@@ -58,6 +58,7 @@ public partial class SingBoxUserManagerService
             }
             else if (type == "hysteria2")
             {
+                inbound["ignore_client_bandwidth"] = true;
                 // Синхронизация Obfs пароля из БД в конфиг
                 if (settingsDb != null && inbound["obfs"] != null)
                 {
@@ -78,6 +79,10 @@ public partial class SingBoxUserManagerService
             }
             else if (type == "trojan")
             {
+                if (inbound["tls"] != null && inbound["tls"]!["alpn"] == null)
+                {
+                    inbound["tls"]!["alpn"] = new JsonArray { "h2", "http/1.1" };
+                }
                 // Синхронизация SNI из БД в конфиг
                 if (settingsDb != null && inbound["tls"] != null)
                 {
@@ -111,6 +116,7 @@ public partial class SingBoxUserManagerService
                 }
                 else usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
 
+                inbound.Remove("password");
                 inbound["users"] = usersArray;
                 UpdateShadowsocksLinks(inbound, dbUsers, displayServer);
             }
@@ -209,19 +215,44 @@ public partial class SingBoxUserManagerService
         {
             var blockedNames = await _dbContext.Clients.AsNoTracking().Where(c => c.ServerIp == serverIp && c.IsP2PBlocked).Select(c => c.Email.Trim()).ToListAsync();
 
-            if (root["log"] is JsonObject logObj) logObj["level"] = "trace";
-            else if (root is JsonObject rootObj) rootObj["log"] = new JsonObject { ["level"] = "trace" };
+            if (root["log"] is JsonObject logObj) logObj["level"] = "info";
+            else if (root is JsonObject rootObj) rootObj["log"] = new JsonObject { ["level"] = "info" };
 
-            var inbounds = root["inbounds"]?.AsArray();
-            if (inbounds != null)
+            bool isLegacyDns = false;
+            if (root["dns"]?["servers"] is JsonArray srvArr && srvArr.Count > 0 && srvArr[0]?["address"] != null)
             {
-                foreach (var inbound in inbounds)
+                isLegacyDns = true;
+            }
+
+            if (root is JsonObject rootJObj && (rootJObj["dns"] == null || isLegacyDns))
+            {
+                rootJObj["dns"] = new JsonObject
                 {
-                    if (inbound is JsonObject inboundObj)
+                    ["servers"] = new JsonArray
                     {
-                        inboundObj.Remove("sniff"); inboundObj.Remove("sniffing"); inboundObj.Remove("sniff_override_destination");
-                    }
-                }
+                        new JsonObject { ["type"] = "https", ["tag"] = "remote", ["server"] = "8.8.8.8", ["domain_resolver"] = "local" },
+                        new JsonObject { ["type"] = "udp", ["tag"] = "local", ["server"] = "8.8.8.8" }
+                    },
+                    ["rules"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["domain_suffix"] = new JsonArray { "openai.com", "chatgpt.com", "auth0.com", "google.com", "gemini.google.com", "googleapis.com", "generativelanguage.googleapis.com", "claude.ai", "anthropic.com" },
+                            ["server"] = "remote"
+                        }
+                    },
+                    ["final"] = "remote",
+                    ["strategy"] = "prefer_ipv4"
+                };
+            }
+            else if (root["dns"] is JsonObject dnsObj)
+            {
+                dnsObj["strategy"] = "prefer_ipv4";
+            }
+
+            if (root["route"] is JsonObject routeObj)
+            {
+                routeObj["default_domain_resolver"] = "local";
             }
 
             string rulesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rules");
@@ -245,11 +276,13 @@ public partial class SingBoxUserManagerService
                 var rulesToRemove = rulesArray.Where(r => r?["outbound"]?.ToString() == "block" || r?["action"]?.ToString() == "sniff").ToList();
                 foreach (var r in rulesToRemove) rulesArray.Remove(r);
 
+                // ВСЕГДА гарантируем работу sniffing для инспекции доменов и корректной работы AI
+                rulesArray.Insert(0, new JsonObject { ["action"] = "sniff" });
+
                 if (blockedNames.Any())
                 {
-                    rulesArray.Insert(0, new JsonObject { ["action"] = "sniff" });
-                    if (domains.Any()) rulesArray.Insert(1, new JsonObject { ["user"] = JsonSerializer.SerializeToNode(blockedNames), ["domain_keyword"] = JsonSerializer.SerializeToNode(domains), ["outbound"] = "block" });
-                    rulesArray.Insert(2, new JsonObject { ["user"] = JsonSerializer.SerializeToNode(blockedNames), ["protocol"] = "bittorrent", ["outbound"] = "block" });
+                    if (domains.Any()) rulesArray.Add(new JsonObject { ["user"] = JsonSerializer.SerializeToNode(blockedNames), ["domain_keyword"] = JsonSerializer.SerializeToNode(domains), ["outbound"] = "block" });
+                    rulesArray.Add(new JsonObject { ["user"] = JsonSerializer.SerializeToNode(blockedNames), ["protocol"] = "bittorrent", ["outbound"] = "block" });
                 }
             }
         }
@@ -263,9 +296,11 @@ public partial class SingBoxUserManagerService
         string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(newJson.Replace("\r", "")));
         await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {s} tee /tmp/sb_test.json >/dev/null");
 
-        if ((await ssh.ExecuteCommandAsync($"{s} sing-box check -c /tmp/sb_test.json 2>&1")).Contains("error"))
+        string checkCmd = $"{s} mkdir -p /var/log/sing-box && if [ -f /usr/local/bin/sing-box ]; then {s} /usr/local/bin/sing-box check -c /tmp/sb_test.json 2>&1; else {s} sing-box check -c /tmp/sb_test.json 2>&1; fi";
+        string checkOutput = await ssh.ExecuteCommandAsync(checkCmd);
+        if (checkOutput.Contains("error") || checkOutput.Contains("fatal"))
         {
-            return (false, "Ошибка теста конфига!");
+            return (false, $"Ошибка теста конфига: {checkOutput}");
         }
 
         var ports = new HashSet<int>();

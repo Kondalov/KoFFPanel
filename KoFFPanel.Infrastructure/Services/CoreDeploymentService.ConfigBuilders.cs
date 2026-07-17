@@ -120,6 +120,7 @@ private_key_path = ""certs/key.pem""";
                 {
                     ["enabled"] = true,
                     ["server_name"] = settings?["sni"]?.ToString() ?? "bing.com",
+                    ["alpn"] = new JsonArray { "h2", "http/1.1" },
                     ["certificate_path"] = settings?["certPath"]?.ToString(),
                     ["key_path"] = settings?["keyPath"]?.ToString()
                 }
@@ -134,7 +135,7 @@ private_key_path = ""certs/key.pem""";
                 ["listen"] = "::",
                 ["listen_port"] = safePort,
                 ["method"] = settings?["method"]?.ToString() ?? "aes-256-gcm",
-                ["password"] = "init_pass" // ИСПРАВЛЕНИЕ: Топ-левел пароль для совместимости
+                ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } }
             };
         }
         return null;

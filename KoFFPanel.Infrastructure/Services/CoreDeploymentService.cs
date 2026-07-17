@@ -207,7 +207,7 @@ echo 'READY|Сервер готов к установке.'
             string checkCmd = "";
             if (coreName == "sing-box")
             {
-                checkCmd = $"{sudoPrefix}sing-box check -c /etc/sing-box/config.json 2>&1";
+                checkCmd = $"{sudoPrefix}mkdir -p /var/log/sing-box && {sudoPrefix}sing-box check -c /etc/sing-box/config.json 2>&1";
             }
             else if (coreName == "trusttunnel")
             {
@@ -299,7 +299,6 @@ cd /tmp && rm -rf /tmp/xray_install
     {
         string script = @"
 export DEBIAN_FRONTEND=noninteractive
-# Делаем обновление некритичным, так как репозитории могут временно сбоить
 apt-get update -q || true
 apt-get install -y curl wget tar jq >/dev/null 2>&1 || true
 
@@ -307,11 +306,12 @@ ARCH=$(uname -m)
 case ""$ARCH"" in
     x86_64) DL_ARCH=""amd64"" ;;
     aarch64) DL_ARCH=""arm64"" ;;
+    armv7l|armv7) DL_ARCH=""armv7"" ;;
     *) echo ""FAIL_ARCH: $ARCH""; exit 1 ;;
 esac
 
 TAG=$(curl -sL --connect-timeout 5 https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r "".tag_name"" 2>/dev/null)
-if [ -z ""$TAG"" ] || [ ""$TAG"" == ""null"" ]; then TAG=""v1.13.11""; fi
+if [ -z ""$TAG"" ] || [ ""$TAG"" == ""null"" ]; then TAG=""v1.13.14""; fi
 
 DOWNLOAD_URL=""https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${TAG#v}-linux-${DL_ARCH}.tar.gz""
 
@@ -319,12 +319,12 @@ rm -rf /tmp/singbox_install && mkdir -p /tmp/singbox_install && cd /tmp/singbox_
 if curl -sL --retry 3 --connect-timeout 10 ""$DOWNLOAD_URL"" -o sb.tar.gz; then
     if tar -xzf sb.tar.gz --strip-components=1; then
         chmod +x sing-box 2>/dev/null || true
-        mv sing-box /usr/local/bin/sing-box
+        mv -f sing-box /usr/local/bin/sing-box
+        chmod +x /usr/local/bin/sing-box
     fi
 fi
 
 if [ -f ""/usr/local/bin/sing-box"" ]; then
-    # Дополнительно ставим xray как утилиту для статистики
     DOWNLOAD_URL_XRAY=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r "".assets[] | select(.name == \""Xray-linux-64.zip\"") | .browser_download_url"")
     if [ -n ""$DOWNLOAD_URL_XRAY"" ]; then
         wget -q ""$DOWNLOAD_URL_XRAY"" -O /tmp/xray_util.zip && unzip -o /tmp/xray_util.zip xray -d /usr/local/bin/ && chmod +x /usr/local/bin/xray
@@ -474,9 +474,41 @@ WantedBy=multi-user.target";
         if (core == "sing-box")
         {
             baseConfig["log"] = new JsonObject { ["level"] = "info", ["timestamp"] = true, ["output"] = "/var/log/sing-box/access.log" }; 
+            baseConfig["dns"] = new JsonObject
+            {
+                ["servers"] = new JsonArray
+                {
+                    new JsonObject { ["type"] = "https", ["tag"] = "remote", ["server"] = "8.8.8.8", ["domain_resolver"] = "local" },
+                    new JsonObject { ["type"] = "udp", ["tag"] = "local", ["server"] = "8.8.8.8" }
+                },
+                ["rules"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["domain_suffix"] = new JsonArray { "openai.com", "chatgpt.com", "auth0.com", "google.com", "gemini.google.com", "googleapis.com", "generativelanguage.googleapis.com", "claude.ai", "anthropic.com" },
+                        ["server"] = "remote"
+                    }
+                },
+                ["final"] = "remote",
+                ["strategy"] = "prefer_ipv4"
+            };
             baseConfig["inbounds"] = inboundsArray;
             baseConfig["outbounds"] = new JsonArray { new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, new JsonObject { ["type"] = "block", ["tag"] = "block" } };
-            baseConfig["route"] = new JsonObject { ["rules"] = new JsonArray(), ["final"] = "direct" };
+            baseConfig["route"] = new JsonObject
+            {
+                ["default_domain_resolver"] = "local",
+                ["rules"] = new JsonArray
+                {
+                    new JsonObject { ["action"] = "sniff" },
+                    new JsonObject
+                    {
+                        ["domain_suffix"] = new JsonArray { "openai.com", "chatgpt.com", "auth0.com", "google.com", "gemini.google.com", "googleapis.com", "generativelanguage.googleapis.com", "claude.ai", "anthropic.com" },
+                        ["outbound"] = "direct"
+                    }
+                },
+                ["final"] = "direct",
+                ["auto_detect_interface"] = true
+            };
             baseConfig["experimental"] = new JsonObject 
             { 
                 ["clash_api"] = new JsonObject 

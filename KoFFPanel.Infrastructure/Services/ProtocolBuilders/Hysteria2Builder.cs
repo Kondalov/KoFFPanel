@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Application.Interfaces.ProtocolBuilders;
 using KoFFPanel.Domain.Entities;
 using System;
@@ -16,14 +16,11 @@ public class Hysteria2Builder : IProtocolBuilder
 
     public async Task<ServerInbound> GenerateNewInboundAsync(ISshService ssh, int port)
     {
-        // Магия генерации самоподписанного TLS-сертификата (нужен для Hy2)
         string certPath = $"/etc/sing-box/hy2_{port}.crt";
         string keyPath = $"/etc/sing-box/hy2_{port}.key";
         
-        // FOOLPROOF: Гарантируем наличие директории перед генерацией openssl
         await ssh.ExecuteCommandAsync("mkdir -p /etc/sing-box");
-        
-        string certCmd = $"openssl req -x509 -nodes -newkey rsa:2048 -keyout {keyPath} -out {certPath} -days 3650 -subj \"/CN=bing.com\" 2>/dev/null";
+        string certCmd = $"if [ ! -f \"{certPath}\" ] || [ ! -f \"{keyPath}\" ]; then openssl ecparam -genkey -name prime256v1 -out \"{keyPath}\" 2>/dev/null && openssl req -new -x509 -days 3650 -key \"{keyPath}\" -out \"{certPath}\" -subj \"/CN=bing.com\" 2>/dev/null; fi";
         await ssh.ExecuteCommandAsync(certCmd);
 
         string obfsPassword = Guid.NewGuid().ToString("N").Substring(0, 10);
@@ -52,6 +49,7 @@ public class Hysteria2Builder : IProtocolBuilder
         string obfs = settings.GetProperty("obfsPassword").GetString() ?? "";
 
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
-        return $"hy2://{clientUuid}@{safeIp}:{inbound.Port}?sni={sni}&insecure=1&obfs=salamander&obfs-password={obfs}#KoFFPanel-{clientEmail}";
+        string encodedName = Uri.EscapeDataString($"KoFFPanel-{clientEmail}");
+        return $"hy2://{clientUuid}@{safeIp}:{inbound.Port}?sni={sni}&insecure=1&obfs=salamander&obfs-password={obfs}&alpn=h3#{encodedName}";
     }
 }

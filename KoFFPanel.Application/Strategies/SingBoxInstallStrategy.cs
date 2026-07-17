@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Application.Templates;
 using KoFFPanel.Application.DTOs;
 using System;
@@ -48,7 +48,7 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
             
             echo "5. Поиск версии..."
             TAG=$(curl -sL --connect-timeout 5 https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name 2>/dev/null)
-            if [ -z "$TAG" ] || [ "$TAG" == "null" ]; then TAG="v1.13.11"; fi
+            if [ -z "$TAG" ] || [ "$TAG" == "null" ]; then TAG="v1.13.14"; fi
             
             URL="https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${TAG#v}-linux-${DL_ARCH}.tar.gz"
             
@@ -129,10 +129,10 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
 
             string configJson = SingBoxRealityConfigTemplate.GenerateServerConfig(vpnPort, result.Uuid, sni, result.PrivateKey, result.ShortId);
             string base64Json = Convert.ToBase64String(Encoding.UTF8.GetBytes(configJson.Replace("\r", "")));
-            await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /etc/sing-box/config.json");
+            await ssh.ExecuteCommandAsync($"mkdir -p /var/log/sing-box /etc/sing-box && chmod 777 /var/log/sing-box && echo '{base64Json}' | base64 -d > /etc/sing-box/config.json");
 
             // ИСПРАВЛЕНИЕ: Добавлено 2>&1, чтобы ловить фатальные ошибки, уходящие в STDERR
-            var checkConfig = await ssh.ExecuteCommandAsync("/usr/local/bin/sing-box check -c /etc/sing-box/config.json 2>&1");
+            var checkConfig = await ssh.ExecuteCommandAsync("mkdir -p /var/log/sing-box && /usr/local/bin/sing-box check -c /etc/sing-box/config.json 2>&1");
             if (checkConfig.Contains("FATAL", StringComparison.OrdinalIgnoreCase) || checkConfig.Contains("error", StringComparison.OrdinalIgnoreCase))
             {
                 return (false, $"ОШИБКА: Ядро Sing-box отклонило конфиг!\nЛог: {checkConfig.Trim()}", null);
@@ -148,6 +148,7 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
             [Service]
             CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
             AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+            ExecStartPre=/bin/mkdir -p /var/log/sing-box
             ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
             ExecReload=/bin/kill -HUP $MAINPID
             ExecStopPost=/bin/sleep 2

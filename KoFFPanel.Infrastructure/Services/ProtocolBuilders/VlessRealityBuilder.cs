@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Application.Interfaces.ProtocolBuilders;
 using KoFFPanel.Domain.Entities;
 using System;
@@ -59,8 +59,8 @@ public class VlessRealityBuilder : IProtocolBuilder
         string shortId = settings.GetProperty("shortId").GetString() ?? "";
 
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+        string encodedName = Uri.EscapeDataString($"KoFFPanel-{clientEmail}");
 
-        // ИСПРАВЛЕНИЕ: Добавлен alpn=h2 для Hiddify 4.1.1
-        return $"vless://{clientUuid}@{safeIp}:{inbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#KoFFPanel-{clientEmail}";
+        return $"vless://{clientUuid}@{safeIp}:{inbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
     }
 }

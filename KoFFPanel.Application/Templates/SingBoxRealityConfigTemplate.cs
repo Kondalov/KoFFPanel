@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -36,6 +36,39 @@ public static class SingBoxRealityConfigTemplate
           "log": {
             "level": "info",
             "timestamp": true
+          },
+          "dns": {
+            "servers": [
+              {
+                "type": "https",
+                "tag": "remote",
+                "server": "8.8.8.8",
+                "domain_resolver": "local"
+              },
+              {
+                "type": "udp",
+                "tag": "local",
+                "server": "8.8.8.8"
+              }
+            ],
+            "rules": [
+              {
+                "domain_suffix": [
+                  "openai.com",
+                  "chatgpt.com",
+                  "auth0.com",
+                  "google.com",
+                  "gemini.google.com",
+                  "googleapis.com",
+                  "generativelanguage.googleapis.com",
+                  "claude.ai",
+                  "anthropic.com"
+                ],
+                "server": "remote"
+              }
+            ],
+            "final": "remote",
+            "strategy": "prefer_ipv4"
           },
           "inbounds": [
             {
@@ -78,10 +111,24 @@ public static class SingBoxRealityConfigTemplate
             }
           ],
           "route": {
+            "default_domain_resolver": "local",
             "rules": [
               {
-                "inbound": "vless-in",
                 "action": "sniff"
+              },
+              {
+                "domain_suffix": [
+                  "openai.com",
+                  "chatgpt.com",
+                  "auth0.com",
+                  "google.com",
+                  "gemini.google.com",
+                  "googleapis.com",
+                  "generativelanguage.googleapis.com",
+                  "claude.ai",
+                  "anthropic.com"
+                ],
+                "outbound": "direct"
               },
               {
                 "user": {{blockedUsersJson}},

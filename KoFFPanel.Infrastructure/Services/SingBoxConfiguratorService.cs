@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using System.Threading.Tasks;
 
 namespace KoFFPanel.Infrastructure.Services;
@@ -19,9 +19,9 @@ public class SingBoxConfiguratorService : ISingBoxConfiguratorService
         // Sing-box 1.11+ поддерживает классические dat файлы, если они указаны в конфиге, 
         // но лучше скачать их в /var/lib/sing-box/ или аналогичное место.
         string cmd = @"
-mkdir -p /var/lib/sing-box
-curl -L -s -o /var/lib/sing-box/geoip.db https://github.com/SagerNet/sing-geosite/releases/latest/download/geoip.db
-curl -L -s -o /var/lib/sing-box/geosite.db https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db
+mkdir -p /var/lib/sing-box /etc/sing-box
+curl -L -s --retry 3 --connect-timeout 10 -o /var/lib/sing-box/geoip.db https://github.com/SagerNet/sing-geoip/releases/latest/download/geoip.db
+curl -L -s --retry 3 --connect-timeout 10 -o /var/lib/sing-box/geosite.db https://github.com/SagerNet/sing-geosite/releases/latest/download/geosite.db
 echo 'SUCCESS'
 ";
         var res = await ssh.ExecuteCommandAsync(cmd);

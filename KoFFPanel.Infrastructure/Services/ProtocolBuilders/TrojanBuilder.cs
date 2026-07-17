@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Application.Interfaces.ProtocolBuilders;
 using KoFFPanel.Domain.Entities;
 using System;
@@ -49,6 +49,6 @@ public partial class TrojanBuilder : IProtocolBuilder
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
         string encodedName = Uri.EscapeDataString($"KoFFPanel-{clientEmail}");
 
-        return $"trojan://{clientUuid}@{safeIp}:{inbound.Port}?security=tls&sni={sni}&type=tcp&alpn=http/1.1%2Ch2&insecure=1#{encodedName}";
+        return $"trojan://{clientUuid}@{safeIp}:{inbound.Port}?security=tls&sni={sni}&type=tcp&alpn=h2,http/1.1&allowInsecure=1&insecure=1#{encodedName}";
     }
 }
