@@ -1,13 +1,14 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
+using KoFFPanel.Domain.Utilities;
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Threading.Tasks;
-using CommunityToolkit.Mvvm.Input;
-using Microsoft.Extensions.DependencyInjection;
 using System.Runtime.Versioning;
+using System.Threading.Tasks;
 
 namespace KoFFPanel.Presentation.Features.Analytics;
 
@@ -147,7 +148,7 @@ public partial class ClientAnalyticsViewModel : ObservableObject
                     TrafficLogs.Add(new TrafficItemUI
                     {
                         DateStr = t.Date.ToString("dd MMMM yyyy"),
-                        TrafficUsedStr = FormatBytes(t.BytesUsed),
+                        TrafficUsedStr = ByteFormatter.Format(t.BytesUsed),
                         BarWidth = barWidth,
                         StatusText = status,
                         StatusColor = statusColor,
@@ -175,14 +176,5 @@ public partial class ClientAnalyticsViewModel : ObservableObject
         {
             _logger.Log("UI-ERR", $"Ошибка рендера аналитики: {ex.Message}");
         }
-    }
-
-    private string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        int counter = 0; decimal number = bytes;
-        while (Math.Round(number / 1024) >= 1) { number /= 1024; counter++; }
-        return string.Format("{0:n2} {1}", number, suffixes[counter]);
     }
 }

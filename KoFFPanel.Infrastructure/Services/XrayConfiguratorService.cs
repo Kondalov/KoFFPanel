@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using System;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -64,6 +64,14 @@ public class XrayConfiguratorService : IXrayConfiguratorService
                   "statsOutboundUplink": true, "statsOutboundDownlink": true
                 }
               },
+              "dns": {
+                "servers": [
+                  "1.1.1.1",
+                  "8.8.8.8",
+                  "https://dns.google/dns-query"
+                ],
+                "queryStrategy": "UseIPv4"
+              },
               "inbounds": [
                 {
                   "port": 443,
@@ -104,8 +112,20 @@ public class XrayConfiguratorService : IXrayConfiguratorService
                 }
               ],
               "outbounds": [
-                { "protocol": "freedom", "tag": "direct" },
-                { "protocol": "freedom", "tag": "torrent-logger" },
+                {
+                  "protocol": "freedom",
+                  "tag": "direct",
+                  "settings": {
+                    "domainStrategy": "UseIPv4"
+                  }
+                },
+                {
+                  "protocol": "freedom",
+                  "tag": "torrent-logger",
+                  "settings": {
+                    "domainStrategy": "UseIPv4"
+                  }
+                },
                 { "protocol": "blackhole", "tag": "block" }
               ],
               "routing": {

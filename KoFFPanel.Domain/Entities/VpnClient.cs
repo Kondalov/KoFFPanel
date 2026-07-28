@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.ComponentModel.DataAnnotations.Schema;
@@ -228,21 +228,7 @@ public class VpnClient : INotifyPropertyChanged
         ? LastOnline.Value.ToString("dd MMM HH:mm")
         : "Никогда";
 
-    private string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        int counter = 0;
-        decimal number = bytes;
-
-        while (Math.Round(number / 1024) >= 1)
-        {
-            number /= 1024;
-            counter++;
-        }
-
-        return string.Format("{0:n2} {1}", number, suffixes[counter]);
-    }
+    private string FormatBytes(long bytes) => Utilities.ByteFormatter.Format(bytes);
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

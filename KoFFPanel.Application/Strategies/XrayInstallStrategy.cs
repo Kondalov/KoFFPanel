@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Application.Templates;
 using KoFFPanel.Application.DTOs;
 using System;
@@ -38,10 +38,21 @@ public class XrayInstallStrategy : ICoreInstallStrategy
             var pids = await ssh.ExecuteCommandAsync($"lsof -t -i:{vpnPort} || true");
             if (!string.IsNullOrWhiteSpace(pids)) await ssh.ExecuteCommandAsync($"kill -9 {pids.Trim().Replace('\n', ' ')}");
 
-            await ssh.ExecuteCommandAsync("mkdir -p /usr/local/etc/xray /var/log/xray");
-            await ssh.ExecuteCommandAsync("curl -L -s -o /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip");
-            await ssh.ExecuteCommandAsync("unzip -o -q /tmp/xray.zip -d /usr/local/bin/ xray");
-            await ssh.ExecuteCommandAsync("chmod +x /usr/local/bin/xray");
+            string installScript = """
+            mkdir -p /usr/local/etc/xray /var/log/xray /usr/local/share/xray
+            ARCH=$(uname -m)
+            case "$ARCH" in
+                x86_64|amd64) ZIP_NAME="Xray-linux-64.zip" ;;
+                aarch64|arm64) ZIP_NAME="Xray-linux-arm64-v8a.zip" ;;
+                armv7*) ZIP_NAME="Xray-linux-arm32-v7a.zip" ;;
+                *) ZIP_NAME="Xray-linux-64.zip" ;;
+            esac
+
+            curl -L -s -o /tmp/xray.zip "https://github.com/XTLS/Xray-core/releases/latest/download/${ZIP_NAME}"
+            unzip -o -q /tmp/xray.zip -d /usr/local/bin/ xray
+            chmod +x /usr/local/bin/xray
+            """;
+            await ssh.ExecuteCommandAsync(installScript);
 
             // ПЕРЕИСПОЛЬЗОВАНИЕ КЛЮЧЕЙ ИЗ БАЗЫ
             string finalUuid = existingUuid;

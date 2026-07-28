@@ -183,14 +183,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         CurrentView = view;
     }
 
-    private string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "0 B";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        int counter = 0; decimal number = bytes;
-        while (Math.Round(number / 1024) >= 1) { number /= 1024; counter++; }
-        return string.Format("{0:n2} {1}", number, suffixes[counter]);
-    }
+    private string FormatBytes(long bytes) => KoFFPanel.Domain.Utilities.ByteFormatter.Format(bytes);
 
     private bool _isReloadingServers = false;
 

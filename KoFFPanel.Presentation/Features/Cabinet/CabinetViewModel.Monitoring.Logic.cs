@@ -316,7 +316,7 @@ public partial class CabinetViewModel
             if (trafficStats.TryGetValue(email, out long currentBytes))
             {
                 long prev = _previousTrafficStats.TryGetValue(email, out long p) ? p : 0;
-                delta = currentBytes >= prev ? currentBytes - prev : currentBytes;
+                delta = (prev > 0 && currentBytes >= prev) ? currentBytes - prev : 0;
                 if (delta > 0)
                 {
                     newTrafficUsed += delta;

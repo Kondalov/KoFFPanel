@@ -1,11 +1,12 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
+using KoFFPanel.Domain.Utilities;
+using System;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Runtime.Versioning;
-using System;
+using System.Threading.Tasks;
 
 namespace KoFFPanel.Presentation.Features.Analytics;
 
@@ -67,21 +68,12 @@ public partial class FraudScoringViewModel : ObservableObject
                     MaxSessions = log.MaxConcurrentSessions,
                     AsnCount = log.UniqueAsnCount,
                     GeoJumps = log.GeoJumpsCount,
-                    TrafficSpike = FormatBytes(log.BytesUsedSpike),
+                    TrafficSpike = ByteFormatter.Format(log.BytesUsedSpike, "-"),
                     RiskScore = log.RiskScore,
                     RiskColor = color,
                     RiskText = text
                 });
             }
         });
-    }
-
-    private string FormatBytes(long bytes)
-    {
-        if (bytes == 0) return "-";
-        string[] suffixes = { "B", "KB", "MB", "GB", "TB" };
-        int counter = 0; decimal number = bytes;
-        while (Math.Round(number / 1024) >= 1) { number /= 1024; counter++; }
-        return string.Format("{0:n2} {1}", number, suffixes[counter]);
     }
 }

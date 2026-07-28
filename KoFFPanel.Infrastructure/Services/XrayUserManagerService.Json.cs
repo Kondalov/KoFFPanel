@@ -212,6 +212,7 @@ public partial class XrayUserManagerService
             {
                 foreach (var inbound in inbounds)
                 {
+                    if (inbound == null) continue;
                     var portToken = inbound["port"] ?? inbound["listen_port"];
                     if (portToken != null && int.TryParse(portToken.ToString(), out int p)) ports.Add(p);
                 }
@@ -219,11 +220,12 @@ public partial class XrayUserManagerService
         }
         catch { }
 
-        string fwCmds = "";
+        var sbFw = new StringBuilder();
         foreach (var p in ports)
         {
-            fwCmds += $"{s} ufw allow {p}/tcp 2>/dev/null; {s} ufw allow {p}/udp 2>/dev/null; {s} iptables -I INPUT -p tcp --dport {p} -j ACCEPT 2>/dev/null; {s} iptables -I INPUT -p udp --dport {p} -j ACCEPT 2>/dev/null; ";
+            sbFw.Append($"{s} ufw allow {p}/tcp 2>/dev/null; {s} ufw allow {p}/udp 2>/dev/null; {s} iptables -I INPUT -p tcp --dport {p} -j ACCEPT 2>/dev/null; {s} iptables -I INPUT -p udp --dport {p} -j ACCEPT 2>/dev/null; ");
         }
+        string fwCmds = sbFw.ToString();
 
         string applyCmd = $"{fwCmds} " +
                           $"{s} \\cp -f /usr/local/etc/xray/config.json /usr/local/etc/xray/config.backup.json; " +

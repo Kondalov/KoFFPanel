@@ -88,7 +88,7 @@ public partial class CabinetViewModel
                 }
             }
         }
-        catch (Exception ex) { ServerStatus = "Ошибка приложения."; }
+        catch (Exception) { ServerStatus = "Ошибка приложения."; }
     }
 
     [RelayCommand]
@@ -237,7 +237,7 @@ public partial class CabinetViewModel
                 }
             }
         }
-        catch (Exception ex) { ServerStatus = "Ошибка приложения."; }
+        catch (Exception) { ServerStatus = "Ошибка приложения."; }
     }
 
     [RelayCommand]

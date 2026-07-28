@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace KoFFPanel.Application.Templates;
 
@@ -6,6 +6,7 @@ public static class XrayRealityConfigTemplate
 {
     public static string Generate(string ipVersion, int port, string uuid, string sni, string privateKey, string shortId)
     {
+        string targetSni = string.IsNullOrWhiteSpace(sni) ? "dl.google.com" : sni;
         return $$"""
         {
           "log": {
@@ -27,6 +28,14 @@ public static class XrayRealityConfigTemplate
               "statsOutboundUplink": true, "statsOutboundDownlink": true
             }
           },
+          "dns": {
+            "servers": [
+              "1.1.1.1",
+              "8.8.8.8",
+              "https://dns.google/dns-query"
+            ],
+            "queryStrategy": "UseIPv4"
+          },
           "inbounds": [
             {
               "port": {{port}},
@@ -40,9 +49,9 @@ public static class XrayRealityConfigTemplate
                 "security": "reality",
                 "realitySettings": {
                   "show": false,
-                  "dest": "google.com:443",
+                  "dest": "{{targetSni}}:443",
                   "xver": 0,
-                  "serverNames": ["google.com"],
+                  "serverNames": ["{{targetSni}}"],
                   "privateKey": "{{privateKey}}",
                   "shortIds": ["{{shortId}}"]
                 }
@@ -62,8 +71,20 @@ public static class XrayRealityConfigTemplate
             }
           ],
           "outbounds": [
-            { "protocol": "freedom", "tag": "direct" },
-            { "protocol": "freedom", "tag": "torrent-logger" },
+            {
+              "protocol": "freedom",
+              "tag": "direct",
+              "settings": {
+                "domainStrategy": "UseIPv4"
+              }
+            },
+            {
+              "protocol": "freedom",
+              "tag": "torrent-logger",
+              "settings": {
+                "domainStrategy": "UseIPv4"
+              }
+            },
             { "protocol": "blackhole", "tag": "block" }
           ],
           "routing": {

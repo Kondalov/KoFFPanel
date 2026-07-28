@@ -146,8 +146,16 @@ private_key_path = ""certs/key.pem""";
         string protocol = inboundDb.Protocol.ToLower();
         int safePort = Convert.ToInt32(inboundDb.Port);
 
+        var sniffingObj = new JsonObject
+        {
+            ["enabled"] = true,
+            ["destOverride"] = new JsonArray { "http", "tls", "quic" },
+            ["routeOnly"] = true
+        };
+
         if (protocol == "vless")
         {
+            string sni = settings?["sni"]?.ToString() ?? "dl.google.com";
             return new JsonObject
             {
                 ["protocol"] = "vless",
@@ -165,12 +173,13 @@ private_key_path = ""certs/key.pem""";
                     ["realitySettings"] = new JsonObject
                     {
                         ["show"] = false,
-                        ["dest"] = $"{settings?["sni"]}:443",
-                        ["serverNames"] = new JsonArray { settings?["sni"]?.ToString() },
+                        ["dest"] = $"{sni}:443",
+                        ["serverNames"] = new JsonArray { sni },
                         ["privateKey"] = settings?["privateKey"]?.ToString(),
                         ["shortIds"] = new JsonArray { settings?["shortId"]?.ToString() }
                     }
-                }
+                },
+                ["sniffing"] = sniffingObj
             };
         }
         else if (protocol == "trojan")
@@ -199,7 +208,8 @@ private_key_path = ""certs/key.pem""";
                             }
                         }
                     }
-                }
+                },
+                ["sniffing"] = sniffingObj
             };
         }
         else if (protocol == "shadowsocks")
@@ -211,10 +221,11 @@ private_key_path = ""certs/key.pem""";
                 ["port"] = safePort,
                 ["settings"] = new JsonObject
                 {
-                    ["method"] = settings?["method"]?.ToString() ?? "aes-256-gcm",
+                    ["method"] = settings?["method"]?.ToString() ?? "2022-blake3-aes-128-gcm",
                     ["clients"] = new JsonArray { new JsonObject { ["email"] = "init", ["password"] = "init_pass" } },
                     ["network"] = "tcp,udp"
-                }
+                },
+                ["sniffing"] = sniffingObj
             };
         }
         return null;

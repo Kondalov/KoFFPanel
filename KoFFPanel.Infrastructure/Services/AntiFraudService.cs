@@ -74,7 +74,7 @@ public class AntiFraudService : IAntiFraudService
         // Вызов нового, защищенного метода проверки геолокации
         UpdateGeoMetrics(log, email, client.Country);
 
-        if (trafficDelta > 1073741824L)
+        if (trafficDelta > 524_288_000L && trafficDelta < 50_000_000_000L)
             log.BytesUsedSpike += trafficDelta;
     }
 

@@ -122,7 +122,10 @@ public partial class SingBoxUserManagerService
             }
         }
 
-        await ApplyP2PRulesAsync(root, serverIp);
+        if (root != null)
+        {
+            await ApplyP2PRulesAsync(root, serverIp);
+        }
         await _dbContext.SaveChangesAsync();
     }
 
@@ -312,6 +315,7 @@ public partial class SingBoxUserManagerService
             {
                 foreach (var inbound in inbounds)
                 {
+                    if (inbound == null) continue;
                     var portToken = inbound["listen_port"] ?? inbound["port"];
                     if (portToken != null && int.TryParse(portToken.ToString(), out int p)) ports.Add(p);
                 }
@@ -319,13 +323,15 @@ public partial class SingBoxUserManagerService
         }
         catch { }
 
-        string fwCmds = "";
+        var sbFw = new StringBuilder();
         foreach (var p in ports)
         {
-            fwCmds += $"{s} ufw allow {p}/tcp 2>/dev/null; {s} ufw allow {p}/udp 2>/dev/null; {s} iptables -I INPUT -p tcp --dport {p} -j ACCEPT 2>/dev/null; {s} iptables -I INPUT -p udp --dport {p} -j ACCEPT 2>/dev/null; ";
+            sbFw.Append($"{s} ufw allow {p}/tcp 2>/dev/null; {s} ufw allow {p}/udp 2>/dev/null; {s} iptables -I INPUT -p tcp --dport {p} -j ACCEPT 2>/dev/null; {s} iptables -I INPUT -p udp --dport {p} -j ACCEPT 2>/dev/null; ");
         }
+        string fwCmds = sbFw.ToString();
 
         string applyCmd = $"{fwCmds} " +
+                          $"{s} sysctl -w net.core.rmem_max=16777216 net.core.wmem_max=16777216 2>/dev/null || true; " +
                           $"{s} \\cp -f /etc/sing-box/config.json /etc/sing-box/config.backup.json; " +
                           $"{s} \\mv -f /tmp/sb_test.json /etc/sing-box/config.json; " +
                           $"{s} killall -HUP sing-box 2>/dev/null || {s} systemctl restart sing-box";

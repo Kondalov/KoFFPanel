@@ -139,6 +139,14 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
             }
 
             string serviceScript = """
+            cat << 'EOF' > /etc/sysctl.d/99-singbox.conf
+            net.core.rmem_max = 16777216
+            net.core.wmem_max = 16777216
+            net.core.rmem_default = 8388608
+            net.core.wmem_default = 8388608
+            EOF
+            sysctl -p /etc/sysctl.d/99-singbox.conf 2>/dev/null || sysctl -w net.core.rmem_max=16777216 net.core.wmem_max=16777216 2>/dev/null || true
+
             cat << 'EOF' > /etc/systemd/system/sing-box.service
             [Unit]
             Description=sing-box service
@@ -149,6 +157,7 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
             CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
             AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
             ExecStartPre=/bin/mkdir -p /var/log/sing-box
+            ExecStartPre=/sbin/sysctl -w net.core.rmem_max=16777216 net.core.wmem_max=16777216
             ExecStart=/usr/local/bin/sing-box run -c /etc/sing-box/config.json
             ExecReload=/bin/kill -HUP $MAINPID
             ExecStopPost=/bin/sleep 2
