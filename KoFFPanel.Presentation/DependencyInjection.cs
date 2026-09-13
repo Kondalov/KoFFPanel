@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Infrastructure.Services;
 using KoFFPanel.Presentation.Services;
 using KoFFPanel.Presentation.Features.Bot;
@@ -84,6 +84,8 @@ public static class DependencyInjection
 
         services.AddSingleton<IClientAnalyticsService, ClientAnalyticsService>();
         services.AddTransient<IAntiFraudService, AntiFraudService>();
+        services.AddTransient<IRealitySniScannerService, RealitySniScannerService>();
+        services.AddTransient<IAcmeCertificateService, AcmeCertificateService>();
 
         // 2. Сервисы UI и Билдеры
         services.AddTransient<IFilePickerService, FilePickerService>();

@@ -1,8 +1,9 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 
 namespace KoFFPanel.Application.Interfaces;
 
 public interface ISingBoxConfiguratorService
 {
     Task<(bool IsSuccess, string Message)> UpdateGeoDataAsync(ISshService ssh);
+    Task<(bool IsSuccess, string Message)> CompileAndDeployRuleSetsAsync(ISshService ssh);
 }

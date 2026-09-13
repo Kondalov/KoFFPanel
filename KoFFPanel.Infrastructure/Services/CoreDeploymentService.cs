@@ -17,12 +17,21 @@ public partial class CoreDeploymentService : ICoreDeploymentService
     private readonly IAppLogger _logger;
     private readonly IProfileRepository _profileRepository;
     private readonly ISubscriptionService _subscriptionService;
+    private readonly IAcmeCertificateService? _acmeService;
+    private readonly ISingBoxConfiguratorService? _singBoxConfigurator;
 
-    public CoreDeploymentService(IAppLogger logger, IProfileRepository profileRepository, ISubscriptionService subscriptionService)
+    public CoreDeploymentService(
+        IAppLogger logger, 
+        IProfileRepository profileRepository, 
+        ISubscriptionService subscriptionService,
+        IAcmeCertificateService? acmeService = null,
+        ISingBoxConfiguratorService? singBoxConfigurator = null)
     {
         _logger = logger;
         _profileRepository = profileRepository;
         _subscriptionService = subscriptionService;
+        _acmeService = acmeService;
+        _singBoxConfigurator = singBoxConfigurator;
     }
 
     public async Task<(bool IsSuccess, string Message)> RunPreFlightChecksAsync(ISshService ssh)
@@ -167,6 +176,13 @@ echo 'READY|Сервер готов к установке.'
                     profile.Inbounds.Add(inboundDb);
             }
 
+            if (!string.IsNullOrWhiteSpace(profile.CustomDomain) && _acmeService != null)
+            {
+                await LogStep($"[ACME] Проверка и подготовка SSL-сертификата Let's Encrypt для {profile.CustomDomain}...");
+                var acmeRes = await _acmeService.EnsureCertificateAsync(ssh, profile.IpAddress, profile.CustomDomain);
+                await LogStep($"[ACME] {acmeRes.Message}");
+            }
+
             await LogStep("[4/7] Настройка Firewall и Threat Shield...");
             await LogStep("Активация Threat Shield (превентивная блокировка Censys/Shodan/Shadowserver)...");
             await ConfigureThreatShieldAsync(ssh, sudoPrefix);
@@ -178,6 +194,12 @@ echo 'READY|Сервер готов к установке.'
             }
 
             await LogStep("[5/7] Развертывание файлов конфигурации...");
+            if (string.Equals(coreType, "sing-box", StringComparison.OrdinalIgnoreCase) && _singBoxConfigurator != null)
+            {
+                await LogStep("Сборка и развертывание бинарных SRS правил маршрутизации (Sing-box)...");
+                await _singBoxConfigurator.CompileAndDeployRuleSetsAsync(ssh);
+            }
+
             if (string.Equals(coreType, "trusttunnel", StringComparison.OrdinalIgnoreCase)) await DeployTrustTunnelConfigAsync(ssh, profile, sudoPrefix, protocols);
             else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
 
