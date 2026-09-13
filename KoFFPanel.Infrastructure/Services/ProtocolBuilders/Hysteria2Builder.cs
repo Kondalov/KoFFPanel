@@ -20,7 +20,7 @@ public class Hysteria2Builder : IProtocolBuilder
         string keyPath = $"/etc/sing-box/hy2_{port}.key";
         
         await ssh.ExecuteCommandAsync("mkdir -p /etc/sing-box");
-        string certCmd = $"if [ ! -f \"{certPath}\" ] || [ ! -f \"{keyPath}\" ]; then openssl ecparam -genkey -name prime256v1 -out \"{keyPath}\" 2>/dev/null && openssl req -new -x509 -days 3650 -key \"{keyPath}\" -out \"{certPath}\" -subj \"/CN=bing.com\" 2>/dev/null; fi";
+        string certCmd = $"if [ ! -f \"{certPath}\" ] || [ ! -f \"{keyPath}\" ]; then openssl ecparam -genkey -name prime256v1 -out \"{keyPath}\" 2>/dev/null && openssl req -new -x509 -days 90 -key \"{keyPath}\" -out \"{certPath}\" -subj \"/CN=bing.com\" 2>/dev/null; fi";
         await ssh.ExecuteCommandAsync(certCmd);
 
         string obfsPassword = Guid.NewGuid().ToString("N").Substring(0, 10);

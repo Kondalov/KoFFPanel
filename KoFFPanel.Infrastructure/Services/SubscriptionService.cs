@@ -52,10 +52,10 @@ public class SubscriptionService : ISubscriptionService
             await ssh.ExecuteCommandAsync($"{s} chown -R $USER:$USER /var/www/xray-sub");
             await ssh.ExecuteCommandAsync($"{s} chmod -R 755 /var/www/xray-sub");
 
-            // УЛУЧШЕННЫЙ СКРИПТ: Прямой бинд на 0.0.0.0:8081
+            // УЛУЧШЕННЫЙ СКРИПТ: Прямой бинд на 0.0.0.0:8081 с адаптивной отдачей форматов (Clash/Sing-box/Base64)
             string pyScript = @"
 import http.server, socketserver, os, sys
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 class H(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self):
@@ -68,8 +68,7 @@ class H(http.server.BaseHTTPRequestHandler):
         try:
             parsed_path = urlparse(self.path)
             p = parsed_path.path.strip('/')
-            
-            print(f'DEBUG: Request path: {self.path}, Cleaned path: {p}')
+            query = parse_qs(parsed_path.query)
             
             if p == 'ping':
                 self.send_response(200)
@@ -82,16 +81,36 @@ class H(http.server.BaseHTTPRequestHandler):
                 self.send_error(404, 'Not Found')
                 return
             
-            fpath = os.path.join('/var/www/xray-sub/', p)
-            if os.path.isfile(fpath):
-                with open(fpath, 'rb') as f:
+            ua = self.headers.get('User-Agent', '').lower()
+            fmt = query.get('format', [''])[0].lower()
+            
+            is_clash = fmt == 'clash' or any(k in ua for k in ['clash', 'mihomo', 'stash', 'meta'])
+            is_singbox = fmt == 'singbox' or any(k in ua for k in ['sing-box', 'sfa', 'sfi', 'karing'])
+            
+            base_dir = '/var/www/xray-sub/'
+            target_file = os.path.join(base_dir, p)
+            content_type = 'text/plain; charset=utf-8'
+            
+            if is_clash:
+                clash_file = os.path.join(base_dir, f'{p}.clash.yaml')
+                if os.path.isfile(clash_file):
+                    target_file = clash_file
+                    content_type = 'text/yaml; charset=utf-8'
+            elif is_singbox:
+                sb_file = os.path.join(base_dir, f'{p}.singbox.json')
+                if os.path.isfile(sb_file):
+                    target_file = sb_file
+                    content_type = 'application/json; charset=utf-8'
+            
+            if os.path.isfile(target_file):
+                with open(target_file, 'rb') as f:
                     content = f.read()
                 
                 self.send_response(200)
-                self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                self.send_header('Content-Type', content_type)
                 self.send_header('Content-Length', str(len(content)))
                 
-                # FOOLPROOF: Жесткий запрет кэширования (Cloudflare & Hiddify bypass)
+                # Жесткий запрет кэширования
                 self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0')
                 self.send_header('Pragma', 'no-cache')
                 self.send_header('Expires', '0')
@@ -113,7 +132,7 @@ class H(http.server.BaseHTTPRequestHandler):
 socketserver.TCPServer.allow_reuse_address = True
 try:
     with socketserver.ThreadingTCPServer(('0.0.0.0', 8081), H) as d:
-        print('Starting subscription server on port 8081...')
+        print('Starting universal subscription server on port 8081...')
         d.serve_forever()
 except Exception as e:
     print(f'Fatal server error: {e}')
@@ -169,11 +188,19 @@ WantedBy=multi-user.target";
                 : string.Join("\n", validLinks);
 
             string finalBase64Payload = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(combinedLinks));
-            
-            string tempPath = $"/var/www/xray-sub/{uuid}.tmp";
-            string finalPath = $"/var/www/xray-sub/{uuid}";
+            string clashYaml = SubscriptionConfigConverter.GenerateClashYaml(validLinks);
+            string singboxJson = SubscriptionConfigConverter.GenerateSingBoxJson(validLinks);
 
-            await ssh.ExecuteCommandAsync($"printf '%s' '{finalBase64Payload}' | {s} tee {tempPath} >/dev/null && {s} mv {tempPath} {finalPath}");
+            string b64Clash = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(clashYaml));
+            string b64Singbox = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(singboxJson));
+
+            string cmd = $@"
+printf '%s' '{finalBase64Payload}' | {s} tee /var/www/xray-sub/{uuid}.tmp >/dev/null && {s} mv /var/www/xray-sub/{uuid}.tmp /var/www/xray-sub/{uuid}
+echo '{b64Clash}' | base64 -d | {s} tee /var/www/xray-sub/{uuid}.clash.yaml.tmp >/dev/null && {s} mv /var/www/xray-sub/{uuid}.clash.yaml.tmp /var/www/xray-sub/{uuid}.clash.yaml
+echo '{b64Singbox}' | base64 -d | {s} tee /var/www/xray-sub/{uuid}.singbox.json.tmp >/dev/null && {s} mv /var/www/xray-sub/{uuid}.singbox.json.tmp /var/www/xray-sub/{uuid}.singbox.json
+".Replace("\r", "");
+
+            await ssh.ExecuteCommandAsync(cmd);
 
             return true;
         }
@@ -189,7 +216,7 @@ WantedBy=multi-user.target";
         if (!ssh.IsConnected || string.IsNullOrEmpty(uuid)) return false;
         try
         {
-            await ssh.ExecuteCommandAsync($"rm -f /var/www/xray-sub/{uuid}");
+            await ssh.ExecuteCommandAsync($"rm -f /var/www/xray-sub/{uuid} /var/www/xray-sub/{uuid}.clash.yaml /var/www/xray-sub/{uuid}.singbox.json");
             return true;
         }
         catch
