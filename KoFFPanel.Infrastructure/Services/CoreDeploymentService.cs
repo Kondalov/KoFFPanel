@@ -167,7 +167,10 @@ echo 'READY|Сервер готов к установке.'
                     profile.Inbounds.Add(inboundDb);
             }
 
-            await LogStep("[4/7] Настройка Firewall (открытие портов)...");
+            await LogStep("[4/7] Настройка Firewall и Threat Shield...");
+            await LogStep("Активация Threat Shield (превентивная блокировка Censys/Shodan/Shadowserver)...");
+            await ConfigureThreatShieldAsync(ssh, sudoPrefix);
+
             foreach (var inbound in profile.Inbounds)
             {
                 await LogStep($"Открытие порта {inbound.Port} ({inbound.Protocol})...");
@@ -257,6 +260,60 @@ echo 'READY|Сервер готов к установке.'
             await LogStep($"КРИТИЧЕСКАЯ ОШИБКА ИСКЛЮЧЕНИЯ: {ex.Message}\n{ex.StackTrace}");
             return (false, ex.Message);
         }
+    }
+
+    private async Task ConfigureThreatShieldAsync(ISshService ssh, string sudoPrefix)
+    {
+        string script = @"
+if ! iptables -L KOFF_SHIELD -n >/dev/null 2>&1; then
+    iptables -N KOFF_SHIELD
+fi
+
+iptables -F KOFF_SHIELD
+
+if ! iptables -C INPUT -j KOFF_SHIELD >/dev/null 2>&1; then
+    iptables -I INPUT 1 -j KOFF_SHIELD
+fi
+
+SCANNERS=(
+    '162.142.125.0/24'
+    '167.94.138.0/24'
+    '167.94.145.0/24'
+    '167.94.146.0/24'
+    '167.248.133.0/24'
+    '192.35.169.0/23'
+    '206.168.32.0/21'
+    '66.240.205.34/32'
+    '71.6.135.131/32'
+    '71.6.165.200/32'
+    '71.6.167.142/32'
+    '82.221.105.6/32'
+    '82.221.105.7/32'
+    '85.25.43.94/32'
+    '98.143.148.107/32'
+    '185.180.143.0/24'
+    '198.20.69.74/32'
+    '198.20.70.114/32'
+    '198.20.87.98/32'
+    '198.20.99.130/32'
+    '208.180.20.97/32'
+    '209.126.110.38/32'
+    '216.117.2.180/32'
+    '216.218.206.0/24'
+    '184.105.139.0/24'
+    '184.105.247.0/24'
+)
+
+for net in ""${SCANNERS[@]}""; do
+    iptables -A KOFF_SHIELD -s ""$net"" -j DROP
+done
+
+mkdir -p /etc/iptables
+iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+".Replace("\r", "");
+
+        string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
+        await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash");
     }
 
     private async Task SafeOpenPortAsync(ISshService ssh, int port, string protocol, string sudoPrefix)

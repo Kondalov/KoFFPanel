@@ -97,6 +97,7 @@ private_key_path = ""certs/key.pem""";
                 ["listen_port"] = safePort,
                 ["users"] = new JsonArray { new JsonObject { ["name"] = "init", ["password"] = "init_pass" } },
                 ["ignore_client_bandwidth"] = true, // MODERN 2026
+                ["masquerade"] = "https://bing.com",
                 ["tls"] = new JsonObject
                 {
                     ["enabled"] = true,
