@@ -66,7 +66,8 @@ public partial class CabinetViewModel
 
                     if (success)
                     {
-                        var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                        using var scope = _serviceProvider.CreateScope();
+                        var freshContext = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                         var freshClient = await freshContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Email == vm.ClientName && c.ServerIp == ip);
 
                         if (freshClient != null)
@@ -216,7 +217,8 @@ public partial class CabinetViewModel
                         client.IsHysteria2Enabled = vm.IsHysteria2Enabled; client.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
                         client.IsTrojanEnabled = vm.IsTrojanEnabled; client.IsShadowsocksEnabled = vm.IsShadowsocksEnabled;
 
-                        var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                        using var scope = _serviceProvider.CreateScope();
+                        var freshContext = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                         var freshClient = await freshContext.Clients.AsNoTracking().FirstOrDefaultAsync(c => c.Uuid == client.Uuid);
 
                         if (freshClient != null)
@@ -290,7 +292,8 @@ public partial class CabinetViewModel
 
                 if (syncSuccess)
                 {
-                    var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                    using var scope = _serviceProvider.CreateScope();
+                    var freshContext = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                     var freshClient = freshContext.Clients.AsNoTracking().FirstOrDefault(c => c.Uuid == updatedClient.Uuid);
 
                     if (freshClient != null && _currentMonitoringSsh != null && _currentMonitoringSsh.IsConnected)

@@ -38,4 +38,33 @@ public partial class App : System.Windows.Application
         var mainWindow = Services.GetRequiredService<CabinetWindow>();
         mainWindow.Show();
     }
+
+    protected override async void OnExit(ExitEventArgs e)
+    {
+        try
+        {
+            var hostedServices = Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>();
+            using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
+            foreach (var service in hostedServices)
+            {
+                try
+                {
+                    await service.StopAsync(cts.Token);
+                }
+                catch
+                {
+                    // Ignore shutdown errors to ensure all services receive stop signal
+                }
+            }
+
+            if (Services is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
+        finally
+        {
+            base.OnExit(e);
+        }
+    }
 }

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
@@ -243,9 +243,10 @@ public partial class TerminalViewModel
 <html>
 <head>
     <meta charset=""utf-8"" />
-    <link rel=""stylesheet"" href=""https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"" />
-    <script src=""https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js""></script>
-    <script src=""https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js""></script>
+    <meta http-equiv=""Content-Security-Policy"" content=""default-src 'none'; script-src 'self' 'unsafe-inline' https://terminal.local; style-src 'self' 'unsafe-inline' https://terminal.local; font-src 'self' data: https://terminal.local; connect-src 'none';"" />
+    <link rel=""stylesheet"" href=""https://terminal.local/xterm.css"" />
+    <script src=""https://terminal.local/xterm.js""></script>
+    <script src=""https://terminal.local/xterm-addon-fit.js""></script>
     <style>
         body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: transparent !important; overflow: hidden; }
         #container { width: 100%; height: 100%; padding: 12px 12px 0 12px; box-sizing: border-box; }

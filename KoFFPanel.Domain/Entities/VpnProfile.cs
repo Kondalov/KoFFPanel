@@ -13,6 +13,7 @@ public class VpnProfile
     public string Username { get; set; } = "root";
     public string Password { get; set; } = "";
     public string? KeyPath { get; set; }
+    public string? SshHostKeyFingerprint { get; set; }
 
     // === НОВАЯ АРХИТЕКТУРА ===
     public List<ServerInbound> Inbounds { get; set; } = new();

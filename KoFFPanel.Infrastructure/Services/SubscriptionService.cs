@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -219,6 +219,6 @@ WantedBy=multi-user.target";
             return $"{_customDomain}/{uuid}";
         }
 
-        return $"http://{serverIp}:8080/{uuid}";
+        return $"http://{serverIp}:8081/{uuid}";
     }
 }

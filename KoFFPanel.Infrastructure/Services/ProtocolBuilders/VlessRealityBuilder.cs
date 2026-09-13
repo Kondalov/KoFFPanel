@@ -61,6 +61,6 @@ public class VlessRealityBuilder : IProtocolBuilder
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
         string encodedName = Uri.EscapeDataString($"KoFFPanel-{clientEmail}");
 
-        return $"vless://{clientUuid}@{safeIp}:{inbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
+        return $"vless://{clientUuid}@{safeIp}:{inbound.Port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#{encodedName}";
     }
 }

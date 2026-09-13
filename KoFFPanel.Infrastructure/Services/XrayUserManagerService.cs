@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -38,97 +38,6 @@ public partial class XrayUserManagerService : IXrayUserManagerService
         }
 
         return dbUsers;
-    }
-
-    public async Task<(bool IsSuccess, string Message, string VlessLink)> InitializeRealityAsync(ISshService ssh, string serverIp)
-    {
-        try
-        {
-            if (!ssh.IsConnected) return (false, "Нет подключения по SSH", "");
-
-            _logger.Log("CONFIG", "Генерация X25519 ключей...");
-            var keysOutput = await ssh.ExecuteCommandAsync("/usr/local/bin/xray x25519");
-
-            var privMatch = Regex.Match(keysOutput, @"(?i)(?:Private\s*key|PrivateKey)\s*:\s*(\S+)");
-            var pubMatch = Regex.Match(keysOutput, @"(?i)(?:Public\s*key|PublicKey|Password\s*\(PublicKey\))\s*:\s*(\S+)");
-
-            if (!privMatch.Success || !pubMatch.Success) return (false, "ОШИБКА: Ядро вернуло неверный формат ключей.", "");
-
-            string privKey = privMatch.Groups[1].Value.Trim();
-            string pubKey = pubMatch.Groups[1].Value.Trim();
-            string uuid = Guid.NewGuid().ToString();
-            string shortId = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(4)).ToLower();
-            string sni = "www.microsoft.com";
-            string encodedName = Uri.EscapeDataString($"KoFFPanel_{serverIp}");
-
-            string configJson = $$"""
-            {
-              "log": { "access": "/var/log/xray/access.log", "error": "/var/log/xray/error.log", "loglevel": "info" },
-              "stats": {},
-              "api": { "tag": "api", "services": ["StatsService"] },
-              "policy": {
-                "levels": { "0": { "statsUserUplink": true, "statsUserDownlink": true } },
-                "system": { "statsInboundUplink": true, "statsInboundDownlink": true, "statsOutboundUplink": true, "statsOutboundDownlink": true }
-              },
-              "inbounds": [
-                {
-                  "port": 443,
-                  "protocol": "vless",
-                  "settings": {
-                    "clients": [ { "id": "{{uuid}}", "flow": "xtls-rprx-vision", "email": "Admin" } ],
-                    "decryption": "none"
-                  },
-                  "streamSettings": {
-                    "network": "tcp",
-                    "security": "reality",
-                    "realitySettings": {
-                      "show": false,
-                      "dest": "{{sni}}:443",
-                      "xver": 0,
-                      "serverNames": ["{{sni}}"],
-                      "privateKey": "{{privKey}}",
-                      "shortIds": ["{{shortId}}"]
-                    }
-                  },
-                  "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"], "routeOnly": true }
-                },
-                {
-                  "listen": "127.0.0.1",
-                  "port": 10085,
-                  "protocol": "dokodemo-door",
-                  "settings": { "address": "127.0.0.1", "network": "tcp" },
-                  "tag": "api"
-                }
-              ],
-              "outbounds": [
-                { "protocol": "freedom", "tag": "direct" },
-                { "protocol": "freedom", "tag": "torrent-logger" },
-                { "protocol": "blackhole", "tag": "block" }
-              ],
-              "routing": {
-                "domainStrategy": "AsIs",
-                "rules": [
-                  { "inboundTag": ["api"], "outboundTag": "api", "type": "field" },
-                  { "type": "field", "protocol": ["bittorrent"], "outboundTag": "block" },
-                  { "type": "field", "domain": ["domain:nnmclub.to", "keyword:torrent"], "outboundTag": "block" }
-                ]
-              }
-            }
-            """;
-
-            string base64Json = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(configJson.Replace("\r", "")));
-            await ssh.ExecuteCommandAsync($"echo '{base64Json}' | base64 -d > /tmp/config_test.json");
-
-            var testResult = await ssh.ExecuteCommandAsync("/usr/local/bin/xray run -test -config /tmp/config_test.json");
-            if (!testResult.Contains("Configuration OK")) return (false, "ОШИБКА: Ядро отклонило конфиг!", "");
-
-            await ssh.ExecuteCommandAsync("mkdir -p /var/log/xray && touch /var/log/xray/access.log /var/log/xray/error.log && chmod -R 777 /var/log/xray");
-            await ssh.ExecuteCommandAsync("mv /tmp/config_test.json /usr/local/etc/xray/config.json && systemctl restart xray");
-
-            string vlessLink = $"vless://{uuid}@{serverIp}:443?security=reality&encryption=none&alpn=h2,http/1.1&pbk={pubKey}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={shortId}#{encodedName}";
-            return (true, "VLESS-Reality настроен!", vlessLink);
-        }
-        catch (Exception ex) { return (false, $"КРИТИЧЕСКАЯ ОШИБКА: {ex.Message}", ""); }
     }
 
     public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false, bool isTrojan = false, bool isShadowsocks = false)

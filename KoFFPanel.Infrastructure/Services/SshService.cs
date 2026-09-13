@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 using System;
@@ -27,8 +27,9 @@ public class SshService : ISshService, IDisposable
     }
 
     public bool IsConnected => _sshClient?.IsConnected == true;
+    public string? ServerHostKeyFingerprint { get; private set; }
 
-    public async Task<string> ConnectAsync(string ip, int port, string user, string password, string keyPath)
+    public async Task<string> ConnectAsync(string ip, int port, string user, string password, string keyPath, string? expectedFingerprint = null)
     {
         return await Task.Run(() =>
         {
@@ -55,8 +56,36 @@ public class SshService : ISshService, IDisposable
 
                 connInfo.Timeout = TimeSpan.FromSeconds(15);
 
+                bool hostKeyMismatched = false;
                 _sshClient = new SshClient(connInfo) { KeepAliveInterval = TimeSpan.FromSeconds(15) };
+                _sshClient.HostKeyReceived += (sender, e) =>
+                {
+                    string actualFp = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(e.HostKey));
+                    ServerHostKeyFingerprint = actualFp;
+
+                    if (string.IsNullOrEmpty(expectedFingerprint))
+                    {
+                        // Trust On First Use (TOFU)
+                        e.CanTrust = true;
+                    }
+                    else if (string.Equals(actualFp, expectedFingerprint, StringComparison.OrdinalIgnoreCase))
+                    {
+                        e.CanTrust = true;
+                    }
+                    else
+                    {
+                        _logger.Log("SSH-ALERT", $"КРИТИЧЕСКАЯ УГРОЗА: Отпечаток SSH HostKey сервера {ip} изменился! Ожидался {expectedFingerprint}, обнаружен {actualFp}.");
+                        e.CanTrust = false;
+                        hostKeyMismatched = true;
+                    }
+                };
+
                 _sshClient.Connect();
+                if (hostKeyMismatched)
+                {
+                    _sshClient.Disconnect();
+                    return "HOST_KEY_MISMATCH";
+                }
 
                 _sftpClient = new SftpClient(connInfo) { KeepAliveInterval = TimeSpan.FromSeconds(15) };
                 _sftpClient.Connect();
@@ -243,6 +272,59 @@ public class SshService : ISshService, IDisposable
         finally
         {
             // Обязательно освобождаем очередь для следующей команды
+            _sshSemaphore.Release();
+        }
+    }
+
+    public async Task<string> ExecuteSudoCommandAsync(string commandText, string password, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    {
+        if (_sshClient == null || !_sshClient.IsConnected)
+            return string.Empty;
+
+        if (string.IsNullOrEmpty(password))
+            return await ExecuteCommandAsync(commandText, timeout, cancellationToken);
+
+        await _sshSemaphore.WaitAsync(cancellationToken);
+        try
+        {
+            TimeSpan actualTimeout = timeout ?? TimeSpan.FromSeconds(30);
+            _logger.Log("SSH-SUDO-TRACE", $"[СТАРТ SUDO] Запрос команды: {commandText.Substring(0, Math.Min(commandText.Length, 50))}...");
+
+            using var shell = _sshClient.CreateShellStream("sudo-runner", 80, 24, 800, 600, 4096);
+            string marker = Guid.NewGuid().ToString("N");
+            shell.WriteLine($"sudo -S -p '' bash -c {SshGuard.Escape(commandText)}; echo '{marker}':$?");
+            shell.WriteLine(password);
+
+            var sb = new System.Text.StringBuilder();
+            var reader = new StreamReader(shell);
+            var deadline = DateTime.UtcNow + actualTimeout;
+
+            while (DateTime.UtcNow < deadline && !cancellationToken.IsCancellationRequested)
+            {
+                if (shell.DataAvailable)
+                {
+                    string? line = await reader.ReadLineAsync(cancellationToken);
+                    if (line != null)
+                    {
+                        if (line.Contains(marker)) break;
+                        sb.AppendLine(line);
+                    }
+                }
+                else
+                {
+                    await Task.Delay(50, cancellationToken);
+                }
+            }
+
+            return sb.ToString().Trim();
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("SSH-SUDO-ERROR", $"Ошибка ExecuteSudoCommandAsync: {ex.Message}");
+            return string.Empty;
+        }
+        finally
+        {
             _sshSemaphore.Release();
         }
     }

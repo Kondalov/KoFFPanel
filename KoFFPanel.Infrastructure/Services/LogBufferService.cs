@@ -1,10 +1,12 @@
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -69,45 +71,156 @@ public class LogBufferService : BackgroundService
         }
     }
 
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logChannel.Writer.TryComplete();
+        var remaining = new List<VpnLogEntry>();
+        while (_logChannel.Reader.TryRead(out var entry))
+        {
+            remaining.Add(entry);
+        }
+
+        if (remaining.Count > 0)
+        {
+            try
+            {
+                await ProcessBatchAsync(remaining);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"[LOG-BUFFER-STOP-ERROR] {ex.Message}");
+            }
+        }
+
+        await base.StopAsync(cancellationToken);
+    }
+
     private async Task ProcessBatchAsync(List<VpnLogEntry> entries)
     {
+        if (entries == null || entries.Count == 0) return;
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var today = DateTime.Today;
 
         _logger.LogDebug($"[LOG-BUFFER] Обработка пачки из {entries.Count} запросов на лог.");
 
+        // 1. Агрегация трафика в памяти (устранение N+1)
+        var trafficAggregated = new Dictionary<(string ServerIp, string Email), long>();
         foreach (var entry in entries)
         {
-            // 1. Трафик
             foreach (var t in entry.TrafficDeltas)
             {
-                var log = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
-                    db.TrafficLogs, x => x.ServerIp == entry.ServerIp && x.Email == t.Key && x.Date == today);
-
-                if (log != null) log.BytesUsed += t.Value;
-                else db.TrafficLogs.Add(new ClientTrafficLog { ServerIp = entry.ServerIp, Email = t.Key, Date = today, BytesUsed = t.Value });
+                var key = (entry.ServerIp, t.Key);
+                trafficAggregated[key] = trafficAggregated.GetValueOrDefault(key) + t.Value;
             }
+        }
 
-            // 2. Подключения
+        if (trafficAggregated.Count > 0)
+        {
+            var serverIps = trafficAggregated.Keys.Select(k => k.ServerIp).Distinct().ToList();
+            var emails = trafficAggregated.Keys.Select(k => k.Email).Distinct().ToList();
+
+            var existingTraffic = await db.TrafficLogs
+                .Where(x => x.Date == today && serverIps.Contains(x.ServerIp) && emails.Contains(x.Email))
+                .ToListAsync();
+
+            var existingMap = existingTraffic.ToDictionary(x => (x.ServerIp, x.Email));
+
+            foreach (var (key, bytes) in trafficAggregated)
+            {
+                if (existingMap.TryGetValue(key, out var log))
+                {
+                    log.BytesUsed += bytes;
+                }
+                else
+                {
+                    var newLog = new ClientTrafficLog
+                    {
+                        ServerIp = key.ServerIp,
+                        Email = key.Email,
+                        Date = today,
+                        BytesUsed = bytes
+                    };
+                    db.TrafficLogs.Add(newLog);
+                    existingMap[key] = newLog;
+                }
+            }
+        }
+
+        // 2. Агрегация подключений в памяти (устранение N+1)
+        var connAggregated = new Dictionary<(string ServerIp, string Email, string Ip), string>();
+        foreach (var entry in entries)
+        {
             foreach (var c in entry.Connections)
             {
-                var log = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(
-                    db.ConnectionLogs, x => x.ServerIp == entry.ServerIp && x.Email == c.Email && x.IpAddress == c.Ip);
-
-                if (log != null)
+                var key = (entry.ServerIp, c.Email, c.Ip);
+                if (!connAggregated.TryGetValue(key, out var prevCountry) || (prevCountry == "??" && c.Country != "??"))
                 {
-                    log.LastSeen = DateTime.Now;
-                    if (log.Country == "??" && c.Country != "??") log.Country = c.Country;
+                    connAggregated[key] = c.Country;
                 }
-                else db.ConnectionLogs.Add(new ClientConnectionLog { ServerIp = entry.ServerIp, Email = c.Email, IpAddress = c.Ip, Country = c.Country, FirstSeen = DateTime.Now, LastSeen = DateTime.Now });
             }
+        }
 
-            // 3. Нарушения
+        if (connAggregated.Count > 0)
+        {
+            var serverIps = connAggregated.Keys.Select(k => k.ServerIp).Distinct().ToList();
+            var emails = connAggregated.Keys.Select(k => k.Email).Distinct().ToList();
+            var ips = connAggregated.Keys.Select(k => k.Ip).Distinct().ToList();
+
+            var existingConns = await db.ConnectionLogs
+                .Where(x => serverIps.Contains(x.ServerIp) && emails.Contains(x.Email) && ips.Contains(x.IpAddress))
+                .ToListAsync();
+
+            var existingMap = existingConns.ToDictionary(x => (x.ServerIp, x.Email, x.IpAddress));
+            var now = DateTime.Now;
+
+            foreach (var (key, country) in connAggregated)
+            {
+                if (existingMap.TryGetValue(key, out var log))
+                {
+                    log.LastSeen = now;
+                    if (log.Country == "??" && country != "??")
+                    {
+                        log.Country = country;
+                    }
+                }
+                else
+                {
+                    var newLog = new ClientConnectionLog
+                    {
+                        ServerIp = key.ServerIp,
+                        Email = key.Email,
+                        IpAddress = key.Ip,
+                        Country = country,
+                        FirstSeen = now,
+                        LastSeen = now
+                    };
+                    db.ConnectionLogs.Add(newLog);
+                    existingMap[key] = newLog;
+                }
+            }
+        }
+
+        // 3. Нарушения
+        var violationsToAdd = new List<ClientViolationLog>();
+        foreach (var entry in entries)
+        {
             foreach (var v in entry.Violations)
             {
-                db.ViolationLogs.Add(new ClientViolationLog { ServerIp = entry.ServerIp, Email = v.Email, Date = DateTime.Now, ViolationType = v.ViolationType });
+                violationsToAdd.Add(new ClientViolationLog
+                {
+                    ServerIp = entry.ServerIp,
+                    Email = v.Email,
+                    Date = DateTime.Now,
+                    ViolationType = v.ViolationType
+                });
             }
+        }
+
+        if (violationsToAdd.Count > 0)
+        {
+            db.ViolationLogs.AddRange(violationsToAdd);
         }
 
         try
@@ -116,7 +229,7 @@ public class LogBufferService : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError($"[LOG-BUFFER-DB-ERROR] Ошибка записи пачки: {ex.Message}");
+            _logger.LogError(ex, $"[LOG-BUFFER-DB-ERROR] Ошибка записи пачки: {ex.Message}");
         }
     }
 }
