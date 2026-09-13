@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using MaxMind.GeoIP2;
 using System;
@@ -13,6 +13,51 @@ namespace KoFFPanel.Infrastructure.Services;
 public class ServerMonitorService : IServerMonitorService
 {
     private readonly IAppLogger _logger;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Rx, long Tx, long Timestamp)> _previousNetStats = new();
+
+    private static DatabaseReader? _cachedGeoReader;
+    private static readonly object _geoLock = new();
+    private static bool _geoLoadAttempted = false;
+
+    private static DatabaseReader? GetSharedGeoReader(string dbPath)
+    {
+        if (_cachedGeoReader != null) return _cachedGeoReader;
+        lock (_geoLock)
+        {
+            if (_cachedGeoReader != null || _geoLoadAttempted) return _cachedGeoReader;
+            _geoLoadAttempted = true;
+            if (File.Exists(dbPath))
+            {
+                try
+                {
+                    _cachedGeoReader = new DatabaseReader(dbPath, MaxMind.Db.FileAccessMode.Memory);
+                }
+                catch { }
+            }
+            return _cachedGeoReader;
+        }
+    }
+
+    private string CalculateNetworkSpeed(string serverKey, long currentRx, long currentTx)
+    {
+        long now = Environment.TickCount64;
+        if (_previousNetStats.TryGetValue(serverKey, out var prev) && prev.Timestamp > 0)
+        {
+            double seconds = (now - prev.Timestamp) / 1000.0;
+            if (seconds > 0.5)
+            {
+                double rxDelta = Math.Max(0, currentRx - prev.Rx);
+                double txDelta = Math.Max(0, currentTx - prev.Tx);
+                double rxMbps = (rxDelta * 8.0) / (seconds * 1_000_000.0);
+                double txMbps = (txDelta * 8.0) / (seconds * 1_000_000.0);
+                _previousNetStats[serverKey] = (currentRx, currentTx, now);
+                return $"↓{rxMbps:F2} ↑{txMbps:F2} Mbps";
+            }
+        }
+        _previousNetStats[serverKey] = (currentRx, currentTx, now);
+        return "↓0.00 ↑0.00 Mbps";
+    }
+
     public async Task<ServerResources> GetResourcesAsync(ISshService sshService, string coreType)
     {
         if (!sshService.IsConnected) return new ServerResources(0, 0, 0, "N/A", "0.0", "0 Mbps", 0, 0, 0, 0);
@@ -32,32 +77,26 @@ public class ServerMonitorService : IServerMonitorService
             LOADAVG=$(cat /proc/loadavg 2>/dev/null | awk '{{print $1}}')
             
             IFACE=$(ip route 2>/dev/null | grep default | awk '{{print $5}}' | head -n1)
-            RX1=$(cat /sys/class/net/$IFACE/statistics/rx_bytes 2>/dev/null || echo 0)
-            TX1=$(cat /sys/class/net/$IFACE/statistics/tx_bytes 2>/dev/null || echo 0)
-            sleep 1
-            RX2=$(cat /sys/class/net/$IFACE/statistics/rx_bytes 2>/dev/null || echo 0)
-            TX2=$(cat /sys/class/net/$IFACE/statistics/tx_bytes 2>/dev/null || echo 0)
-            
-            RX_MBPS=$(awk -v r1=""$RX1"" -v r2=""$RX2"" 'BEGIN {{ printf ""%.2f"", (r2-r1)*8/1000000 }}')
-            TX_MBPS=$(awk -v t1=""$TX1"" -v t2=""$TX2"" 'BEGIN {{ printf ""%.2f"", (t2-t1)*8/1000000 }}')
+            RX=$(cat /sys/class/net/$IFACE/statistics/rx_bytes 2>/dev/null || echo 0)
+            TX=$(cat /sys/class/net/$IFACE/statistics/tx_bytes 2>/dev/null || echo 0)
             
             if [ ""$CORE"" = ""sing-box"" ]; then
                 CORE_PROC=$(pgrep -f ""sing-box run"" -c || echo 0)
-                ERR_TOTAL=$(journalctl -u sing-box --since ""10 minutes ago"" --no-pager 2>/dev/null | grep -ic ""error\|fatal\|rejected"")
+                ERR_TOTAL=$(journalctl -u sing-box -n 100 --no-pager 2>/dev/null | grep -ic ""error\|fatal\|rejected"")
             elif [ ""$CORE"" = ""trusttunnel"" ]; then
                 CORE_PROC=$(pgrep -f ""trusttunnel"" -c || echo 0)
-                ERR_TOTAL=$(journalctl -u trusttunnel --since ""10 minutes ago"" --no-pager 2>/dev/null | grep -ic ""error\|fatal\|panic"")
+                ERR_TOTAL=$(journalctl -u trusttunnel -n 100 --no-pager 2>/dev/null | grep -ic ""error\|fatal\|panic"")
             else
                 CORE_PROC=$(pgrep -f ""xray run"" -c || echo 0)
-                ERR_ACC=$(tail -n 1000 /var/log/xray/access.log 2>/dev/null | grep -ic ""rejected"")
-                ERR_ERR=$(tail -n 1000 /var/log/xray/error.log 2>/dev/null | grep -ic ""error\|fail\|rejected"")
+                ERR_ACC=$(tail -n 100 /var/log/xray/access.log 2>/dev/null | grep -ic ""rejected"")
+                ERR_ERR=$(tail -n 100 /var/log/xray/error.log 2>/dev/null | grep -ic ""error\|fail\|rejected"")
                 ERR_TOTAL=$((ERR_ACC + ERR_ERR))
             fi
             
             TCP_CONN=$(ss -Htun state established 2>/dev/null | wc -l)
             SYN_RECV=$(ss -Ht state syn-recv 2>/dev/null | wc -l)
 
-            echo ""${{CPU:-0}}|${{RAM:-0}}|${{DISK:-0}}|${{UPTIME:-N/A}}|${{LOADAVG:-0}}|↓${{RX_MBPS}} ↑${{TX_MBPS}} Mbps|${{CORE_PROC:-0}}|${{TCP_CONN:-0}}|${{SYN_RECV:-0}}|${{ERR_TOTAL:-0}}""
+            echo ""${{CPU:-0}}|${{RAM:-0}}|${{DISK:-0}}|${{UPTIME:-N/A}}|${{LOADAVG:-0}}|${{RX}}|${{TX}}|${{CORE_PROC:-0}}|${{TCP_CONN:-0}}|${{SYN_RECV:-0}}|${{ERR_TOTAL:-0}}""
         ".Replace("\r", "");
 
         try
@@ -65,17 +104,20 @@ public class ServerMonitorService : IServerMonitorService
             string result = await sshService.ExecuteCommandAsync(cmdText);
             string[] parts = result.Replace("\r", "").Replace("\n", "").Trim().Split('|');
 
-            if (parts.Length == 10)
+            if (parts.Length == 11)
             {
                 int.TryParse(parts[0], out int cpu);
                 int.TryParse(parts[1], out int ram);
                 int.TryParse(parts[2], out int ssd);
-                int.TryParse(parts[6], out int coreProc);
-                int.TryParse(parts[7], out int tcpConn);
-                int.TryParse(parts[8], out int synRecv);
-                int.TryParse(parts[9], out int errorRate);
+                long.TryParse(parts[5], out long rx);
+                long.TryParse(parts[6], out long tx);
+                int.TryParse(parts[7], out int coreProc);
+                int.TryParse(parts[8], out int tcpConn);
+                int.TryParse(parts[9], out int synRecv);
+                int.TryParse(parts[10], out int errorRate);
 
-                return new ServerResources(cpu, ram, ssd, parts[3], parts[4], parts[5], coreProc, tcpConn, synRecv, errorRate);
+                string speed = CalculateNetworkSpeed(coreType, rx, tx);
+                return new ServerResources(cpu, ram, ssd, parts[3], parts[4], speed, coreProc, tcpConn, synRecv, errorRate);
             }
         }
         catch { }
@@ -240,26 +282,9 @@ public class ServerMonitorService : IServerMonitorService
             }
         }
 
-        bool hasGeoDb = File.Exists(dbPath);
-        DatabaseReader? geoReader = null;
-        string dbError = "";
-
-        if (hasGeoDb)
-        {
-            try
-            {
-                geoReader = new DatabaseReader(dbPath, MaxMind.Db.FileAccessMode.Memory);
-            }
-            catch (Exception)
-            {
-                hasGeoDb = false;
-                dbError = "DB Err";
-            }
-        }
-        else
-        {
-            dbError = "No DB";
-        }
+        DatabaseReader? geoReader = GetSharedGeoReader(dbPath);
+        bool hasGeoDb = geoReader != null;
+        string dbError = hasGeoDb ? "" : "No DB";
 
         try
         {
@@ -272,8 +297,16 @@ public class ServerMonitorService : IServerMonitorService
                 {
                     try
                     {
-                        string cleanIp = lastIp.Contains(":") && !lastIp.Contains("]") ? lastIp.Split(':')[0] : lastIp;
-                        cleanIp = cleanIp.Replace("[", "").Replace("]", "").Trim();
+                        string cleanIp = lastIp.Trim();
+                        if (cleanIp.StartsWith("[") && cleanIp.Contains("]"))
+                        {
+                            int closeBracket = cleanIp.IndexOf(']');
+                            cleanIp = cleanIp.Substring(1, closeBracket - 1);
+                        }
+                        else if (cleanIp.Contains(':') && cleanIp.IndexOf(':') == cleanIp.LastIndexOf(':'))
+                        {
+                            cleanIp = cleanIp.Split(':')[0];
+                        }
 
                         if (System.Net.IPAddress.TryParse(cleanIp, out var parsedIp))
                         {

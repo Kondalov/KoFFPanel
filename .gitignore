@@ -363,3 +363,8 @@ MigrationBackup/
 FodyWeavers.xsd
 /KoFFPanel.Presentation/MasterPassword_DO_NOT_SHARE.txt
 /KoFFPanel.Tests/MasterPassword_DO_NOT_SHARE.txt
+*.db
+*.db-wal
+*.db-shm
+*.dpapi
+*.bak

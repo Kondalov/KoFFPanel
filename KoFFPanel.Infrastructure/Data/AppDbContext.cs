@@ -18,11 +18,29 @@ public class AppDbContext : DbContext
 
     public AppDbContext() { }
 
+    public static string GetDatabasePath()
+    {
+        string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+#if DEBUG
+        string dbFileName = "koffpanel_users_dev.db";
+        string configFolderName = "KoFFPanel_Dev";
+#else
+        string dbFileName = "koffpanel_users.db";
+        string configFolderName = "KoFFPanel";
+#endif
+        string basePath = Path.Combine(appDataPath, configFolderName);
+        if (!Directory.Exists(basePath))
+        {
+            Directory.CreateDirectory(basePath);
+        }
+        return Path.Combine(basePath, dbFileName);
+    }
+
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
         if (!optionsBuilder.IsConfigured)
         {
-            string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "koffpanel_users.db");
+            string dbPath = GetDatabasePath();
             string dbPassword = MasterKeyService.Instance.GetMasterPassword();
             optionsBuilder.UseSqlite($"Data Source={dbPath};Password={dbPassword};Pooling=True;");
         }
@@ -35,12 +53,60 @@ public class AppDbContext : DbContext
             Database.Migrate();
             Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
             Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;");
-            var result = Database.ExecuteSqlRaw("PRAGMA integrity_check;");
+            Database.ExecuteSqlRaw("PRAGMA integrity_check;");
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 26)
+        {
+            // SQLite Error 26: 'file is not a database'.
+            // The database might have been encrypted with the legacy fixed master password.
+            if (TryMigrateLegacyPassword())
+            {
+                Database.Migrate();
+                Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
+                Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;");
+                Database.ExecuteSqlRaw("PRAGMA integrity_check;");
+            }
+            else
+            {
+                throw;
+            }
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[DB-OPTIMIZE-ERROR] Ошибка: {ex.Message}");
             throw;
+        }
+    }
+
+    private bool TryMigrateLegacyPassword()
+    {
+        try
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            var conn = Database.GetDbConnection();
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(conn.ConnectionString)
+            {
+                Password = MasterKeyService.LegacyMasterPassword,
+                Pooling = false
+            };
+
+            using var legacyConn = new Microsoft.Data.Sqlite.SqliteConnection(builder.ConnectionString);
+            legacyConn.Open();
+            using var cmd = legacyConn.CreateCommand();
+            cmd.CommandText = "SELECT count(*) FROM sqlite_master;";
+            cmd.ExecuteScalar();
+
+            string newPassword = MasterKeyService.Instance.GetMasterPassword();
+            cmd.CommandText = $"PRAGMA rekey = '{newPassword.Replace("'", "''")}';";
+            cmd.ExecuteNonQuery();
+
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[DB-REKEY-ERROR] Не удалось мигрировать ключ: {ex.Message}");
+            return false;
         }
     }
 

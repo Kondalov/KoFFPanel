@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
@@ -114,7 +114,8 @@ public partial class BotViewModel : ObservableObject
             if (pendingUsers == null || pendingUsers.Count == 0) return;
 
             var cabinetVm = _serviceProvider.GetRequiredService<CabinetViewModel>();
-            var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+            using var scope = _serviceProvider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
             var syncedUuids = new List<string>();
             bool needsDeployment = false;
 
@@ -217,7 +218,8 @@ public partial class BotViewModel : ObservableObject
 
         try
         {
-            var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+            using var scope = _serviceProvider.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
             var keysToPush = new List<ReserveKeyDto>();
 
             for (int i = 0; i < keysNeeded; i++)

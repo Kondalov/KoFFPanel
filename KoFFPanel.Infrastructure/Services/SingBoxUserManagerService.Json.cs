@@ -182,7 +182,7 @@ public partial class SingBoxUserManagerService
             foreach (var u in dbUsers)
             {
                 string encodedName = Uri.EscapeDataString($"SB_VLESS_{u.Email}");
-                u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
+                u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#{encodedName}";
             }
         }
         else

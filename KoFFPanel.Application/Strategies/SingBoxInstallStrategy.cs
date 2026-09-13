@@ -129,7 +129,7 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
 
             string configJson = SingBoxRealityConfigTemplate.GenerateServerConfig(vpnPort, result.Uuid, sni, result.PrivateKey, result.ShortId);
             string base64Json = Convert.ToBase64String(Encoding.UTF8.GetBytes(configJson.Replace("\r", "")));
-            await ssh.ExecuteCommandAsync($"mkdir -p /var/log/sing-box /etc/sing-box && chmod 777 /var/log/sing-box && echo '{base64Json}' | base64 -d > /etc/sing-box/config.json");
+            await ssh.ExecuteCommandAsync($"mkdir -p /var/log/sing-box /etc/sing-box && chmod 750 /var/log/sing-box && echo '{base64Json}' | base64 -d > /etc/sing-box/config.json");
 
             // ИСПРАВЛЕНИЕ: Добавлено 2>&1, чтобы ловить фатальные ошибки, уходящие в STDERR
             var checkConfig = await ssh.ExecuteCommandAsync("mkdir -p /var/log/sing-box && /usr/local/bin/sing-box check -c /etc/sing-box/config.json 2>&1");

@@ -248,7 +248,8 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
             try
             {
                 string currentIp = value.IpAddress ?? "";
-                var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                using var scope = _serviceProvider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
 
                 var dbUsers = dbContext.Clients.Where(c => c.ServerIp == currentIp).ToList();
                 SyncClientsCollection(dbUsers);

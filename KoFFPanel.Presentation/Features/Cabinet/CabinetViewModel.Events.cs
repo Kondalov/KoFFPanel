@@ -47,7 +47,8 @@ public partial class CabinetViewModel
 
         System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = $"Синхронизация БД с {activeCoreName}...");
 
-        var dbContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+        using var scope = _serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
         string ip = SelectedServer.IpAddress ?? "";
         var dbUsers = dbContext.Clients.Where(c => c.ServerIp == ip).ToList();
 
@@ -67,7 +68,8 @@ public partial class CabinetViewModel
 
             if (coreSyncSuccess)
             {
-                var freshContext = _serviceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+                using var freshScope = _serviceProvider.CreateScope();
+                var freshContext = freshScope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
                 var updatedUsers = freshContext.Clients.AsNoTracking().Where(c => c.ServerIp == ip).ToList();
 
                 foreach (var client in updatedUsers)

@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,7 +17,13 @@ public class SmartPortValidator : ISmartPortValidator
         _logger = logger;
     }
 
-    private string GetTransport(string protocol) => protocol.ToLower() == "vless" ? "tcp" : "udp";
+    private string GetTransport(string protocol) => protocol.ToLower() switch
+    {
+        "vless" or "trojan" or "trusttunnel" => "tcp",
+        "hysteria2" or "hy2" => "udp",
+        "shadowsocks" or "ss" => "tcp,udp",
+        _ => "tcp"
+    };
 
     public async Task<(bool IsValid, string ErrorMessage)> ValidatePortAsync(ISshService ssh, string serverId, int port, string protocolType)
     {
@@ -51,7 +57,12 @@ public class SmartPortValidator : ISmartPortValidator
 
         if (ssh != null && ssh.IsConnected)
         {
-            string sshCmd = targetTransport == "tcp" ? $"ss -tlnp | grep ':{port} '" : $"ss -ulnp | grep ':{port} '";
+            string sshCmd = targetTransport switch
+            {
+                "tcp" => $"ss -tlnp | grep ':{port} '",
+                "udp" => $"ss -ulnp | grep ':{port} '",
+                _ => $"ss -tulnp | grep ':{port} '"
+            };
             string sysCheck = await ssh.ExecuteCommandAsync(sshCmd);
 
             if (!string.IsNullOrWhiteSpace(sysCheck))

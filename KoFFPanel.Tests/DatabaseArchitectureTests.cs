@@ -15,26 +15,16 @@ public class DatabaseArchitectureTests : IDisposable
 
     public DatabaseArchitectureTests()
     {
-        // Устанавливаем путь базы данных для тестов в папке с тестами
-        _testDbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "koffpanel_users.db");
+        _testDbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "koffpanel_test.db");
         CleanDatabaseFiles();
-
-        string masterKeyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MasterPassword_DO_NOT_SHARE.txt");
-        if (File.Exists(masterKeyPath)) File.Delete(masterKeyPath);
     }
 
     public void Dispose()
     {
-        // Принудительно закрываем все соединения перед удалением файлов (защита от локов Windows)
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-
         CleanDatabaseFiles();
-
-        string masterKeyPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MasterPassword_DO_NOT_SHARE.txt");
-        if (File.Exists(masterKeyPath)) File.Delete(masterKeyPath);
     }
 
-    // MODERNIZATION 2026: Выносим очистку в отдельный метод, чтобы гарантированно удалять WAL и SHM файлы
     private void CleanDatabaseFiles()
     {
         if (File.Exists(_testDbPath)) File.Delete(_testDbPath);
@@ -42,7 +32,7 @@ public class DatabaseArchitectureTests : IDisposable
         if (File.Exists(_testDbPath + "-shm")) File.Delete(_testDbPath + "-shm");
     }
 
-    [Fact(Skip = "Временно отключен из-за конфликта файловой системы в CI/CD")]
+    [Fact]
     public void MasterKeyService_ShouldGenerateAndPersistAESKey()
     {
         // Act
@@ -53,15 +43,18 @@ public class DatabaseArchitectureTests : IDisposable
         Assert.False(string.IsNullOrWhiteSpace(key1));
         Assert.Equal(key1, key2);
 
-        string fileContent = File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "MasterPassword_DO_NOT_SHARE.txt")).Trim();
-        Assert.Equal(key1, fileContent);
+        byte[] keyBytes = Convert.FromBase64String(key1);
+        Assert.Equal(32, keyBytes.Length);
     }
 
     [Fact]
     public void InitializeDatabaseOptimization_ShouldCreateEncryptedDatabaseAndApplyMigrations()
     {
         // Arrange
-        using var dbContext = new AppDbContext();
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite($"Data Source={_testDbPath};Password={MasterKeyService.Instance.GetMasterPassword()};Pooling=False;")
+            .Options;
+        using var dbContext = new AppDbContext(options);
 
         // Act
         dbContext.InitializeDatabaseOptimization();

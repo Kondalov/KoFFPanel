@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -71,7 +71,13 @@
     <None Update="koffpanel_users.db">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </None>
-    <None Update="MasterPassword_DO_NOT_SHARE.txt">
+    <None Update="wwow\xterm.css">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="wwow\xterm.js">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="wwow\xterm-addon-fit.js">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

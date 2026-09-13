@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
@@ -144,8 +144,24 @@ public partial class TerminalViewModel : ObservableObject, IDisposable
             }
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                _webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
-                _webView.NavigateToString(GetTerminalHtml());
+                try
+                {
+                    string wwowFolder = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "wwow");
+                    if (System.IO.Directory.Exists(wwowFolder))
+                    {
+                        _webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                            "terminal.local",
+                            wwowFolder,
+                            Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+                    }
+                    _webView.CoreWebView2.WebMessageReceived += CoreWebView2_WebMessageReceived;
+                    _webView.CoreWebView2.Navigate("https://terminal.local/Terminal.html");
+                }
+                catch (Exception ex)
+                {
+                    _logger.Log("TERM-MAP-ERR", $"Fallback to string HTML: {ex.Message}");
+                    _webView.NavigateToString(GetTerminalHtml());
+                }
             });
         });
     }

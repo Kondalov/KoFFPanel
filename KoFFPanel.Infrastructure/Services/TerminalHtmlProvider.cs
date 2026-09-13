@@ -1,4 +1,4 @@
-﻿namespace KoFFPanel.Infrastructure.Services;
+namespace KoFFPanel.Infrastructure.Services;
 
 public static class TerminalHtmlProvider
 {
@@ -10,7 +10,8 @@ public static class TerminalHtmlProvider
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+            <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://terminal.local; style-src 'self' 'unsafe-inline' https://terminal.local; font-src 'self' data: https://terminal.local; connect-src 'none';" />
+            <link rel="stylesheet" href="https://terminal.local/xterm.css" />
             <style>
                 body, html { 
                     margin: 0; padding: 0; height: 100%; 
@@ -46,8 +47,8 @@ public static class TerminalHtmlProvider
             <div class="aurora-bg"></div>
             <div id="terminal-container"></div>
             
-            <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-            <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+            <script src="https://terminal.local/xterm.js"></script>
+            <script src="https://terminal.local/xterm-addon-fit.js"></script>
             <script>
                 const term = new Terminal({
                     theme: { background: 'transparent' }, // Терминал прозрачный, чтобы видеть Аврору

@@ -4,8 +4,11 @@ using KoFFPanel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,9 +19,9 @@ public class AntiFraudService : IAntiFraudService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IAppLogger _logger;
 
-    private static readonly Dictionary<string, HashSet<string>> _dailyAsns = new();
-    private static readonly Dictionary<string, string> _lastCountryCode = new();
-    private static readonly Dictionary<string, DateTime> _lastCountryTime = new();
+    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _dailyAsns = new();
+    private static readonly ConcurrentDictionary<string, string> _lastCountryCode = new();
+    private static readonly ConcurrentDictionary<string, DateTime> _lastCountryTime = new();
 
     public AntiFraudService(IServiceScopeFactory scopeFactory, IAppLogger logger)
     {
@@ -64,14 +67,15 @@ public class AntiFraudService : IAntiFraudService
         if (client.ActiveConnections > log.MaxConcurrentSessions)
             log.MaxConcurrentSessions = client.ActiveConnections;
 
-        string subnetAsn = GetMockAsnFromIp(currentIp);
-        if (!_dailyAsns.ContainsKey(email)) _dailyAsns[email] = new HashSet<string>();
-        if (!string.IsNullOrEmpty(subnetAsn) && _dailyAsns[email].Add(subnetAsn))
+        string asn = ResolveAsnFromIp(currentIp);
+        if (!string.IsNullOrEmpty(asn))
         {
-            log.UniqueAsnCount = _dailyAsns[email].Count;
+            var userAsns = _dailyAsns.GetOrAdd(email, _ => new ConcurrentDictionary<string, byte>());
+            userAsns.TryAdd(asn, 0);
+            log.UniqueAsnCount = userAsns.Count;
         }
 
-        // Вызов нового, защищенного метода проверки геолокации
+        // Вызов защищенного метода проверки геолокации
         UpdateGeoMetrics(log, email, client.Country);
 
         if (trafficDelta > 524_288_000L && trafficDelta < 50_000_000_000L)
@@ -82,10 +86,8 @@ public class AntiFraudService : IAntiFraudService
     {
         string curCode = GetValidCountryCode(rawCountry);
 
-        // Если страна не определилась (например, мобильный интернет без Geo-данных), просто игнорируем
         if (string.IsNullOrEmpty(curCode)) return;
 
-        // Если это первое подключение юзера, просто запоминаем его страну
         if (!_lastCountryCode.TryGetValue(email, out string? lastCode) || string.IsNullOrEmpty(lastCode))
         {
             _lastCountryCode[email] = curCode;
@@ -93,7 +95,6 @@ public class AntiFraudService : IAntiFraudService
             return;
         }
 
-        // Если страна РЕАЛЬНО сменилась на другую валидную страну
         if (lastCode != curCode)
         {
             if (_lastCountryTime.TryGetValue(email, out DateTime lastTime) && (DateTime.Now - lastTime).TotalHours < 2)
@@ -104,7 +105,6 @@ public class AntiFraudService : IAntiFraudService
             _lastCountryCode[email] = curCode;
         }
 
-        // Всегда обновляем время последней активности для этой страны
         _lastCountryTime[email] = DateTime.Now;
     }
 
@@ -115,14 +115,13 @@ public class AntiFraudService : IAntiFraudService
         string code = rawCountry.Trim();
         if (code.Length >= 2) code = code.Substring(code.Length - 2).ToUpperInvariant();
 
-        // Исключаем пустые значения, анонимные прокси и небуквенные символы
         if (code == "??" || code == "A1" || code == "O1" || !code.All(char.IsLetter))
             return "";
 
         return code;
     }
 
-    private void CalculateRiskScore(ClientBehaviorLog log)
+    public void CalculateRiskScore(ClientBehaviorLog log)
     {
         int score = 0;
 
@@ -134,11 +133,37 @@ public class AntiFraudService : IAntiFraudService
         log.RiskScore = score > 100 ? 100 : score;
     }
 
-    private string GetMockAsnFromIp(string ip)
+    private string ResolveAsnFromIp(string ip)
     {
         if (string.IsNullOrWhiteSpace(ip)) return "";
-        var parts = ip.Split('.');
-        return parts.Length == 4 ? $"AS_{parts[0]}.{parts[1]}" : "AS_IPv6";
+        string cleanIp = ip.Trim().Trim('[', ']');
+        if (cleanIp.Contains(':') && cleanIp.IndexOf(':') == cleanIp.LastIndexOf(':'))
+            cleanIp = cleanIp.Split(':')[0];
+
+        if (!IPAddress.TryParse(cleanIp, out var parsedIp)) return "";
+
+        // Проверка наличия локальной базы ASN
+        string asnDbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-ASN.mmdb");
+        if (File.Exists(asnDbPath))
+        {
+            try
+            {
+                using var reader = new MaxMind.GeoIP2.DatabaseReader(asnDbPath);
+                if (reader.TryAsn(parsedIp, out var asnResponse) && asnResponse?.AutonomousSystemNumber != null)
+                {
+                    return $"AS{asnResponse.AutonomousSystemNumber}";
+                }
+            }
+            catch { }
+        }
+
+        // Защищенный fallback: группируем по /24 для IPv4 (не /16) или по первому блоку для IPv6, чтобы не спамить ложными ASN
+        if (parsedIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            var bytes = parsedIp.GetAddressBytes();
+            return $"NET_{bytes[0]}.{bytes[1]}.{bytes[2]}";
+        }
+        return "NET_IPv6";
     }
 
     public async Task<List<ClientBehaviorLog>> GetMonthlyBehaviorAsync(string serverIp, string email, CancellationToken token = default)
@@ -154,54 +179,46 @@ public class AntiFraudService : IAntiFraudService
             .ToListAsync(token);
     }
 
-    public async Task ExecuteMonthlyRetentionPolicyAsync(CancellationToken token = default)
-    {
-        using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var thresholdDate = DateTime.Today.AddDays(-30);
-
-        try
-        {
-            int deletedLogs = await db.BehaviorLogs.Where(x => x.Date < thresholdDate).ExecuteDeleteAsync(token);
-            if (deletedLogs > 0)
-            {
-                _logger.Log("ANTIFRAUD-CLEANUP", $"Удалено {deletedLogs} устаревших скоринг-записей.");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.Log("ANTIFRAUD-ERR", $"Ошибка при очистке устаревших скоринг-записей: {ex.Message}");
-        }
-    }
-
     public async Task ResetDailyRiskAsync(string serverIp, string email, CancellationToken token = default)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-
         var today = DateTime.Today;
-        var log = await db.BehaviorLogs.FirstOrDefaultAsync(x => x.ServerIp == serverIp && x.Email == email && x.Date == today, token);
 
+        var log = await db.BehaviorLogs.FirstOrDefaultAsync(x => x.ServerIp == serverIp && x.Email == email && x.Date == today, token);
         if (log != null)
         {
-            // Полный сброс метрик за день
             log.RiskScore = 0;
             log.MaxConcurrentSessions = 0;
             log.UniqueAsnCount = 0;
             log.GeoJumpsCount = 0;
             log.BytesUsedSpike = 0;
-
             await db.SaveChangesAsync(token);
+        }
 
-            // Очищаем кэши в памяти, чтобы прыжки не засчитались сразу после сброса
-            _dailyAsns.Remove(email);
-            _lastCountryCode.Remove(email);
-            _logger.Log("ANTIFRAUD-RESET", $"Риск-скоринг для {email} полностью сброшен администратором.");
+        ClearInMemCachesForNewDay(email);
+        _logger.Log("ANTIFRAUD", $"Сброшены суточные метрики риска для {email} на {serverIp}");
+    }
+
+    public async Task ExecuteMonthlyRetentionPolicyAsync(CancellationToken token = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var oldDate = DateTime.Today.AddDays(-30);
+
+        var oldLogs = await db.BehaviorLogs.Where(x => x.Date < oldDate).ToListAsync(token);
+        if (oldLogs.Any())
+        {
+            db.BehaviorLogs.RemoveRange(oldLogs);
+            await db.SaveChangesAsync(token);
+            _logger.Log("ANTIFRAUD-CLEANUP", $"Удалено {oldLogs.Count} старых записей антифрода.");
         }
     }
 
     private void ClearInMemCachesForNewDay(string email)
     {
-        _dailyAsns.Remove(email);
+        _dailyAsns.TryRemove(email, out _);
+        _lastCountryCode.TryRemove(email, out _);
+        _lastCountryTime.TryRemove(email, out _);
     }
 }

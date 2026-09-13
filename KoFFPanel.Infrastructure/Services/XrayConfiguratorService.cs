@@ -162,7 +162,7 @@ public class XrayConfiguratorService : IXrayConfiguratorService
 
             await ssh.ExecuteCommandAsync("mkdir -p /var/log/xray");
             await ssh.ExecuteCommandAsync("touch /var/log/xray/access.log /var/log/xray/error.log");
-            await ssh.ExecuteCommandAsync("chmod -R 777 /var/log/xray");
+            await ssh.ExecuteCommandAsync("chmod -R 750 /var/log/xray");
 
             string logrotateCmd = @"cat << 'EOF' > /etc/logrotate.d/xray
 /var/log/xray/*.log {
@@ -180,8 +180,8 @@ EOF";
             await ssh.ExecuteCommandAsync("mv /tmp/config_test.json /usr/local/etc/xray/config.json");
             await ssh.ExecuteCommandAsync("systemctl restart xray");
 
-            // ИСПРАВЛЕНИЕ: Добавлен обязательный ALPN для современных клиентов.
-            string vlessLink = $"vless://{uuid}@{serverIp}:443?security=reality&encryption=none&alpn=h2,http/1.1&pbk={pubKey}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={shortId}#{encodedName}";
+            string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
+            string vlessLink = $"vless://{uuid}@{safeIp}:443?security=reality&encryption=none&pbk={pubKey}&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision&sni={sni}&sid={shortId}#{encodedName}";
 
             return (true, "VLESS-Reality настроен!", vlessLink);
         }

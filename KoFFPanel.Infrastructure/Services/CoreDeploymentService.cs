@@ -88,7 +88,7 @@ echo 'READY|Сервер готов к установке.'
 
             string sudoPrefix = profile.Username.Equals("root", StringComparison.OrdinalIgnoreCase)
                 ? ""
-                : $"echo '{profile.Password.Replace("'", "'\\''")}' | sudo -S ";
+                : "sudo ";
 
             string coreName = coreType.ToLower();
 
@@ -97,7 +97,7 @@ echo 'READY|Сервер готов к установке.'
 
             if (coreName == "trusttunnel")
             {
-                await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl stop trusttunnel 2>/dev/null; {sudoPrefix}systemctl disable trusttunnel 2>/dev/null; {sudoPrefix}pkill -9 trusttunnel 2>/dev/null; {sudoPrefix}pkill -9 trusttunnel_endpoint 2>/dev/null; {sudoPrefix}rm -rf /etc/trusttunnel /opt/trusttunnel /opt/trusttunnel2; {sudoPrefix}mkdir -p /opt/trusttunnel2");
+                await ssh.ExecuteSudoCommandAsync($"systemctl stop trusttunnel 2>/dev/null; systemctl disable trusttunnel 2>/dev/null; pkill -9 trusttunnel 2>/dev/null; pkill -9 trusttunnel_endpoint 2>/dev/null; rm -rf /etc/trusttunnel /opt/trusttunnel /opt/trusttunnel2; mkdir -p /opt/trusttunnel2", profile.Password);
                 profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() == "trusttunnel");
             }
             else
@@ -109,20 +109,19 @@ echo 'READY|Сервер готов к установке.'
             {sudoPrefix}pkill -9 xray 2>/dev/null || true
             
             if command -v docker >/dev/null 2>&1; then
-                {sudoPrefix}docker ps -q --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
-                {sudoPrefix}docker ps -aq --filter ""name=sing-box"" --filter ""name=xray"" | xargs -r {sudoPrefix}docker rm 2>/dev/null || true
-                {sudoPrefix}docker ps -q | xargs -i {sudoPrefix}docker inspect -f '{{{{.Id}}}} {{{{.HostConfig.PortBindings}}}}' {{}} | grep ':443' | awk '{{print $1}}' | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
+                {sudoPrefix}docker ps -q --filter ""name=sing-box"" --filter ""name=xray"" --filter ""name=koff-"" | xargs -r {sudoPrefix}docker stop 2>/dev/null || true
+                {sudoPrefix}docker ps -aq --filter ""name=sing-box"" --filter ""name=xray"" --filter ""name=koff-"" | xargs -r {sudoPrefix}docker rm 2>/dev/null || true
             fi
 
             {sudoPrefix}rm -rf /etc/sing-box /usr/local/etc/xray /etc/koff
-            {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box /etc/koff && {sudoPrefix}chmod 777 /var/log/sing-box
+            {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box /etc/koff && {sudoPrefix}chmod 750 /var/log/sing-box
             sleep 1
         ";
-                await ssh.ExecuteCommandAsync(cleanupCmd, TimeSpan.FromSeconds(60));
+                await ssh.ExecuteSudoCommandAsync(cleanupCmd, profile.Password, TimeSpan.FromSeconds(60));
 
                 if (string.Equals(coreName, "xray", StringComparison.OrdinalIgnoreCase))
                 {
-                    await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /var/log/xray && {sudoPrefix}touch /var/log/xray/access.log /var/log/xray/error.log && {sudoPrefix}chmod -R 777 /var/log/xray");
+                    await ssh.ExecuteSudoCommandAsync($"mkdir -p /var/log/xray && touch /var/log/xray/access.log /var/log/xray/error.log && chmod -R 750 /var/log/xray", profile.Password);
                 }
 
                 profile.Inbounds.RemoveAll(i => !string.Equals(i.Protocol, "trusttunnel", StringComparison.OrdinalIgnoreCase));
@@ -377,7 +376,7 @@ fi
             var settings = JsonNode.Parse(existingDb.SettingsJson);
             string? cp = settings?["certPath"]?.ToString(); string? kp = settings?["keyPath"]?.ToString();
             if (!string.IsNullOrWhiteSpace(cp) && !string.IsNullOrWhiteSpace(kp))
-                await ssh.ExecuteCommandAsync($@"if [ ! -f ""{cp}"" ] || [ ! -f ""{kp}"" ]; then mkdir -p $(dirname ""{cp}""); openssl ecparam -genkey -name prime256v1 -out ""{kp}""; openssl req -new -x509 -days 36500 -key ""{kp}"" -out ""{cp}"" -subj ""/CN=google.com""; fi");
+                await ssh.ExecuteCommandAsync($@"if [ ! -f ""{cp}"" ] || [ ! -f ""{kp}"" ]; then mkdir -p $(dirname ""{cp}""); openssl ecparam -genkey -name prime256v1 -out ""{kp}""; openssl req -new -x509 -days 90 -key ""{kp}"" -out ""{cp}"" -subj ""/CN=vpn.local""; fi");
         } catch { }
     }
 
