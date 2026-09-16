@@ -40,7 +40,7 @@ public class VpnClient : INotifyPropertyChanged
         set { _uuid = value; OnPropertyChanged(); }
     }
 
-    private string _country = "🌍 ??";
+    private string _country = "??";
     public string Country
     {
         get => _country;
