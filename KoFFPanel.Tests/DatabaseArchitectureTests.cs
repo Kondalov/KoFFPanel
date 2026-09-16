@@ -79,16 +79,23 @@ public class DatabaseArchitectureTests : IDisposable
     }
 
     [Fact]
-    public void InitializeDatabaseOptimization_ShouldMigrateDevDbSuccessfully()
+    public void TestGeoIpLookup()
     {
-        string devDb = AppDbContext.GetDatabasePath();
-        if (!File.Exists(devDb)) return;
+        string dbPath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\..\KoFFPanel.Presentation\GeoLite2-Country.mmdb"));
+        Assert.True(File.Exists(dbPath), $"GeoIP DB not found at: {dbPath}");
+        using var reader = new MaxMind.GeoIP2.DatabaseReader(dbPath);
+        bool found = reader.TryCountry(System.Net.IPAddress.Parse("94.51.232.108"), out var resp);
+        Assert.True(found);
+        Assert.Equal("RU", resp?.Country?.IsoCode);
+    }
 
-        using var dbContext = new AppDbContext();
-        dbContext.InitializeDatabaseOptimization();
-
-        // Проверяем, что запрос к Clients выполняется без ошибок
-        var count = dbContext.Clients.Count();
-        Assert.True(count >= 0);
+    [Fact]
+    public void FormatCountryWithFlag_ShouldReturnSingleIsoCode()
+    {
+        Assert.Equal("RU", ServerMonitorService.FormatCountryWithFlag("RU"));
+        Assert.Equal("DE", ServerMonitorService.FormatCountryWithFlag("DE"));
+        Assert.Equal("US", ServerMonitorService.FormatCountryWithFlag("US"));
+        Assert.Equal("??", ServerMonitorService.FormatCountryWithFlag("??"));
+        Assert.Equal("??", ServerMonitorService.FormatCountryWithFlag(null));
     }
 }

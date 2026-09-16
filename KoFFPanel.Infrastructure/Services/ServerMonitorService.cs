@@ -141,11 +141,7 @@ public class ServerMonitorService : IServerMonitorService
         if (coreType.ToLower() == "sing-box")
         {
             // Читаем логи из файла, а если пуст - резервно из journalctl
-            rawLogs = await sshService.ExecuteCommandAsync("tail -n 2000 /var/log/sing-box/access.log 2>/dev/null | grep -iE 'inbound connection|remoteAddr'");
-            if (string.IsNullOrWhiteSpace(rawLogs))
-            {
-                rawLogs = await sshService.ExecuteCommandAsync("journalctl -u sing-box -n 2000 --no-pager 2>/dev/null | grep -iE 'inbound connection|remoteAddr'");
-            }
+            rawLogs = await sshService.ExecuteCommandAsync("([ -s /var/log/sing-box/access.log ] && tail -n 2000 /var/log/sing-box/access.log) || journalctl -u sing-box -n 2000 --no-pager 2>/dev/null | grep -iE 'inbound connection|remoteAddr'");
         }
         else
         {
@@ -166,16 +162,27 @@ public class ServerMonitorService : IServerMonitorService
             {
                 try
                 {
+                    string cleanLine = line;
+                    int sbPrefixIdx = cleanLine.IndexOf("sing-box[");
+                    if (sbPrefixIdx != -1)
+                    {
+                        int closeBracket = cleanLine.IndexOf("]:", sbPrefixIdx);
+                        if (closeBracket != -1)
+                        {
+                            cleanLine = cleanLine.Substring(closeBracket + 2);
+                        }
+                    }
+
                     // Выцепляем ID соединения из лога (напр. [1984081120 71ms] -> 1984081120)
-                    var idMatch = System.Text.RegularExpressions.Regex.Match(line, @"\[(\d+)(?:\s+[^\]]+)?\]");
+                    var idMatch = System.Text.RegularExpressions.Regex.Match(cleanLine, @"\[(\d+)(?:\s+[^\]]+)?\]");
                     string connId = idMatch.Success ? idMatch.Groups[1].Value : "";
 
                     if (string.IsNullOrEmpty(connId)) continue;
 
                     // ИЩЕМ IP
-                    if (line.Contains("remoteAddr:"))
+                    if (cleanLine.Contains("remoteAddr:"))
                     {
-                        var ipMatch = System.Text.RegularExpressions.Regex.Match(line, @"remoteAddr:\s*([0-9a-fA-F\.\:\[\]]+)");
+                        var ipMatch = System.Text.RegularExpressions.Regex.Match(cleanLine, @"remoteAddr:\s*([0-9a-fA-F\.\:\[\]]+)");
                         if (ipMatch.Success)
                         {
                             string ip = ipMatch.Groups[1].Value.Trim();
@@ -183,9 +190,9 @@ public class ServerMonitorService : IServerMonitorService
                             connIdToIp[connId] = ip.Replace("[", "").Replace("]", "");
                         }
                     }
-                    else if (line.Contains("inbound connection from"))
+                    else if (cleanLine.Contains("inbound connection from"))
                     {
-                        var ipMatch = System.Text.RegularExpressions.Regex.Match(line, @"inbound connection from\s*([0-9a-fA-F\.\:\[\]]+)");
+                        var ipMatch = System.Text.RegularExpressions.Regex.Match(cleanLine, @"inbound connection from\s*([0-9a-fA-F\.\:\[\]]+)");
                         if (ipMatch.Success)
                         {
                             string ip = ipMatch.Groups[1].Value.Trim();
@@ -195,7 +202,7 @@ public class ServerMonitorService : IServerMonitorService
                     }
 
                     // ИЩЕМ ЮЗЕРА
-                    var userMatch = System.Text.RegularExpressions.Regex.Match(line, @"\]:\s*\[(.*?)\]\s*inbound connection");
+                    var userMatch = System.Text.RegularExpressions.Regex.Match(cleanLine, @"\]:\s*\[(.*?)\]\s*inbound connection");
                     if (userMatch.Success)
                     {
                         connIdToUser[connId] = userMatch.Groups[1].Value.Trim();
@@ -307,7 +314,7 @@ public class ServerMonitorService : IServerMonitorService
                             {
                                 if (!string.IsNullOrEmpty(response?.Country?.IsoCode))
                                 {
-                                    country = response.Country.IsoCode;
+                                    country = response.Country.IsoCode.ToUpperInvariant();
                                 }
                             }
                         }
@@ -333,6 +340,14 @@ public class ServerMonitorService : IServerMonitorService
         }
 
         return stats;
+    }
+
+    public static string FormatCountryWithFlag(string? isoCode)
+    {
+        if (string.IsNullOrWhiteSpace(isoCode) || isoCode == "??")
+            return "??";
+
+        return isoCode.Trim().ToUpperInvariant();
     }
 
     public async Task<(bool Success, long RoundtripTime)> PingServerAsync(string ip, int timeoutMs = 2000)

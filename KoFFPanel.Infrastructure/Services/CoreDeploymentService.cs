@@ -414,7 +414,8 @@ cd /tmp && rm -rf /tmp/singbox_install
             { 
                 ["disabled"] = false,
                 ["level"] = "info", 
-                ["timestamp"] = true 
+                ["timestamp"] = true,
+                ["output"] = "/var/log/sing-box/access.log"
             }; 
             baseConfig["inbounds"] = inboundsArray;
             baseConfig["outbounds"] = new JsonArray 

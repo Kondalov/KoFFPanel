@@ -210,8 +210,16 @@ public partial class SingBoxUserManagerService
         {
             var blockedNames = await _dbContext.Clients.AsNoTracking().Where(c => c.ServerIp == serverIp && c.IsP2PBlocked).Select(c => c.Email.Trim()).ToListAsync();
 
-            if (root["log"] is JsonObject logObj) logObj["level"] = "info";
-            else if (root is JsonObject rootObj) rootObj["log"] = new JsonObject { ["level"] = "info" };
+            if (root["log"] is JsonObject logObj)
+            {
+                logObj["level"] = "info";
+                logObj["timestamp"] = true;
+                logObj["output"] = "/var/log/sing-box/access.log";
+            }
+            else if (root is JsonObject rootObj)
+            {
+                rootObj["log"] = new JsonObject { ["level"] = "info", ["timestamp"] = true, ["output"] = "/var/log/sing-box/access.log" };
+            }
 
             bool isLegacyDns = false;
             if (root["dns"]?["servers"] is JsonArray srvArr && srvArr.Count > 0 && srvArr[0]?["address"] != null)

@@ -64,7 +64,7 @@ public partial class CabinetViewModel
     private async Task<string> GetAccessLogsAsync(ISshService localSsh, bool isSingBox)
     {
         return await localSsh.ExecuteCommandAsync(
-            isSingBox ? "tail -n 5 /var/log/sing-box/access.log 2>/dev/null || journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'" :
+            isSingBox ? "([ -s /var/log/sing-box/access.log ] && tail -n 5 /var/log/sing-box/access.log) || journalctl -u sing-box -n 5 --no-pager 2>/dev/null | grep INFO || echo 'Нет логов'" :
             "tail -n 5 /var/log/xray/access.log 2>/dev/null || echo 'Нет логов'"
         );
     }
@@ -72,18 +72,18 @@ public partial class CabinetViewModel
     private async Task<string> GetParserTestLogsAsync(ISshService localSsh, bool isSingBox)
     {
         return await localSsh.ExecuteCommandAsync(
-            isSingBox ? "tail -n 50 /var/log/sing-box/access.log 2>/dev/null | grep -iE 'inbound connection|sniff' | tail -n 3" :
+            isSingBox ? "(([ -s /var/log/sing-box/access.log ] && tail -n 50 /var/log/sing-box/access.log) || journalctl -u sing-box -n 50 --no-pager 2>/dev/null) | grep -iE 'inbound connection|sniff' | tail -n 3" :
             "tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3"
         );
     }
 
     private async Task<HashSet<string>> GetActiveUsernamesAsync(ISshService localSsh, bool isSingBox)
     {
-        string cmd = isSingBox ? "tail -n 100 /var/log/sing-box/access.log 2>/dev/null | grep 'inbound connection'" :
+        string cmd = isSingBox ? "(([ -s /var/log/sing-box/access.log ] && tail -n 100 /var/log/sing-box/access.log) || journalctl -u sing-box -n 100 --no-pager 2>/dev/null) | grep 'inbound connection'" :
                      "tail -n 200 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
 
         string recentLogs = await localSsh.ExecuteCommandAsync(cmd);
-        var activeUsernames = new HashSet<string>();
+        var activeUsernames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         if (!string.IsNullOrWhiteSpace(recentLogs))
         {
@@ -110,7 +110,11 @@ public partial class CabinetViewModel
                 if (lastBracketOpen != -1)
                 {
                     string potentialUser = prefix.Substring(lastBracketOpen + 1, lastBracketClose - lastBracketOpen - 1).Trim();
-                    if (Clients.Any(c => c.Email == potentialUser)) activeUsernames.Add(potentialUser);
+                    if (Clients.Any(c => string.Equals(c.Email, potentialUser, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var matchingClient = Clients.FirstOrDefault(c => string.Equals(c.Email, potentialUser, StringComparison.OrdinalIgnoreCase));
+                        activeUsernames.Add(matchingClient?.Email ?? potentialUser);
+                    }
                 }
             }
         }
