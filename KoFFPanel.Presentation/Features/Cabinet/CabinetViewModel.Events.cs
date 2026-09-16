@@ -51,6 +51,18 @@ public partial class CabinetViewModel
         string ip = SelectedServer.IpAddress ?? "";
         var dbUsers = dbContext.Clients.Where(c => c.ServerIp == ip).ToList();
 
+        // Авто-активация вновь развернутых на сервере протоколов для существующих пользователей
+        var serverProtocols = SelectedServer.Inbounds.Select(i => i.Protocol.ToLowerInvariant()).ToHashSet();
+        bool anyChanged = false;
+        foreach (var u in dbUsers)
+        {
+            if (serverProtocols.Contains("vless") && !u.IsVlessEnabled) { u.IsVlessEnabled = true; anyChanged = true; }
+            if (serverProtocols.Contains("hysteria2") && !u.IsHysteria2Enabled) { u.IsHysteria2Enabled = true; anyChanged = true; }
+            if (serverProtocols.Contains("tuic") && !u.IsTuicEnabled) { u.IsTuicEnabled = true; anyChanged = true; }
+            if (serverProtocols.Contains("trojan") && !u.IsTrojanEnabled) { u.IsTrojanEnabled = true; anyChanged = true; }
+        }
+        if (anyChanged) await dbContext.SaveChangesAsync();
+
         System.Windows.Application.Current.Dispatcher.Invoke(() => SyncClientsCollection(dbUsers));
 
         try
@@ -69,7 +81,7 @@ public partial class CabinetViewModel
                     var links = new List<string>();
 
                     if (client.IsVlessEnabled && !string.IsNullOrEmpty(client.VlessLink) && client.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.VlessLink);
-                    if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link) && client.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) links.Add(client.Hysteria2Link);
+                    if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link) && (client.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase) || client.Hysteria2Link.StartsWith("hysteria2://", StringComparison.OrdinalIgnoreCase))) links.Add(client.Hysteria2Link);
                     if (client.IsTuicEnabled && !string.IsNullOrEmpty(client.TuicLink) && client.TuicLink.StartsWith("tuic://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TuicLink);
                     if (client.IsTrojanEnabled && !string.IsNullOrEmpty(client.TrojanLink) && client.TrojanLink.StartsWith("trojan://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TrojanLink);
 

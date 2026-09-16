@@ -320,6 +320,7 @@ public static class SubscriptionConfigConverter
                             ["fingerprint"] = p.Params.GetValueOrDefault("fp", "chrome")
                         }
                     };
+                    vlessObj["packet_encoding"] = "xudp";
                 }
 
                 outbounds.Add(vlessObj);
@@ -434,7 +435,6 @@ public static class SubscriptionConfigConverter
 
         var root = new JsonObject
         {
-            ["version"] = 1,
             ["outbounds"] = outbounds
         };
 

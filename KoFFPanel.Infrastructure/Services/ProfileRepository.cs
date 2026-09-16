@@ -36,12 +36,42 @@ public class ProfileRepository : IProfileRepository
     {
         lock (_syncLock)
         {
-            if (!File.Exists(_dbFilePath)) return new List<VpnProfile>();
+            var profiles = new List<VpnProfile>();
+            if (File.Exists(_dbFilePath))
+            {
+                try
+                {
+                    string json = File.ReadAllText(_dbFilePath);
+                    profiles = JsonSerializer.Deserialize<List<VpnProfile>>(json) ?? new List<VpnProfile>();
+                }
+                catch { }
+            }
+
+#if DEBUG
+            // Бесшовная синхронизация для Debug-сборок: если сервер настроен в релизном профиле, подтягиваем его
+            string releaseDbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "KoFFPanel", "ProfilesDB.json");
+            if (File.Exists(releaseDbPath))
+            {
+                try
+                {
+                    string releaseJson = File.ReadAllText(releaseDbPath);
+                    var releaseProfiles = JsonSerializer.Deserialize<List<VpnProfile>>(releaseJson) ?? new List<VpnProfile>();
+                    foreach (var rp in releaseProfiles)
+                    {
+                        if (!profiles.Any(p => p.IpAddress == rp.IpAddress || p.Id == rp.Id))
+                        {
+                            profiles.Add(rp);
+                        }
+                    }
+                }
+                catch { }
+            }
+#endif
+
+            if (profiles.Count == 0) return profiles;
+
             try
             {
-                string json = File.ReadAllText(_dbFilePath);
-                var profiles = JsonSerializer.Deserialize<List<VpnProfile>>(json) ?? new List<VpnProfile>();
-
                 string masterKey = MasterKeyService.Instance.GetMasterPassword();
 
                 foreach (var p in profiles)
