@@ -95,14 +95,19 @@ public partial class ClientProtocolsViewModel : ObservableObject
         TuicLink = client.TuicLink;
         TrojanLink = client.TrojanLink;
 
+        string displayHost = !string.IsNullOrWhiteSpace(profile?.ConnectionNode) ? profile.ConnectionNode.Trim() : client.ServerIp;
+
         if (serverHasVless && (string.IsNullOrWhiteSpace(VlessLink) || VlessLink.Contains("не установлен")))
-            VlessLink = GenerateVlessLinkFallback(inbounds.First(i => i.Protocol.Equals("vless", StringComparison.OrdinalIgnoreCase)), client.ServerIp, client.Uuid, client.Email);
+            VlessLink = GenerateVlessLinkFallback(inbounds.First(i => i.Protocol.Equals("vless", StringComparison.OrdinalIgnoreCase)), displayHost, client.Uuid, client.Email);
 
         if (serverHasHysteria && (string.IsNullOrWhiteSpace(Hysteria2Link) || Hysteria2Link.Contains("не установлен")))
-            Hysteria2Link = GenerateHysteriaLinkFallback(inbounds.First(i => i.Protocol.Equals("hysteria2", StringComparison.OrdinalIgnoreCase)), client.ServerIp, client.Uuid, client.Email);
+            Hysteria2Link = GenerateHysteriaLinkFallback(inbounds.First(i => i.Protocol.Equals("hysteria2", StringComparison.OrdinalIgnoreCase)), displayHost, client.Uuid, client.Email);
 
         if (serverHasTuic && (string.IsNullOrWhiteSpace(TuicLink) || TuicLink.Contains("не установлен")))
-            TuicLink = GenerateTuicLinkFallback(inbounds.First(i => i.Protocol.Equals("tuic", StringComparison.OrdinalIgnoreCase)), client.ServerIp, client.Uuid, client.Email);
+            TuicLink = GenerateTuicLinkFallback(inbounds.First(i => i.Protocol.Equals("tuic", StringComparison.OrdinalIgnoreCase)), displayHost, client.Uuid, client.Email);
+
+        if (serverHasTrojan && (string.IsNullOrWhiteSpace(TrojanLink) || TrojanLink.Contains("не установлен")))
+            TrojanLink = GenerateTrojanLinkFallback(inbounds.First(i => i.Protocol.Equals("trojan", StringComparison.OrdinalIgnoreCase)), displayHost, client.Uuid, client.Email);
     }
 
     private string GenerateVlessLinkFallback(ServerInbound inbound, string ip, string uuid, string email)
@@ -147,6 +152,24 @@ public partial class ClientProtocolsViewModel : ObservableObject
             string safeIp = ip.Contains(":") && !ip.StartsWith("[") ? $"[{ip}]" : ip;
             string encodedName = Uri.EscapeDataString($"KoFF_TUIC_{email}");
             return $"tuic://{uuid}:{uuid}@{safeIp}:{inbound.Port}?sni={sni}&alpn=h3&congestion_control=bbr&allow_insecure=1#{encodedName}";
+        }
+        catch { return "Ошибка генерации ссылки"; }
+    }
+
+    private string GenerateTrojanLinkFallback(ServerInbound inbound, string ip, string uuid, string email)
+    {
+        try
+        {
+            string sni = "bing.com";
+            if (!string.IsNullOrWhiteSpace(inbound.SettingsJson))
+            {
+                var settings = System.Text.Json.JsonDocument.Parse(inbound.SettingsJson).RootElement;
+                if (settings.TryGetProperty("sni", out var s) && !string.IsNullOrWhiteSpace(s.GetString()))
+                    sni = s.GetString()!;
+            }
+            string safeIp = ip.Contains(":") && !ip.StartsWith("[") ? $"[{ip}]" : ip;
+            string encodedName = Uri.EscapeDataString($"KoFF_{email}");
+            return $"trojan://{uuid}@{safeIp}:{inbound.Port}?security=tls&sni={sni}&type=tcp&alpn=h2&allowInsecure=1&insecure=1#{encodedName}";
         }
         catch { return "Ошибка генерации ссылки"; }
     }

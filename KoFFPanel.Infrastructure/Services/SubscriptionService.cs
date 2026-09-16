@@ -85,7 +85,7 @@ class H(http.server.BaseHTTPRequestHandler):
             fmt = query.get('format', [''])[0].lower()
             
             is_clash = fmt == 'clash' or any(k in ua for k in ['clash', 'mihomo', 'stash', 'meta'])
-            is_singbox = fmt == 'singbox' or any(k in ua for k in ['sing-box', 'sfa', 'sfi', 'karing'])
+            is_singbox = fmt == 'singbox' or any(k in ua for k in ['sing-box', 'sfa', 'sfi', 'karing', 'hiddify', 'dart', 'nekobox'])
             
             base_dir = '/var/www/xray-sub/'
             target_file = os.path.join(base_dir, p)
@@ -175,10 +175,10 @@ WantedBy=multi-user.target";
         {
             string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
 
-            string checkSvc = (await ssh.ExecuteCommandAsync("systemctl is-active koff-sub")).Trim();
-            if (checkSvc != "active")
+            string checkScript = (await ssh.ExecuteCommandAsync("systemctl is-active koff-sub && grep -q 'hiddify' /var/www/xray-sub/server.py 2>/dev/null && echo 'OK' || echo 'NEED_UPDATE'")).Trim();
+            if (!checkScript.Contains("OK"))
             {
-                _logger.Log("SUB-WARN", "Служба подписок не активна! Выполняем авто-восстановление...");
+                _logger.Log("SUB-WARN", "Служба подписок не активна или устарела! Выполняем авто-обновление...");
                 await InitializeServerAsync(ssh);
             }
 
