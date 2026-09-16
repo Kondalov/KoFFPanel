@@ -21,7 +21,6 @@ namespace KoFFPanel.Presentation.Features.Cabinet;
 public partial class CabinetViewModel
 {
     private bool IsSingBoxActive() => SelectedServer?.CoreType == "sing-box";
-    private bool IsTrustTunnelActive() => SelectedServer?.CoreType == "trusttunnel";
 
     [RelayCommand]
     private async Task GenerateRealityConfigAsync() { await Task.CompletedTask; }
@@ -53,15 +52,11 @@ public partial class CabinetViewModel
 
                     if (IsSingBoxActive())
                     {
-                        (success, msg, vlessLink) = await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled, vm.IsTrojanEnabled, vm.IsShadowsocksEnabled);
-                    }
-                    else if (IsTrustTunnelActive())
-                    {
-                        (success, msg, vlessLink) = await _trustTunnelUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked);
+                        (success, msg, vlessLink) = await _singBoxUserManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTuicEnabled, vm.IsTrojanEnabled);
                     }
                     else
                     {
-                        (success, msg, vlessLink) = await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled, vm.IsTrojanEnabled, vm.IsShadowsocksEnabled);
+                        (success, msg, vlessLink) = await _userManager.AddUserAsync(ssh, ip, vm.ClientName, limit, vm.ExpiryDate, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrojanEnabled);
                     }
 
                     if (success)
@@ -75,9 +70,8 @@ public partial class CabinetViewModel
                             var activeLinks = new List<string>();
                             if (freshClient.IsVlessEnabled && !string.IsNullOrEmpty(freshClient.VlessLink)) activeLinks.Add(freshClient.VlessLink);
                             if (freshClient.IsHysteria2Enabled && !string.IsNullOrEmpty(freshClient.Hysteria2Link)) activeLinks.Add(freshClient.Hysteria2Link);
+                            if (freshClient.IsTuicEnabled && !string.IsNullOrEmpty(freshClient.TuicLink)) activeLinks.Add(freshClient.TuicLink);
                             if (freshClient.IsTrojanEnabled && !string.IsNullOrEmpty(freshClient.TrojanLink)) activeLinks.Add(freshClient.TrojanLink);
-                            if (freshClient.IsShadowsocksEnabled && !string.IsNullOrEmpty(freshClient.ShadowsocksLink)) activeLinks.Add(freshClient.ShadowsocksLink);
-                            if (freshClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(freshClient.TrustTunnelLink)) activeLinks.Add(freshClient.TrustTunnelLink);
 
                             await _subscriptionService.UpdateUserSubscriptionAsync(ssh, freshClient.Uuid ?? "", activeLinks);
                         }
@@ -108,7 +102,6 @@ public partial class CabinetViewModel
         {
             bool success; string msg;
             if (IsSingBoxActive()) (success, msg) = await _singBoxUserManager.RemoveUserAsync(ssh, ip, email);
-            else if (IsTrustTunnelActive()) (success, msg) = await _trustTunnelUserManager.RemoveUserAsync(ssh, ip, email);
             else (success, msg) = await _userManager.RemoveUserAsync(ssh, ip, email);
 
             if (success)
@@ -145,7 +138,6 @@ public partial class CabinetViewModel
         {
             bool success; string msg;
             if (IsSingBoxActive()) (success, msg) = await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, newState);
-            else if (IsTrustTunnelActive()) (success, msg) = await _trustTunnelUserManager.ToggleUserStatusAsync(ssh, ip, email, newState);
             else (success, msg) = await _userManager.ToggleUserStatusAsync(ssh, ip, email, newState);
 
             if (success)
@@ -188,7 +180,7 @@ public partial class CabinetViewModel
 
             if (window.DataContext is AddClientViewModel vm)
             {
-                vm.LoadForEdit(client.Email ?? "", client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked, client.IsVlessEnabled, client.IsHysteria2Enabled, client.IsTrustTunnelEnabled, client.IsTrojanEnabled, client.IsShadowsocksEnabled);
+                vm.LoadForEdit(client.Email ?? "", client.TrafficLimit, client.ExpiryDate, client.Note ?? "", client.IsP2PBlocked, client.IsVlessEnabled, client.IsHysteria2Enabled, client.IsTuicEnabled, client.IsTrojanEnabled);
                 window.ShowDialog();
 
                 if (vm.IsSuccess)
@@ -197,9 +189,8 @@ public partial class CabinetViewModel
                     string email = client.Email ?? ""; string ip = server.IpAddress ?? "";
                     bool success;
 
-                    if (IsSingBoxActive()) success = await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled, vm.IsTrojanEnabled, vm.IsShadowsocksEnabled);
-                    else if (IsTrustTunnelActive()) success = await _trustTunnelUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked);
-                    else success = await _userManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrustTunnelEnabled, vm.IsTrojanEnabled, vm.IsShadowsocksEnabled);
+                    if (IsSingBoxActive()) success = await _singBoxUserManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTuicEnabled, vm.IsTrojanEnabled);
+                    else success = await _userManager.UpdateUserLimitsAsync(ssh, ip, email, newLimit, vm.ExpiryDate, vm.Note, vm.IsP2PBlocked, vm.IsVlessEnabled, vm.IsHysteria2Enabled, vm.IsTrojanEnabled);
 
                     if (success)
                     {
@@ -214,8 +205,8 @@ public partial class CabinetViewModel
 
                         client.TrafficLimit = newLimit; client.ExpiryDate = vm.ExpiryDate; client.Note = vm.Note;
                         client.IsP2PBlocked = vm.IsP2PBlocked; client.IsVlessEnabled = vm.IsVlessEnabled;
-                        client.IsHysteria2Enabled = vm.IsHysteria2Enabled; client.IsTrustTunnelEnabled = vm.IsTrustTunnelEnabled;
-                        client.IsTrojanEnabled = vm.IsTrojanEnabled; client.IsShadowsocksEnabled = vm.IsShadowsocksEnabled;
+                        client.IsHysteria2Enabled = vm.IsHysteria2Enabled; client.IsTuicEnabled = vm.IsTuicEnabled;
+                        client.IsTrojanEnabled = vm.IsTrojanEnabled;
 
                         using var scope = _serviceProvider.CreateScope();
                         var freshContext = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
@@ -226,9 +217,8 @@ public partial class CabinetViewModel
                             var activeLinks = new List<string>();
                             if (freshClient.IsVlessEnabled && !string.IsNullOrEmpty(freshClient.VlessLink)) activeLinks.Add(freshClient.VlessLink);
                             if (freshClient.IsHysteria2Enabled && !string.IsNullOrEmpty(freshClient.Hysteria2Link)) activeLinks.Add(freshClient.Hysteria2Link);
+                            if (freshClient.IsTuicEnabled && !string.IsNullOrEmpty(freshClient.TuicLink)) activeLinks.Add(freshClient.TuicLink);
                             if (freshClient.IsTrojanEnabled && !string.IsNullOrEmpty(freshClient.TrojanLink)) activeLinks.Add(freshClient.TrojanLink);
-                            if (freshClient.IsShadowsocksEnabled && !string.IsNullOrEmpty(freshClient.ShadowsocksLink)) activeLinks.Add(freshClient.ShadowsocksLink);
-                            if (freshClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(freshClient.TrustTunnelLink)) activeLinks.Add(freshClient.TrustTunnelLink);
 
                             await _subscriptionService.UpdateUserSubscriptionAsync(ssh, freshClient.Uuid ?? "", activeLinks);
                         }
@@ -301,10 +291,8 @@ public partial class CabinetViewModel
                         var activeLinks = new List<string>();
                         if (freshClient.IsVlessEnabled && !string.IsNullOrEmpty(freshClient.VlessLink)) activeLinks.Add(freshClient.VlessLink);
                         if (freshClient.IsHysteria2Enabled && !string.IsNullOrEmpty(freshClient.Hysteria2Link)) activeLinks.Add(freshClient.Hysteria2Link);
-                        if (freshClient.IsTrustTunnelEnabled && !string.IsNullOrEmpty(freshClient.TrustTunnelLink)) activeLinks.Add(freshClient.TrustTunnelLink);
-                        // ИСПРАВЛЕНИЕ: Добавлены Trojan и Shadowsocks
+                        if (freshClient.IsTuicEnabled && !string.IsNullOrEmpty(freshClient.TuicLink)) activeLinks.Add(freshClient.TuicLink);
                         if (freshClient.IsTrojanEnabled && !string.IsNullOrEmpty(freshClient.TrojanLink)) activeLinks.Add(freshClient.TrojanLink);
-                        if (freshClient.IsShadowsocksEnabled && !string.IsNullOrEmpty(freshClient.ShadowsocksLink)) activeLinks.Add(freshClient.ShadowsocksLink);
 
                         await _subscriptionService.UpdateUserSubscriptionAsync(_currentMonitoringSsh, freshClient.Uuid ?? "", activeLinks);
                     }
@@ -344,12 +332,10 @@ public partial class CabinetViewModel
                 if (existing.IsVlessEnabled != newClient.IsVlessEnabled) existing.IsVlessEnabled = newClient.IsVlessEnabled;
                 if (existing.IsHysteria2Enabled != newClient.IsHysteria2Enabled) existing.IsHysteria2Enabled = newClient.IsHysteria2Enabled;
                 if (existing.Hysteria2Link != newClient.Hysteria2Link) existing.Hysteria2Link = newClient.Hysteria2Link;
-                if (existing.IsTrustTunnelEnabled != newClient.IsTrustTunnelEnabled) existing.IsTrustTunnelEnabled = newClient.IsTrustTunnelEnabled;
-                if (existing.TrustTunnelLink != newClient.TrustTunnelLink) existing.TrustTunnelLink = newClient.TrustTunnelLink;
+                if (existing.IsTuicEnabled != newClient.IsTuicEnabled) existing.IsTuicEnabled = newClient.IsTuicEnabled;
+                if (existing.TuicLink != newClient.TuicLink) existing.TuicLink = newClient.TuicLink;
                 if (existing.IsTrojanEnabled != newClient.IsTrojanEnabled) existing.IsTrojanEnabled = newClient.IsTrojanEnabled;
                 if (existing.TrojanLink != newClient.TrojanLink) existing.TrojanLink = newClient.TrojanLink;
-                if (existing.IsShadowsocksEnabled != newClient.IsShadowsocksEnabled) existing.IsShadowsocksEnabled = newClient.IsShadowsocksEnabled;
-                if (existing.ShadowsocksLink != newClient.ShadowsocksLink) existing.ShadowsocksLink = newClient.ShadowsocksLink;
                 if (existing.TrafficUsed != newClient.TrafficUsed) existing.TrafficUsed = newClient.TrafficUsed;
                 if (existing.TrafficLimit != newClient.TrafficLimit) existing.TrafficLimit = newClient.TrafficLimit;
                 if (existing.Note != newClient.Note) existing.Note = newClient.Note;

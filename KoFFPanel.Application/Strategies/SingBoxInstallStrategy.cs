@@ -30,8 +30,8 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
             apt-get install -y curl jq lsof openssl tar gzip >/dev/null 2>&1 || true
             
             echo "2. Остановка конфликтующих служб..."
-            systemctl stop sing-box xray v2ray trusttunnel 2>/dev/null || true
-            systemctl disable sing-box xray trusttunnel 2>/dev/null || true
+            systemctl stop sing-box xray v2ray 2>/dev/null || true
+            systemctl disable sing-box xray 2>/dev/null || true
             
             echo "3. Очистка порта {{vpnPort}}..."
             PIDS=$(lsof -t -i:{{vpnPort}} || true)
@@ -46,9 +46,11 @@ public class SingBoxInstallStrategy : ICoreInstallStrategy
               *) echo "ERROR_ARCH: $ARCH"; exit 1 ;;
             esac
             
-            echo "5. Поиск версии..."
             TAG=$(curl -sL --connect-timeout 5 https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r .tag_name 2>/dev/null)
-            if [ -z "$TAG" ] || [ "$TAG" == "null" ]; then TAG="v1.13.14"; fi
+            if [ -z "$TAG" ] || [ "$TAG" == "null" ]; then
+                TAG=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/SagerNet/sing-box/releases/latest 2>/dev/null | grep -o '[^/]*$')
+            fi
+            if [ -z "$TAG" ] || [ "$TAG" == "null" ] || [ "$TAG" == "latest" ]; then TAG="v1.14.1"; fi
             
             URL="https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${TAG#v}-linux-${DL_ARCH}.tar.gz"
             

@@ -13,14 +13,11 @@ public partial class AddClientViewModel : ObservableObject
     [ObservableProperty] private DateTime? _expiryDate = null;
     [ObservableProperty] private string _note = "";
 
-    // Флаги протоколов (СТАРЫЕ - НЕ ТРОГАЕМ)
+    // Флаги протоколов
     [ObservableProperty] private bool _isVlessEnabled = true;
     [ObservableProperty] private bool _isHysteria2Enabled = true;
-    [ObservableProperty] private bool _isTrustTunnelEnabled = true;
-
-    // НОВЫЕ СВОЙСТВА
+    [ObservableProperty] private bool _isTuicEnabled = true;
     [ObservableProperty] private bool _isTrojanEnabled = false;
-    [ObservableProperty] private bool _isShadowsocksEnabled = false;
 
     [ObservableProperty] private bool _isP2PBlocked = true;
     [ObservableProperty] private bool _areProtocolsExpanded = false;
@@ -46,14 +43,13 @@ public partial class AddClientViewModel : ObservableObject
 
         IsVlessEnabled = true;
         IsHysteria2Enabled = true;
-        IsTrustTunnelEnabled = true;
+        IsTuicEnabled = true;
         IsTrojanEnabled = false;
-        IsShadowsocksEnabled = false;
     }
 
     public void LoadForEdit(string currentName, long currentLimitBytes, DateTime? currentExpiry, string currentNote,
-                           bool isP2pBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false,
-                           bool isTrojan = false, bool isShadowsocks = false)
+                           bool isP2pBlocked = true, bool isVless = true, bool isHy2 = false, bool isTuic = false,
+                           bool isTrojan = false)
     {
         IsEditMode = true;
         WindowTitle = "Редактировать пользователя";
@@ -68,9 +64,8 @@ public partial class AddClientViewModel : ObservableObject
 
         IsVlessEnabled = isVless;
         IsHysteria2Enabled = isHy2;
-        IsTrustTunnelEnabled = isTt;
+        IsTuicEnabled = isTuic;
         IsTrojanEnabled = isTrojan;
-        IsShadowsocksEnabled = isShadowsocks;
     }
 
     [RelayCommand]

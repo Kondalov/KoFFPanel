@@ -70,7 +70,6 @@ echo 'READY|Сервер готов к установке.'
 
     public async Task<string> GetInstalledXrayVersionAsync(ISshService ssh) => ssh.IsConnected ? (await ssh.ExecuteCommandAsync("xray version | head -n 1 | awk '{print $2}'")).Trim() : "Отключен";
     public async Task<string> GetInstalledSingBoxVersionAsync(ISshService ssh) => ssh.IsConnected ? (await ssh.ExecuteCommandAsync("sing-box version | grep 'version' | awk '{print $3}'")).Trim() : "Отключен";
-    public async Task<string> GetInstalledTrustTunnelVersionAsync(ISshService ssh) => ssh.IsConnected ? (await ssh.ExecuteCommandAsync("/usr/local/bin/trusttunnel --version 2>/dev/null | awk '{print $2}'")).Trim() : "Отключен";
 
     public async Task<(bool IsSuccess, string Log)> InstallXrayAsync(ISshService ssh, string targetVersion = "latest")
         => await InstallXrayInternalAsync(ssh, targetVersion, "");
@@ -78,10 +77,7 @@ echo 'READY|Сервер готов к установке.'
     public async Task<(bool IsSuccess, string Log)> InstallSingBoxAsync(ISshService ssh, string targetVersion = "latest")
         => await InstallSingBoxInternalAsync(ssh, targetVersion, "");
 
-    public async Task<(bool IsSuccess, string Log)> InstallTrustTunnelAsync(ISshService ssh, string targetVersion = "latest")
-        => await InstallTrustTunnelInternalAsync(ssh, targetVersion, "");
-
-    public async Task<(bool IsSuccess, string Log)> DeployFullStackAsync(ISshService ssh, VpnProfile profile, string coreType, List<(IProtocolBuilder Builder, int Port, string? TtUsername, string? TtPassword)> protocols)
+    public async Task<(bool IsSuccess, string Log)> DeployFullStackAsync(ISshService ssh, VpnProfile profile, string coreType, List<(IProtocolBuilder Builder, int Port)> protocols)
     {
         string logPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Logs", "deploy_steps.log");
         async Task LogStep(string step)
@@ -104,14 +100,7 @@ echo 'READY|Сервер готов к установке.'
             await LogStep("[1/7] Подготовка файловой системы и остановка служб (Smart Cleanup)...");
             _logger.Log("DEPLOY-DEBUG", $"Текущий домен подписки: {(string.IsNullOrEmpty(profile.CustomDomain) ? "НЕ ЗАДАН (будет HTTP)" : profile.CustomDomain)}");
 
-            if (coreName == "trusttunnel")
-            {
-                await ssh.ExecuteSudoCommandAsync($"systemctl stop trusttunnel 2>/dev/null; systemctl disable trusttunnel 2>/dev/null; pkill -9 trusttunnel 2>/dev/null; pkill -9 trusttunnel_endpoint 2>/dev/null; rm -rf /etc/trusttunnel /opt/trusttunnel /opt/trusttunnel2; mkdir -p /opt/trusttunnel2", profile.Password);
-                profile.Inbounds.RemoveAll(i => i.Protocol.ToLower() == "trusttunnel");
-            }
-            else
-            {
-                string cleanupCmd = $@"
+            string cleanupCmd = $@"
             {sudoPrefix}systemctl stop sing-box xray 2>/dev/null || true
             {sudoPrefix}systemctl disable sing-box xray 2>/dev/null || true
             {sudoPrefix}pkill -9 sing-box 2>/dev/null || true
@@ -126,27 +115,19 @@ echo 'READY|Сервер готов к установке.'
             {sudoPrefix}mkdir -p /etc/sing-box /usr/local/etc/xray /var/log/sing-box /etc/koff && {sudoPrefix}chmod 750 /var/log/sing-box
             sleep 1
         ";
-                await ssh.ExecuteSudoCommandAsync(cleanupCmd, profile.Password, TimeSpan.FromSeconds(60));
+            await ssh.ExecuteSudoCommandAsync(cleanupCmd, profile.Password, TimeSpan.FromSeconds(60));
 
-                if (string.Equals(coreName, "xray", StringComparison.OrdinalIgnoreCase))
-                {
-                    await ssh.ExecuteSudoCommandAsync($"mkdir -p /var/log/xray && touch /var/log/xray/access.log /var/log/xray/error.log && chmod -R 750 /var/log/xray", profile.Password);
-                }
-
-                profile.Inbounds.RemoveAll(i => !string.Equals(i.Protocol, "trusttunnel", StringComparison.OrdinalIgnoreCase));
-
-                if (!protocols.Any(p => string.Equals(p.Builder.ProtocolType, "trusttunnel", StringComparison.OrdinalIgnoreCase)))
-                {
-                    profile.Inbounds.RemoveAll(i => string.Equals(i.Protocol, "trusttunnel", StringComparison.OrdinalIgnoreCase));
-                }
-
-                profile.CoreType = coreName;
+            if (string.Equals(coreName, "xray", StringComparison.OrdinalIgnoreCase))
+            {
+                await ssh.ExecuteSudoCommandAsync($"mkdir -p /var/log/xray && touch /var/log/xray/access.log /var/log/xray/error.log && chmod -R 750 /var/log/xray", profile.Password);
             }
 
+            profile.CoreType = coreName;
+
             await LogStep("[2/7] Установка бинарных файлов ядра...");
-            var installRes = string.Equals(coreType, "sing-box", StringComparison.OrdinalIgnoreCase) ? await InstallSingBoxInternalAsync(ssh, "latest", sudoPrefix) :
-                             (string.Equals(coreType, "trusttunnel", StringComparison.OrdinalIgnoreCase) ? await InstallTrustTunnelInternalAsync(ssh, "latest", sudoPrefix) :
-                             await InstallXrayInternalAsync(ssh, "latest", sudoPrefix));
+            var installRes = string.Equals(coreType, "sing-box", StringComparison.OrdinalIgnoreCase)
+                ? await InstallSingBoxInternalAsync(ssh, "latest", sudoPrefix)
+                : await InstallXrayInternalAsync(ssh, "latest", sudoPrefix);
 
             if (!installRes.IsSuccess)
             {
@@ -200,8 +181,7 @@ echo 'READY|Сервер готов к установке.'
                 await _singBoxConfigurator.CompileAndDeployRuleSetsAsync(ssh);
             }
 
-            if (string.Equals(coreType, "trusttunnel", StringComparison.OrdinalIgnoreCase)) await DeployTrustTunnelConfigAsync(ssh, profile, sudoPrefix, protocols);
-            else await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
+            await DeployJsonCoreConfigAsync(ssh, profile, coreType.ToLower(), sudoPrefix);
 
             await LogStep("[6/7] Настройка микросервиса подписок (HTTPS Ready)...");
             _subscriptionService.SetCustomDomain(profile.CustomDomain ?? string.Empty);
@@ -228,21 +208,9 @@ echo 'READY|Сервер готов к установке.'
             }
 
             // === УМНЫЙ АЛГОРИТМ: Изолированная валидация конфигов ===
-            string checkCmd = "";
-            if (coreName == "sing-box")
-            {
-                checkCmd = $"{sudoPrefix}mkdir -p /var/log/sing-box && {sudoPrefix}sing-box check -c /etc/sing-box/config.json 2>&1";
-            }
-            else if (coreName == "trusttunnel")
-            {
-                // TrustTunnel уже проверяется своим мастером установки, имитируем "OK"
-                // чтобы ядро Xray случайно не вызвало откат системы.
-                checkCmd = "echo 'Configuration OK'";
-            }
-            else
-            {
-                checkCmd = $"{sudoPrefix}xray run -test -config /usr/local/etc/xray/config.json 2>&1";
-            }
+            string checkCmd = coreName == "sing-box"
+                ? $"{sudoPrefix}mkdir -p /var/log/sing-box && {sudoPrefix}sing-box check -c /etc/sing-box/config.json 2>&1"
+                : $"{sudoPrefix}xray run -test -config /usr/local/etc/xray/config.json 2>&1";
 
             var checkRes = await ssh.ExecuteCommandAsync(checkCmd);
 
@@ -389,7 +357,10 @@ case ""$ARCH"" in
 esac
 
 TAG=$(curl -sL --connect-timeout 5 https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r "".tag_name"" 2>/dev/null)
-if [ -z ""$TAG"" ] || [ ""$TAG"" == ""null"" ]; then TAG=""v1.13.14""; fi
+if [ -z ""$TAG"" ] || [ ""$TAG"" == ""null"" ]; then
+    TAG=$(curl -sIL -o /dev/null -w '%{url_effective}' https://github.com/SagerNet/sing-box/releases/latest 2>/dev/null | grep -o '[^/]*$')
+fi
+if [ -z ""$TAG"" ] || [ ""$TAG"" == ""null"" ] || [ ""$TAG"" == ""latest"" ]; then TAG=""v1.14.1""; fi
 
 DOWNLOAD_URL=""https://github.com/SagerNet/sing-box/releases/download/${TAG}/sing-box-${TAG#v}-linux-${DL_ARCH}.tar.gz""
 
@@ -403,10 +374,7 @@ if curl -sL --retry 3 --connect-timeout 10 ""$DOWNLOAD_URL"" -o sb.tar.gz; then
 fi
 
 if [ -f ""/usr/local/bin/sing-box"" ]; then
-    DOWNLOAD_URL_XRAY=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | jq -r "".assets[] | select(.name == \""Xray-linux-64.zip\"") | .browser_download_url"")
-    if [ -n ""$DOWNLOAD_URL_XRAY"" ]; then
-        wget -q ""$DOWNLOAD_URL_XRAY"" -O /tmp/xray_util.zip && unzip -o /tmp/xray_util.zip xray -d /usr/local/bin/ && chmod +x /usr/local/bin/xray
-    fi
+    chmod +x /usr/local/bin/sing-box
     /usr/local/bin/sing-box version > /dev/null 2>&1 && echo 'SUCCESS_INSTALLED' || echo 'FAIL_VERIFY'
 else
     echo 'FAIL_INSTALL'
@@ -419,36 +387,6 @@ cd /tmp && rm -rf /tmp/singbox_install
         return (log.Contains("SUCCESS_INSTALLED") || log.Contains("installed") || log.Contains("already"), log);
     }
 
-    private async Task<(bool IsSuccess, string Log)> InstallTrustTunnelInternalAsync(ISshService ssh, string targetVersion, string sudoPrefix)
-    {
-        string script = @"
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -q || true
-apt-get install -y curl wget tar jq >/dev/null 2>&1 || true
-
-DOWNLOAD_URL=$(curl -s https://api.github.com/repos/TrustTunnel/TrustTunnel/releases/latest | jq -r "".assets[].browser_download_url"" | grep -i ""linux"" | grep -E ""amd64|x86_64"" | grep ""tar.gz"" | grep -v ""dbgsym"" | grep -v ""debug"" | head -n 1)
-if [ -z ""$DOWNLOAD_URL"" ]; then echo 'failed_download_url'; exit 1; fi
-
-rm -rf /opt/trusttunnel2 && mkdir -p /opt/trusttunnel2 && cd /opt/trusttunnel2
-if curl -sL --retry 3 --connect-timeout 10 ""$DOWNLOAD_URL"" -o tt.tar.gz; then
-    if tar -xzf tt.tar.gz --strip-components=1; then
-        chmod +x setup_wizard trusttunnel_endpoint 2>/dev/null || true
-        rm tt.tar.gz
-    fi
-fi
-
-if [ -f ""/opt/trusttunnel2/trusttunnel_endpoint"" ]; then 
-    echo 'success'
-else 
-    echo 'failed_binary_missing'
-fi
-".Replace("\r", "");
-
-        string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(script));
-        string log = await ssh.ExecuteCommandAsync($"echo '{b64}' | base64 -d | {sudoPrefix}bash", TimeSpan.FromMinutes(5));
-        return (log.Contains("success"), log);
-    }
-
     private async Task SmartRestoreCertsAsync(ISshService ssh, ServerInbound existingDb)
     {
         try {
@@ -457,85 +395,6 @@ fi
             if (!string.IsNullOrWhiteSpace(cp) && !string.IsNullOrWhiteSpace(kp))
                 await ssh.ExecuteCommandAsync($@"if [ ! -f ""{cp}"" ] || [ ! -f ""{kp}"" ]; then mkdir -p $(dirname ""{cp}""); openssl ecparam -genkey -name prime256v1 -out ""{kp}""; openssl req -new -x509 -days 90 -key ""{kp}"" -out ""{cp}"" -subj ""/CN=vpn.local""; fi");
         } catch { }
-    }
-
-    private async Task DeployTrustTunnelConfigAsync(ISshService ssh, VpnProfile profile, string sudoPrefix, List<(IProtocolBuilder Builder, int Port, string? TtUsername, string? TtPassword)> protocols)
-    {
-        var inbound = profile.Inbounds.FirstOrDefault(i => i.Protocol.ToLower() == "trusttunnel");
-        if (inbound == null) return;
-        var settingsNode = JsonNode.Parse(inbound.SettingsJson) as JsonObject;
-        string sni = settingsNode?["sni"]?.ToString() ?? "vpn.endpoint";
-
-        // Получаем логин из мастера (обычно ADMIN)
-        var ttProtocolInfo = protocols.FirstOrDefault(p => p.Builder.ProtocolType.ToLower() == "trusttunnel");
-        string username = string.IsNullOrWhiteSpace(ttProtocolInfo.TtUsername) ? "ADMIN" : ttProtocolInfo.TtUsername;
-
-        string realPassword = ""; // Здесь будет храниться безопасный Uuid
-
-        // Умный алгоритм работы с БД: получаем или создаем пользователя БЕЗ поломки Uuid
-        using (var db = new KoFFPanel.Infrastructure.Data.AppDbContext())
-        {
-            var adminClient = db.Clients.FirstOrDefault(c => c.ServerIp == profile.IpAddress && c.Email == username);
-            if (adminClient == null)
-            {
-                // Если пользователя нет, создаем строго с правильным UUID
-                adminClient = new VpnClient
-                {
-                    Email = username,
-                    Uuid = Guid.NewGuid().ToString(),
-                    ServerIp = profile.IpAddress!,
-                    IsTrustTunnelEnabled = true,
-                    IsActive = true,
-                    IsVlessEnabled = false,
-                    IsHysteria2Enabled = false,
-                    TrafficLimit = 0
-                };
-                db.Clients.Add(adminClient);
-            }
-            else
-            {
-                // Если пользователь есть - просто активируем ему TrustTunnel. 
-                // Uuid НЕ ТРОГАЕМ, чтобы не сломать SingBox/VLESS!
-                adminClient.IsTrustTunnelEnabled = true;
-            }
-
-            await db.SaveChangesAsync();
-
-            // Забираем системный Uuid для использования в качестве пароля TrustTunnel
-            realPassword = adminClient.Uuid;
-        }
-
-        // Сохраняем правильный пароль в SettingsJson, чтобы интерфейс кабинета показывал правду
-        if (settingsNode != null)
-        {
-            settingsNode["username"] = username;
-            settingsNode["password"] = realPassword;
-            inbound.SettingsJson = settingsNode.ToJsonString();
-        }
-
-        // Генерация ТОЧНЫХ и полных конфигураций через официальный мастер
-        await ssh.ExecuteCommandAsync($"{sudoPrefix}mkdir -p /opt/trusttunnel2");
-        string setupCmd = $@"{sudoPrefix}cd /opt/trusttunnel2 && {sudoPrefix}./setup_wizard -m non-interactive -a 0.0.0.0:{inbound.Port} -c {username}:{realPassword} -n {sni} --lib-settings vpn.toml --hosts-settings hosts.toml --cert-type self-signed";
-        await ssh.ExecuteCommandAsync(setupCmd);
-
-        string serviceData = @"[Unit]
-Description=TrustTunnel VPN Service (Custom Port 5443)
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/trusttunnel2
-ExecStart=/opt/trusttunnel2/trusttunnel_endpoint vpn.toml hosts.toml
-Restart=on-failure
-RestartSec=5
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target";
-
-        await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceData.Replace("\r", "")))}' | base64 -d | {sudoPrefix}tee /etc/systemd/system/trusttunnel.service > /dev/null");
-        await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload");
     }
 
     private async Task DeployJsonCoreConfigAsync(ISshService ssh, VpnProfile profile, string core, string sudoPrefix)
@@ -551,49 +410,27 @@ WantedBy=multi-user.target";
         var baseConfig = new JsonObject();
         if (core == "sing-box")
         {
-            baseConfig["log"] = new JsonObject { ["level"] = "info", ["timestamp"] = true, ["output"] = "/var/log/sing-box/access.log" }; 
-            baseConfig["dns"] = new JsonObject
-            {
-                ["servers"] = new JsonArray
-                {
-                    new JsonObject { ["type"] = "https", ["tag"] = "remote", ["server"] = "8.8.8.8", ["domain_resolver"] = "local" },
-                    new JsonObject { ["type"] = "udp", ["tag"] = "local", ["server"] = "8.8.8.8" }
-                },
-                ["rules"] = new JsonArray
-                {
-                    new JsonObject
-                    {
-                        ["domain_suffix"] = new JsonArray { "openai.com", "chatgpt.com", "auth0.com", "google.com", "gemini.google.com", "googleapis.com", "generativelanguage.googleapis.com", "claude.ai", "anthropic.com" },
-                        ["server"] = "remote"
-                    }
-                },
-                ["final"] = "remote",
-                ["strategy"] = "prefer_ipv4"
-            };
+            baseConfig["log"] = new JsonObject 
+            { 
+                ["disabled"] = false,
+                ["level"] = "info", 
+                ["timestamp"] = true 
+            }; 
             baseConfig["inbounds"] = inboundsArray;
-            baseConfig["outbounds"] = new JsonArray { new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, new JsonObject { ["type"] = "block", ["tag"] = "block" } };
+            baseConfig["outbounds"] = new JsonArray 
+            { 
+                new JsonObject { ["type"] = "direct", ["tag"] = "direct" }, 
+                new JsonObject { ["type"] = "block", ["tag"] = "block" } 
+            };
             baseConfig["route"] = new JsonObject
             {
-                ["default_domain_resolver"] = "local",
                 ["rules"] = new JsonArray
                 {
                     new JsonObject { ["action"] = "sniff" },
-                    new JsonObject
-                    {
-                        ["domain_suffix"] = new JsonArray { "openai.com", "chatgpt.com", "auth0.com", "google.com", "gemini.google.com", "googleapis.com", "generativelanguage.googleapis.com", "claude.ai", "anthropic.com" },
-                        ["outbound"] = "direct"
-                    }
+                    new JsonObject { ["ip_is_private"] = true, ["outbound"] = "block" }
                 },
                 ["final"] = "direct",
                 ["auto_detect_interface"] = true
-            };
-            baseConfig["experimental"] = new JsonObject 
-            { 
-                ["clash_api"] = new JsonObject 
-                { 
-                    ["external_controller"] = "127.0.0.1:9090",
-                    ["secret"] = "" 
-                }
             };
         }
         else

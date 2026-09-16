@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Interfaces;
+using KoFFPanel.Application.Interfaces;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -29,7 +29,7 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
 
         if (dbUsers.Count == 0)
         {
-            var admin = new VpnClient { Email = "ADMIN", Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true, IsTrustTunnelEnabled = true, IsHysteria2Enabled = true };
+            var admin = new VpnClient { Email = "ADMIN", Uuid = Guid.NewGuid().ToString(), ServerIp = serverIp, Protocol = "VLESS", IsActive = true, IsP2PBlocked = true, IsVlessEnabled = true, IsHysteria2Enabled = true, IsTuicEnabled = true };
             _dbContext.Clients.Add(admin);
             await _dbContext.SaveChangesAsync();
             dbUsers.Add(admin);
@@ -42,7 +42,7 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         return dbUsers;
     }
 
-    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true, bool isTrojan = false, bool isShadowsocks = false)
+    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTuic = true, bool isTrojan = false)
     {
         try { SshGuard.ThrowIfInvalid(name, null); } catch (Exception ex) { return (false, ex.Message, ""); }
         if (await _dbContext.Clients.AnyAsync(c => c.Email == name && c.ServerIp == serverIp)) return (false, "Уже есть!", "");
@@ -57,9 +57,8 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
             IsP2PBlocked = p2p,
             IsVlessEnabled = isVless,
             IsHysteria2Enabled = isHy2,
-            IsTrustTunnelEnabled = isTt,
-            IsTrojanEnabled = isTrojan,             // ИСПРАВЛЕНИЕ
-            IsShadowsocksEnabled = isShadowsocks,   // ИСПРАВЛЕНИЕ
+            IsTuicEnabled = isTuic,
+            IsTrojanEnabled = isTrojan,
             IsActive = true
         };
         _dbContext.Clients.Add(newUser); await _dbContext.SaveChangesAsync();
@@ -75,14 +74,14 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
         return (false, "Ошибка чтения конфига сервера", "");
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, string note, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTt = true, bool isTrojan = false, bool isShadowsocks = false)
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string name, long limit, DateTime? expiry, string note, bool p2p = true, bool isVless = true, bool isHy2 = true, bool isTuic = true, bool isTrojan = false)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == name);
         if (user == null) return false;
 
         user.TrafficLimit = limit; user.ExpiryDate = expiry; user.IsP2PBlocked = p2p; user.Note = note;
-        user.IsVlessEnabled = isVless; user.IsHysteria2Enabled = isHy2; user.IsTrustTunnelEnabled = isTt;
-        user.IsTrojanEnabled = isTrojan; user.IsShadowsocksEnabled = isShadowsocks; // ИСПРАВЛЕНИЕ
+        user.IsVlessEnabled = isVless; user.IsHysteria2Enabled = isHy2; user.IsTuicEnabled = isTuic;
+        user.IsTrojanEnabled = isTrojan;
         await _dbContext.SaveChangesAsync();
 
         var rawJson = await ssh.ExecuteCommandAsync("cat /etc/sing-box/config.json");
@@ -144,7 +143,8 @@ public partial class SingBoxUserManagerService : ISingBoxUserManagerService
                 {
                     dbUser.IsVlessEnabled = client.IsVlessEnabled;
                     dbUser.IsHysteria2Enabled = client.IsHysteria2Enabled;
-                    dbUser.IsTrustTunnelEnabled = client.IsTrustTunnelEnabled;
+                    dbUser.IsTuicEnabled = client.IsTuicEnabled;
+                    dbUser.IsTrojanEnabled = client.IsTrojanEnabled;
                     dbUser.IsP2PBlocked = client.IsP2PBlocked;
                     dbUser.IsActive = client.IsActive;
                     dbUser.TrafficLimit = client.TrafficLimit;

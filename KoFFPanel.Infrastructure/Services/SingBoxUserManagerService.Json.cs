@@ -43,18 +43,18 @@ public partial class SingBoxUserManagerService
                     inbound["tls"]!["reality"]!["handshake"]!["server"] = settingsDb["sni"]?.ToString() ?? "google.com";
                 }
 
-                var targetUsers = dbUsers.Where(u => u.IsActive && ((!isQuic && u.IsVlessEnabled) || (isQuic && u.IsTrustTunnelEnabled))).ToList();
+                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsVlessEnabled).ToList();
                 var usersArray = new JsonArray();
 
                 if (targetUsers.Any())
                 {
                     foreach (var u in targetUsers)
-                        usersArray.Add(isQuic ? new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid } : new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid, ["flow"] = "xtls-rprx-vision" });
+                        usersArray.Add(new JsonObject { ["name"] = u.Email, ["uuid"] = u.Uuid, ["flow"] = "xtls-rprx-vision" });
                 }
                 else usersArray.Add(new JsonObject { ["name"] = "init", ["uuid"] = "00000000-0000-0000-0000-000000000000" });
 
                 inbound["users"] = usersArray;
-                UpdateVlessLinks(inbound, dbUsers, displayServer, serverIp, isQuic);
+                UpdateVlessLinks(inbound, dbUsers, displayServer, serverIp);
             }
             else if (type == "hysteria2")
             {
@@ -100,25 +100,31 @@ public partial class SingBoxUserManagerService
                 inbound["users"] = usersArray;
                 UpdateTrojanLinks(inbound, dbUsers, displayServer);
             }
-            else if (type == "shadowsocks")
+            else if (type == "tuic")
             {
-                // Синхронизация метода из БД в конфиг
-                if (settingsDb != null)
+                if (settingsDb != null && inbound["tls"] != null)
                 {
-                    inbound["method"] = settingsDb["method"]?.ToString() ?? "aes-256-gcm";
+                    inbound["tls"]!["server_name"] = settingsDb["sni"]?.ToString() ?? "bing.com";
                 }
 
-                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsShadowsocksEnabled).ToList();
+                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsTuicEnabled).ToList();
                 var usersArray = new JsonArray();
                 if (targetUsers.Any())
                 {
-                    foreach (var u in targetUsers) usersArray.Add(new JsonObject { ["password"] = u.Uuid, ["name"] = u.Email });
+                    foreach (var u in targetUsers)
+                    {
+                        usersArray.Add(new JsonObject 
+                        { 
+                            ["name"] = u.Email, 
+                            ["uuid"] = u.Uuid, 
+                            ["password"] = u.Uuid 
+                        });
+                    }
                 }
-                else usersArray.Add(new JsonObject { ["password"] = "init_pass", ["name"] = "init" });
+                else usersArray.Add(new JsonObject { ["name"] = "init", ["uuid"] = "00000000-0000-0000-0000-000000000000", ["password"] = "init_pass" });
 
-                inbound.Remove("password");
                 inbound["users"] = usersArray;
-                UpdateShadowsocksLinks(inbound, dbUsers, displayServer);
+                UpdateTuicLinks(inbound, dbUsers, displayServer);
             }
         }
 
@@ -127,6 +133,22 @@ public partial class SingBoxUserManagerService
             await ApplyP2PRulesAsync(root, serverIp);
         }
         await _dbContext.SaveChangesAsync();
+    }
+
+    private void UpdateTuicLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer)
+    {
+        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
+        int port = 8444;
+        if (inbound["listen_port"] != null) int.TryParse(inbound["listen_port"]!.ToString(), out port);
+
+        string sni = inbound["tls"]?["server_name"]?.ToString() ?? "bing.com";
+        string cc = inbound["congestion_control"]?.ToString() ?? "bbr";
+
+        foreach (var u in dbUsers)
+        {
+            string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
+            u.TuicLink = $"tuic://{u.Uuid}:{u.Uuid}@{safeIp}:{port}?sni={sni}&alpn=h3&congestion_control={cc}&allow_insecure=1#{encodedName}";
+        }
     }
 
     private void UpdateTrojanLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer)
@@ -143,55 +165,25 @@ public partial class SingBoxUserManagerService
         }
     }
 
-    private void UpdateShadowsocksLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer)
-    {
-        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
-        int port = 8388;
-        if (inbound["listen_port"] != null) int.TryParse(inbound["listen_port"]!.ToString(), out port);
-        string method = inbound["method"]?.ToString() ?? "aes-256-gcm";
-
-        foreach (var u in dbUsers)
-        {
-            string credentials = $"{method}:{u.Uuid}";
-            
-            // ИСПРАВЛЕНИЕ: Формат ss://base64(method:password)@host:port#name
-            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials));
-            string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
-            
-            u.ShadowsocksLink = $"ss://{base64Creds}@{safeIp}:{port}#{encodedName}";
-        }
-    }
-
-    private void UpdateVlessLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer, string serverIp, bool isQuic)
+    private void UpdateVlessLinks(JsonObject inbound, List<VpnClient> dbUsers, string displayServer, string serverIp)
     {
         string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
         string sni = inbound["tls"]?["server_name"]?.ToString() ?? "google.com";
-        int port = isQuic ? 4433 : 443;
+        int port = 443;
         if (inbound["listen_port"] != null) int.TryParse(inbound["listen_port"]!.ToString(), out port);
 
-        if (!isQuic)
+        string pubKey = "", shortId = "";
+        try
         {
-            string pubKey = "", shortId = "";
-            try
-            {
-                var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
-                var settings = JsonDocument.Parse(profile?.Inbounds.FirstOrDefault(i => i.Protocol == "vless")?.SettingsJson ?? "{}").RootElement;
-                pubKey = settings.GetProperty("publicKey").GetString() ?? ""; shortId = settings.GetProperty("shortId").GetString() ?? "";
-            }
-            catch { }
-            foreach (var u in dbUsers)
-            {
-                string encodedName = Uri.EscapeDataString($"SB_VLESS_{u.Email}");
-                u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#{encodedName}";
-            }
+            var profile = _profileRepository.LoadProfiles().FirstOrDefault(p => p.IpAddress == serverIp);
+            var settings = JsonDocument.Parse(profile?.Inbounds.FirstOrDefault(i => i.Protocol == "vless")?.SettingsJson ?? "{}").RootElement;
+            pubKey = settings.GetProperty("publicKey").GetString() ?? ""; shortId = settings.GetProperty("shortId").GetString() ?? "";
         }
-        else
+        catch { }
+        foreach (var u in dbUsers)
         {
-            foreach (var u in dbUsers)
-            {
-                string encodedName = Uri.EscapeDataString($"TT_{u.Email}");
-                u.TrustTunnelLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=xhttp&security=tls&sni={sni.Replace("google.com", "vpn.endpoint")}&alpn=h3&allowInsecure=1&insecure=1#{encodedName}";
-            }
+            string encodedName = Uri.EscapeDataString($"SB_VLESS_{u.Email}");
+            u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pubKey}&fp=chrome&sni={sni}&sid={shortId}&spx=%2F&flow=xtls-rprx-vision#{encodedName}";
         }
     }
 

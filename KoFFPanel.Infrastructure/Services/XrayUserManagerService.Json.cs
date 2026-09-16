@@ -23,20 +23,17 @@ public partial class XrayUserManagerService
         foreach (var inbound in inbounds.OfType<JsonObject>().ToList())
         {
             string protocol = inbound["protocol"]?.ToString() ?? "";
-            var net = inbound["streamSettings"]?["network"]?.ToString();
-            bool isXHttp = "xhttp".Equals(net, StringComparison.OrdinalIgnoreCase) || "quic".Equals(net, StringComparison.OrdinalIgnoreCase);
 
             if ("vless".Equals(protocol, StringComparison.OrdinalIgnoreCase))
             {
-                var targetUsers = dbUsers.Where(u => u.IsActive && (!isXHttp ? u.IsVlessEnabled : u.IsTrustTunnelEnabled)).ToList();
+                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsVlessEnabled).ToList();
                 var clients = new JsonArray();
 
                 if (targetUsers.Any())
                 {
                     foreach (var u in targetUsers)
                     {
-                        var clientObj = new JsonObject { ["id"] = u.Uuid, ["email"] = u.Email };
-                        if (!isXHttp) clientObj["flow"] = "xtls-rprx-vision";
+                        var clientObj = new JsonObject { ["id"] = u.Uuid, ["email"] = u.Email, ["flow"] = "xtls-rprx-vision" };
                         clients.Add(clientObj);
                     }
                 }
@@ -46,7 +43,7 @@ public partial class XrayUserManagerService
                 }
 
                 if (inbound["settings"] is JsonObject s) s["clients"] = clients;
-                await UpdateXrayVlessLinksAsync(inbound, dbUsers, displayServer, ssh, isXHttp);
+                await UpdateXrayVlessLinksAsync(inbound, dbUsers, displayServer, ssh);
             }
             else if ("trojan".Equals(protocol, StringComparison.OrdinalIgnoreCase))
             {
@@ -65,23 +62,6 @@ public partial class XrayUserManagerService
 
                 if (inbound["settings"] is JsonObject s) s["clients"] = clients;
                 UpdateTrojanLinks(inbound, dbUsers, displayServer);
-            }
-            else if ("shadowsocks".Equals(protocol, StringComparison.OrdinalIgnoreCase))
-            {
-                var targetUsers = dbUsers.Where(u => u.IsActive && u.IsShadowsocksEnabled).ToList();
-                var clients = new JsonArray();
-
-                if (targetUsers.Any())
-                {
-                    foreach (var u in targetUsers)
-                        clients.Add(new JsonObject { ["password"] = u.Uuid, ["email"] = u.Email });
-                }
-                else clients.Add(new JsonObject { ["password"] = "init_pass", ["email"] = "init" });
-
-                if (inbound["settings"] is JsonObject s) s["clients"] = clients;
-
-                // ИСПРАВЛЕНИЕ: Удалена ошибочная вставка streamSettings (WebSocket) для Shadowsocks в Xray
-                UpdateShadowsocksLinks(inbound, dbUsers, displayServer);
             }
         }
 
@@ -104,55 +84,31 @@ public partial class XrayUserManagerService
         }
     }
 
-    private void UpdateShadowsocksLinks(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string displayServer)
+    private async Task UpdateXrayVlessLinksAsync(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string displayServer, ISshService ssh)
     {
-        string safeIp = displayServer.Contains(":") && !displayServer.StartsWith("[") ? $"[{displayServer}]" : displayServer;
-        int port = 8388;
-        if (inbound["port"] != null) int.TryParse(inbound["port"]!.ToString(), out port);
-        string method = inbound["settings"]?["method"]?.ToString() ?? "aes-256-gcm";
-
-        foreach (var u in dbUsers)
-        {
-            string credentials = $"{method}:{u.Uuid}";
-
-            string base64Creds = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials))
-                .Replace("+", "-")
-                .Replace("/", "_")
-                .TrimEnd('=');
-
-            string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
-            u.ShadowsocksLink = $"ss://{base64Creds}@{safeIp}:{port}#{encodedName}";
-        }
-    }
-
-    private async Task UpdateXrayVlessLinksAsync(JsonObject inbound, List<KoFFPanel.Domain.Entities.VpnClient> dbUsers, string displayServer, ISshService ssh, bool isQuic)
-    {
-        int port = isQuic ? 4433 : 443;
+        int port = 443;
         if (inbound["port"] != null) int.TryParse(inbound["port"]!.ToString(), out port);
 
         string safeIp = displayServer.Contains(':') && !displayServer.StartsWith('[') ? $"[{displayServer}]" : displayServer;
 
-        if (!isQuic)
+        var rs = inbound["streamSettings"]?["realitySettings"];
+        string sid = rs?["shortIds"]?[0]?.ToString() ?? "";
+        string sni = rs?["serverNames"]?[0]?.ToString() ?? "www.microsoft.com";
+        string pk = rs?["privateKey"]?.ToString() ?? "";
+        string pub = "";
+
+        if (!string.IsNullOrEmpty(pk))
         {
-            var rs = inbound["streamSettings"]?["realitySettings"];
-            string sid = rs?["shortIds"]?[0]?.ToString() ?? "";
-            string sni = rs?["serverNames"]?[0]?.ToString() ?? "www.microsoft.com";
-            string pk = rs?["privateKey"]?.ToString() ?? "";
-            string pub = "";
+            var outStr = await ssh.ExecuteCommandAsync($"/usr/local/bin/xray x25519 -i {pk}");
+            var m = System.Text.RegularExpressions.Regex.Match(outStr, @"(?i)PublicKey[)]?\s*:\s*(\S+)");
+            if (m.Success) pub = m.Groups[1].Value.Trim();
+        }
 
-            if (!string.IsNullOrEmpty(pk))
-            {
-                var outStr = await ssh.ExecuteCommandAsync($"/usr/local/bin/xray x25519 -i {pk}");
-                var m = System.Text.RegularExpressions.Regex.Match(outStr, @"(?i)PublicKey[)]?\s*:\s*(\S+)");
-                if (m.Success) pub = m.Groups[1].Value.Trim();
-            }
-
-            foreach (var u in dbUsers)
-            {
-                string encodedName = Uri.EscapeDataString($"KoFFPanel_{u.Email}");
-                // ИСПРАВЛЕНО: заменено {shortId} на {sid}
-                u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pub}&fp=chrome&sni={sni}&sid={sid}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
-            }
+        foreach (var u in dbUsers)
+        {
+            string encodedName = Uri.EscapeDataString($"KoFFPanel_{u.Email}");
+            // ИСПРАВЛЕНО: заменено {shortId} на {sid}
+            u.VlessLink = $"vless://{u.Uuid}@{safeIp}:{port}?type=tcp&security=reality&pbk={pub}&fp=chrome&sni={sni}&sid={sid}&spx=%2F&flow=xtls-rprx-vision&alpn=h2#{encodedName}";
         }
     }
 

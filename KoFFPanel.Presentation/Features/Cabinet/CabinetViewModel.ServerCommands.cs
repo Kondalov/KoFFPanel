@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Input;
 using KoFFPanel.Domain.Entities;
 using KoFFPanel.Presentation.Features.Bot;
 using KoFFPanel.Presentation.Features.Deploy;
@@ -195,12 +195,6 @@ public partial class CabinetViewModel
         {
             string svc = server.CoreType.ToLower();
             string cmd = $"systemctl restart {svc}";
-
-            // Умная логика: если TrustTunnel установлен параллельно, рестартуем и его
-            if (server.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel") && svc != "trusttunnel")
-            {
-                cmd += " && systemctl restart trusttunnel";
-            }
 
             await ssh.ExecuteCommandAsync(cmd);
             ServerStatus = "Онлайн (Ядро перезапущено)";

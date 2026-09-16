@@ -40,7 +40,7 @@ public partial class XrayUserManagerService : IXrayUserManagerService
         return dbUsers;
     }
 
-    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false, bool isTrojan = false, bool isShadowsocks = false)
+    public async Task<(bool IsSuccess, string Message, string VlessLink)> AddUserAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTrojan = false)
     {
         try { SshGuard.ThrowIfInvalid(email, null); } catch (Exception ex) { return (false, ex.Message, ""); }
         if (await _dbContext.Clients.AnyAsync(c => c.Email == email && c.ServerIp == serverIp)) return (false, "Уже есть!", "");
@@ -57,9 +57,7 @@ public partial class XrayUserManagerService : IXrayUserManagerService
             IsP2PBlocked = isP2PBlocked,
             IsVlessEnabled = isVless,
             IsHysteria2Enabled = isHy2,
-            IsTrustTunnelEnabled = isTt,
-            IsTrojanEnabled = isTrojan,
-            IsShadowsocksEnabled = isShadowsocks // ИСПРАВЛЕНИЕ
+            IsTrojanEnabled = isTrojan
         };
 
         _dbContext.Clients.Add(user); await _dbContext.SaveChangesAsync();
@@ -137,14 +135,14 @@ public partial class XrayUserManagerService : IXrayUserManagerService
         return await ApplyAndTestConfigAsync(ssh, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
     }
 
-    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, string note, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTt = false, bool isTrojan = false, bool isShadowsocks = false)
+    public async Task<bool> UpdateUserLimitsAsync(ISshService ssh, string serverIp, string email, long limit, DateTime? expiry, string note, bool isP2PBlocked = true, bool isVless = true, bool isHy2 = false, bool isTrojan = false)
     {
         var user = await _dbContext.Clients.FirstOrDefaultAsync(c => c.ServerIp == serverIp && c.Email == email);
         if (user == null) return false;
 
         user.TrafficLimit = limit; user.ExpiryDate = expiry; user.Note = note; user.IsP2PBlocked = isP2PBlocked;
-        user.IsVlessEnabled = isVless; user.IsHysteria2Enabled = isHy2; user.IsTrustTunnelEnabled = isTt;
-        user.IsTrojanEnabled = isTrojan; user.IsShadowsocksEnabled = isShadowsocks; // ИСПРАВЛЕНИЕ
+        user.IsVlessEnabled = isVless; user.IsHysteria2Enabled = isHy2;
+        user.IsTrojanEnabled = isTrojan;
         await _dbContext.SaveChangesAsync();
 
         if (ssh.IsConnected)
@@ -183,9 +181,7 @@ public partial class XrayUserManagerService : IXrayUserManagerService
                 {
                     dbUser.IsVlessEnabled = client.IsVlessEnabled;
                     dbUser.IsHysteria2Enabled = client.IsHysteria2Enabled;
-                    dbUser.IsTrustTunnelEnabled = client.IsTrustTunnelEnabled;
                     dbUser.IsTrojanEnabled = client.IsTrojanEnabled;
-                    dbUser.IsShadowsocksEnabled = client.IsShadowsocksEnabled;
                     dbUser.IsP2PBlocked = client.IsP2PBlocked;
                     dbUser.IsActive = client.IsActive;
                     dbUser.TrafficLimit = client.TrafficLimit;

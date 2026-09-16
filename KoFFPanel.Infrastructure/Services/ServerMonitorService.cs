@@ -83,9 +83,6 @@ public class ServerMonitorService : IServerMonitorService
             if [ ""$CORE"" = ""sing-box"" ]; then
                 CORE_PROC=$(pgrep -f ""sing-box run"" -c || echo 0)
                 ERR_TOTAL=$(journalctl -u sing-box -n 100 --no-pager 2>/dev/null | grep -ic ""error\|fatal\|rejected"")
-            elif [ ""$CORE"" = ""trusttunnel"" ]; then
-                CORE_PROC=$(pgrep -f ""trusttunnel"" -c || echo 0)
-                ERR_TOTAL=$(journalctl -u trusttunnel -n 100 --no-pager 2>/dev/null | grep -ic ""error\|fatal\|panic"")
             else
                 CORE_PROC=$(pgrep -f ""xray run"" -c || echo 0)
                 ERR_ACC=$(tail -n 100 /var/log/xray/access.log 2>/dev/null | grep -ic ""rejected"")
@@ -149,10 +146,6 @@ public class ServerMonitorService : IServerMonitorService
             {
                 rawLogs = await sshService.ExecuteCommandAsync("journalctl -u sing-box -n 2000 --no-pager 2>/dev/null | grep -iE 'inbound connection|remoteAddr'");
             }
-        }
-        else if (coreType.ToLower() == "trusttunnel")
-        {
-            rawLogs = await sshService.ExecuteCommandAsync("journalctl -u trusttunnel -n 2000 --no-pager 2>/dev/null");
         }
         else
         {
@@ -414,7 +407,7 @@ public class ServerMonitorService : IServerMonitorService
     }
 
     /// <summary>
-    /// метод выполняет комплексную проверку статуса ядра (Xray/Sing-Box/TrustTunnel) через SSH, собирая данные о версии, валидности конфига, аптайме и последних ошибках. Вся логика обработки и вычислений вынесена в единый shell-скрипт для минимизации количества SSH вызовов и обеспечения максимальной точности данных, особенно в условиях LXC/OpenVZ, где системные часы могут быть рассинхронизированы. Результат возвращается в виде объекта CoreStatusInfo, который может быть легко отображен в UI или сохранен в аналитике.
+    /// метод выполняет комплексную проверку статуса ядра (Xray/Sing-Box) через SSH, собирая данные о версии, валидности конфига, аптайме и последних ошибках. Вся логика обработки и вычислений вынесена в единый shell-скрипт для минимизации количества SSH вызовов и обеспечения максимальной точности данных, особенно в условиях LXC/OpenVZ, где системные часы могут быть рассинхронизированы. Результат возвращается в виде объекта CoreStatusInfo, который может быть легко отображен в UI или сохранен в аналитике.
     /// </summary>
     /// <param name="sshService"></param>
     /// <param name="coreType"></param>
@@ -437,9 +430,6 @@ public class ServerMonitorService : IServerMonitorService
         if [ ""$CORE"" = ""sing-box"" ]; then
             V=$($BIN version 2>/dev/null | grep 'version' | awk '{{print $3}}')
             E=$(journalctl -u $SVC -n 10 --no-pager 2>/dev/null | grep -iE 'error|fatal|panic|rejected' | tail -n 1 | sed 's/.*msg=//' | tr -d '\r\n|')
-        elif [ ""$CORE"" = ""trusttunnel"" ]; then
-            V=$($BIN --version 2>/dev/null | awk '{{print $2}}')
-            E=$(journalctl -u $SVC -n 10 --no-pager 2>/dev/null | grep -iE 'error|fatal|panic' | tail -n 1 | tr -d '\r\n|')
         else
             V=$($BIN version 2>/dev/null | head -n 1 | awk '{{print $2}}')
             if [ -z ""$V"" ]; then V=$($BIN -version 2>/dev/null | head -n 1 | awk '{{print $2}}'); fi

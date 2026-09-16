@@ -1,4 +1,4 @@
-﻿<ui:FluentWindow x:Class="KoFFPanel.Presentation.Features.Deploy.DeployWizardWindow"
+<ui:FluentWindow x:Class="KoFFPanel.Presentation.Features.Deploy.DeployWizardWindow"
                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -211,88 +211,47 @@
                                        FontWeight="ExtraBold"
                                        Foreground="White" />
                         </StackPanel>
-                        <TextBlock Text="Выберите ядро и отметьте протоколы для развертывания"
+                        <TextBlock Text="Отметьте необходимые протоколы для развертывания ядра"
                                    Foreground="#B3FFFFFF"
                                    FontSize="12"
                                    HorizontalAlignment="Center" />
                     </StackPanel>
 
-                    <Grid Grid.Row="1"
-                          Margin="0,0,0,24">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="12" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="12" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-
-                        <RadioButton Grid.Column="0"
-                                     GroupName="CoreSelection"
-                                     Style="{StaticResource KernelCardRadioStyle}"
-                                     IsChecked="{Binding IsXraySelected}"
-                                     IsEnabled="{Binding IsNotInstalling}">
-                            <StackPanel HorizontalAlignment="Center">
-                                <ui:SymbolIcon Symbol="ShieldCheckmark24"
-                                               Foreground="#00f2ff"
-                                               FontSize="32"
-                                               Margin="0,0,0,10" />
-                                <TextBlock Text="XRAY-CORE"
-                                           Foreground="White"
-                                           FontWeight="ExtraBold"
-                                           FontSize="14"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="TCP протоколы"
-                                           Foreground="#a0aabf"
-                                           FontSize="10"
-                                           TextAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
-
-                        <RadioButton Grid.Column="2"
-                                     GroupName="CoreSelection"
-                                     Style="{StaticResource KernelCardRadioStyle}"
-                                     IsChecked="{Binding IsSingBoxSelected}"
-                                     IsEnabled="{Binding IsNotInstalling}">
-                            <StackPanel HorizontalAlignment="Center">
+                    <Border Grid.Row="1"
+                            Margin="0,0,0,24"
+                            Background="#0A00f2ff"
+                            BorderBrush="#00f2ff"
+                            BorderThickness="2"
+                            CornerRadius="16"
+                            Padding="14">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#00f2ff"
+                                              BlurRadius="16"
+                                              ShadowDepth="0"
+                                              Opacity="0.25" />
+                        </Border.Effect>
+                        <StackPanel HorizontalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        HorizontalAlignment="Center">
                                 <ui:SymbolIcon Symbol="Flash24"
                                                Foreground="#ffaa00"
-                                               FontSize="32"
-                                               Margin="0,0,0,10" />
-                                <TextBlock Text="SING-BOX"
+                                               FontSize="24"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center" />
+                                <TextBlock Text="SING-BOX CORE"
                                            Foreground="White"
                                            FontWeight="ExtraBold"
-                                           FontSize="14"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="UDP/TCP протоколы"
-                                           Foreground="#a0aabf"
-                                           FontSize="10"
-                                           TextAlignment="Center" />
+                                           FontSize="16"
+                                           VerticalAlignment="Center" />
                             </StackPanel>
-                        </RadioButton>
-
-                        <RadioButton Grid.Column="4"
-                                     GroupName="CoreSelection"
-                                     Style="{StaticResource KernelCardRadioStyle}"
-                                     IsChecked="{Binding IsTrustTunnelSelected}"
-                                     IsEnabled="{Binding IsNotInstalling}">
-                            <StackPanel HorizontalAlignment="Center">
-                                <ui:SymbolIcon Symbol="ShieldKeyhole24"
-                                               Foreground="#50fa7b"
-                                               FontSize="32"
-                                               Margin="0,0,0,10" />
-                                <TextBlock Text="TRUSTTUNNEL"
-                                           Foreground="White"
-                                           FontWeight="ExtraBold"
-                                           FontSize="14"
-                                           HorizontalAlignment="Center" />
-                                <TextBlock Text="MASQUE HTTP/3"
-                                           Foreground="#a0aabf"
-                                           FontSize="10"
-                                           TextAlignment="Center" />
-                            </StackPanel>
-                        </RadioButton>
-                    </Grid>
+                            <TextBlock Text="Высокоскоростное ядро (VLESS Reality, Hysteria 2, TUIC v5, Trojan)"
+                                       Foreground="#00f2ff"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       TextAlignment="Center"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
 
                     <ScrollViewer Grid.Row="2"
                                   VerticalScrollBarVisibility="Auto"
@@ -386,52 +345,6 @@
                                                     </ui:TextBox>
                                                 </StackPanel>
                                             </Grid>
-
-                                            <!-- ИСПРАВЛЕНИЕ: Стильные поля для ввода Username и Password (TrustTunnel) -->
-                                            <StackPanel Margin="0,16,0,0">
-                                                <StackPanel.Style>
-                                                    <Style TargetType="StackPanel">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                        <Style.Triggers>
-                                                            <MultiDataTrigger>
-                                                                <MultiDataTrigger.Conditions>
-                                                                    <Condition Binding="{Binding IsSelected}" Value="True" />
-                                                                    <Condition Binding="{Binding IsTrustTunnel}" Value="True" />
-                                                                </MultiDataTrigger.Conditions>
-                                                                <Setter Property="Visibility" Value="Visible" />
-                                                            </MultiDataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </StackPanel.Style>
-
-                                                <TextBlock Text="УЧЕТНАЯ ЗАПИСЬ (АДМИН)" Foreground="#00FFCC" FontWeight="Bold" FontSize="11" Margin="0,0,0,8"/>
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="12"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                    </Grid.ColumnDefinitions>
-
-                                                    <StackPanel Grid.Column="0">
-                                                        <TextBlock Text="Username:" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,4"/>
-                                                        <TextBox Text="{Binding TtUsername, UpdateSourceTrigger=PropertyChanged}" Background="#1A50fa7b" Foreground="White" BorderThickness="1" BorderBrush="#50fa7b" Padding="8,6" FontSize="12"/>
-                                                    </StackPanel>
-
-                                                    <StackPanel Grid.Column="2">
-                                                        <TextBlock Text="Password:" Foreground="#88FFFFFF" FontSize="11" Margin="0,0,0,4"/>
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="*"/>
-                                                                <ColumnDefinition Width="Auto"/>
-                                                            </Grid.ColumnDefinitions>
-                                                            <TextBox Grid.Column="0" Text="{Binding TtPassword, UpdateSourceTrigger=PropertyChanged}" Background="#1A00f2ff" Foreground="White" BorderThickness="1" BorderBrush="#00f2ff" Padding="8,6" FontSize="12"/>
-                                                            <ui:Button Grid.Column="1" Command="{Binding GenerateTtPasswordCommand}" ToolTip="Сгенерировать случайный пароль" Background="#00f2ff" BorderThickness="0" Padding="8,6" Cursor="Hand">
-                                                                <ui:SymbolIcon Symbol="ArrowClockwise24" Foreground="Black" FontSize="14" FontWeight="Bold"/>
-                                                            </ui:Button>
-                                                        </Grid>
-                                                    </StackPanel>
-                                                </Grid>
-                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

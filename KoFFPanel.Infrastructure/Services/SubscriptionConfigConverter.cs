@@ -196,6 +196,28 @@ public static class SubscriptionConfigConverter
                 sb.AppendLine($"    skip-cert-verify: true");
                 sb.AppendLine($"    udp: true");
             }
+            else if (p.Protocol == "tuic")
+            {
+                string uuid = p.UuidOrPassword;
+                string password = p.UuidOrPassword;
+                int colonIdx = p.UuidOrPassword.IndexOf(':');
+                if (colonIdx > 0)
+                {
+                    uuid = p.UuidOrPassword[..colonIdx];
+                    password = p.UuidOrPassword[(colonIdx + 1)..];
+                }
+
+                sb.AppendLine($"    type: tuic");
+                sb.AppendLine($"    server: \"{p.Server}\"");
+                sb.AppendLine($"    port: {p.Port}");
+                sb.AppendLine($"    uuid: \"{uuid}\"");
+                sb.AppendLine($"    password: \"{password}\"");
+                sb.AppendLine($"    sni: \"{p.Params.GetValueOrDefault("sni", "bing.com")}\"");
+                sb.AppendLine($"    skip-cert-verify: true");
+                sb.AppendLine($"    congestion-controller: \"{p.Params.GetValueOrDefault("congestion_control", "bbr")}\"");
+                sb.AppendLine($"    alpn:");
+                sb.AppendLine($"      - h3");
+            }
             else
             {
                 // Fallback for generic/unsupported
@@ -345,6 +367,35 @@ public static class SubscriptionConfigConverter
                         ["enabled"] = true,
                         ["server_name"] = p.Params.GetValueOrDefault("sni", "bing.com"),
                         ["insecure"] = true
+                    }
+                });
+            }
+            else if (p.Protocol == "tuic")
+            {
+                string uuid = p.UuidOrPassword;
+                string password = p.UuidOrPassword;
+                int colonIdx = p.UuidOrPassword.IndexOf(':');
+                if (colonIdx > 0)
+                {
+                    uuid = p.UuidOrPassword[..colonIdx];
+                    password = p.UuidOrPassword[(colonIdx + 1)..];
+                }
+
+                outbounds.Add(new JsonObject
+                {
+                    ["type"] = "tuic",
+                    ["tag"] = tag,
+                    ["server"] = p.Server,
+                    ["server_port"] = p.Port,
+                    ["uuid"] = uuid,
+                    ["password"] = password,
+                    ["congestion_control"] = p.Params.GetValueOrDefault("congestion_control", "bbr"),
+                    ["tls"] = new JsonObject
+                    {
+                        ["enabled"] = true,
+                        ["server_name"] = p.Params.GetValueOrDefault("sni", "bing.com"),
+                        ["insecure"] = true,
+                        ["alpn"] = new JsonArray { "h3" }
                     }
                 });
             }

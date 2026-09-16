@@ -40,7 +40,6 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
     private readonly ISubscriptionService _subscriptionService;
     private readonly IClientAnalyticsService _analyticsService;
     private readonly ISingBoxUserManagerService _singBoxUserManager;
-    private readonly ITrustTunnelUserManagerService _trustTunnelUserManager;
     private readonly IAppLogger _logger;
 
     private readonly Dictionary<string, long> _previousTrafficStats = new();
@@ -96,11 +95,11 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         IServerMonitorService monitorService, IProfileRepository profileRepository, IServiceProvider serviceProvider,
         IXrayCoreService xrayService, IXrayConfiguratorService xrayConfigurator, IXrayUserManagerService userManager,
         IDatabaseBackupService backupService, ISubscriptionService subscriptionService, IClientAnalyticsService analyticsService,
-        ISingBoxUserManagerService singBoxUserManager, ITrustTunnelUserManagerService trustTunnelUserManager, IAppLogger logger)
+        ISingBoxUserManagerService singBoxUserManager, IAppLogger logger)
     {
         _monitorService = monitorService; _profileRepository = profileRepository; _serviceProvider = serviceProvider;
         _xrayService = xrayService; _xrayConfigurator = xrayConfigurator; _userManager = userManager; _singBoxUserManager = singBoxUserManager;
-        _trustTunnelUserManager = trustTunnelUserManager; _backupService = backupService; _subscriptionService = subscriptionService;
+        _backupService = backupService; _subscriptionService = subscriptionService;
         _logger = logger;
 
         _sshServiceFactory = () => _serviceProvider.GetRequiredService<ISshService>();
@@ -243,7 +242,7 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
 
         if (value != null)
         {
-            ActiveCoreTitle = value.CoreType == "sing-box" ? "Ядро (Sing-box)" : (value.CoreType == "trusttunnel" ? "Ядро (TrustTunnel)" : "Ядро (Xray-core)");
+            ActiveCoreTitle = value.CoreType == "sing-box" ? "Ядро (Sing-box)" : "Ядро (Xray-core)";
 
             try
             {
