@@ -85,7 +85,7 @@ class H(http.server.BaseHTTPRequestHandler):
             fmt = query.get('format', [''])[0].lower()
             
             is_clash = fmt == 'clash' or any(k in ua for k in ['clash', 'mihomo', 'stash', 'meta'])
-            is_singbox = fmt == 'singbox' or any(k in ua for k in ['sing-box', 'sfa', 'sfi', 'karing', 'hiddify', 'dart', 'nekobox'])
+            is_singbox = fmt == 'singbox' or any(k in ua for k in ['sing-box', 'sfa', 'sfi', 'karing'])
             
             base_dir = '/var/www/xray-sub/'
             target_file = os.path.join(base_dir, p)
@@ -127,7 +127,11 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_error(500, 'Internal Server Error')
 
     def log_message(self, format, *args):
-        print(f'{self.client_address[0]} - {self.command} {self.path} - {args[1]}')
+        path = getattr(self, 'path', '-')
+        cmd = getattr(self, 'command', '-')
+        addr = self.client_address[0] if hasattr(self, 'client_address') else '-'
+        msg = format % args if args else format
+        print(f'{addr} - {cmd} {path} - {msg}')
 
 socketserver.TCPServer.allow_reuse_address = True
 try:
@@ -175,7 +179,7 @@ WantedBy=multi-user.target";
         {
             string s = (await ssh.ExecuteCommandAsync("if [ \"$EUID\" -ne 0 ]; then echo 'sudo'; fi")).Trim();
 
-            string checkScript = (await ssh.ExecuteCommandAsync("systemctl is-active koff-sub && grep -q 'hiddify' /var/www/xray-sub/server.py 2>/dev/null && echo 'OK' || echo 'NEED_UPDATE'")).Trim();
+            string checkScript = (await ssh.ExecuteCommandAsync("systemctl is-active koff-sub && grep -q 'is_clash' /var/www/xray-sub/server.py 2>/dev/null && echo 'OK' || echo 'NEED_UPDATE'")).Trim();
             if (!checkScript.Contains("OK"))
             {
                 _logger.Log("SUB-WARN", "Служба подписок не активна или устарела! Выполняем авто-обновление...");
