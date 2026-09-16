@@ -147,7 +147,7 @@ public partial class SingBoxUserManagerService
         foreach (var u in dbUsers)
         {
             string encodedName = Uri.EscapeDataString($"KoFF_{u.Email}");
-            u.TuicLink = $"tuic://{u.Uuid}:{u.Uuid}@{safeIp}:{port}?sni={sni}&alpn=h3&congestion_control={cc}&allow_insecure=1#{encodedName}";
+            u.TuicLink = $"tuic://{u.Uuid}:{u.Uuid}@{safeIp}:{port}?sni={sni}&alpn=h3&congestion_control={cc}&allow_insecure=1&insecure=1#{encodedName}";
         }
     }
 

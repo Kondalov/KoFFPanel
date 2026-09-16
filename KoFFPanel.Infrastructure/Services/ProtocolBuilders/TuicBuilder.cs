@@ -47,6 +47,6 @@ public class TuicBuilder : IProtocolBuilder
 
         string safeIp = serverIp.Contains(":") && !serverIp.StartsWith("[") ? $"[{serverIp}]" : serverIp;
         string encodedName = Uri.EscapeDataString($"KoFFPanel-{clientEmail}");
-        return $"tuic://{clientUuid}:{clientUuid}@{safeIp}:{inbound.Port}?sni={sni}&alpn=h3&congestion_control=bbr&allow_insecure=1#{encodedName}";
+        return $"tuic://{clientUuid}:{clientUuid}@{safeIp}:{inbound.Port}?sni={sni}&alpn=h3&congestion_control=bbr&allow_insecure=1&insecure=1#{encodedName}";
     }
 }
