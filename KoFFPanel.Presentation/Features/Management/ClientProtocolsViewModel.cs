@@ -151,7 +151,7 @@ public partial class ClientProtocolsViewModel : ObservableObject
             }
             string safeIp = ip.Contains(":") && !ip.StartsWith("[") ? $"[{ip}]" : ip;
             string encodedName = Uri.EscapeDataString($"KoFF_TUIC_{email}");
-            return $"tuic://{uuid}:{uuid}@{safeIp}:{inbound.Port}?sni={sni}&alpn=h3&congestion_control=bbr&allow_insecure=1#{encodedName}";
+            return $"tuic://{uuid}:{uuid}@{safeIp}:{inbound.Port}?sni={sni}&alpn=h3&congestion_control=bbr&allow_insecure=1&insecure=1#{encodedName}";
         }
         catch { return "Ошибка генерации ссылки"; }
     }
