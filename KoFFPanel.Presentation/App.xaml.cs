@@ -19,8 +19,13 @@ public partial class App : System.Windows.Application
         Services = services.BuildServiceProvider();
     }
 
+    [System.Runtime.InteropServices.DllImport("shell32.dll", SetLastError = true)]
+    private static extern void SetCurrentProcessExplicitAppUserModelID([System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.LPWStr)] string AppID);
+
     private async void OnStartup(object sender, StartupEventArgs e)
     {
+        try { SetCurrentProcessExplicitAppUserModelID("KoFFPanel.App"); } catch { }
+
         // 1. Инициализация базы данных и оптимизация (WAL, Integrity Check, Migrations)
         using (var scope = Services.CreateScope())
         {
