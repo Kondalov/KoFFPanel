@@ -153,8 +153,12 @@ echo 'READY|Сервер готов к установке.'
                     inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
                 }
 
-                // Удаляем все устаревшие inbound'ы с тем же портом (иначе возникает конфликт портов в конфиге ядра)
-                profile.Inbounds.RemoveAll(i => i.Port == p.Port && !ReferenceEquals(i, inboundDb));
+                // Удаляем все устаревшие inbound'ы того же протокола или того же транспорта на том же порту (иначе возникает конфликт портов в конфиге ядра)
+                string pTransport = GetTransport(p.Builder.ProtocolType);
+                profile.Inbounds.RemoveAll(i => 
+                    (string.Equals(i.Protocol, p.Builder.ProtocolType, StringComparison.OrdinalIgnoreCase) || 
+                     (i.Port == p.Port && string.Equals(GetTransport(i.Protocol), pTransport, StringComparison.OrdinalIgnoreCase))) 
+                    && !ReferenceEquals(i, inboundDb));
 
                 if (!profile.Inbounds.Contains(inboundDb))
                     profile.Inbounds.Add(inboundDb);
@@ -402,9 +406,9 @@ cd /tmp && rm -rf /tmp/singbox_install
 
     private async Task DeployJsonCoreConfigAsync(ISshService ssh, VpnProfile profile, string core, string sudoPrefix)
     {
-        // Дедуплицируем по порту: если осталось несколько inbound'ов на одном порту — берём последний (наиболее свежий)
+        // Дедуплицируем по (Порт, Транспорт): TCP и UDP на одном номере порта (например, 443 TCP VLESS и 443 UDP Hysteria2) независимы и не конфликтуют
         var uniqueInbounds = profile.Inbounds
-            .GroupBy(i => i.Port)
+            .GroupBy(i => (i.Port, GetTransport(i.Protocol)))
             .Select(g => g.Last())
             .ToList();
 
@@ -476,4 +480,11 @@ WantedBy=multi-user.target";
         await ssh.ExecuteCommandAsync($"echo '{Convert.ToBase64String(Encoding.UTF8.GetBytes(serviceData.Replace("\r", "")))}' | base64 -d | {sudoPrefix}tee /etc/systemd/system/{bin}.service > /dev/null");
         await ssh.ExecuteCommandAsync($"{sudoPrefix}systemctl daemon-reload");
     }
+
+    private static string GetTransport(string protocol) => protocol.ToLowerInvariant() switch
+    {
+        "vless" or "trojan" or "shadowsocks" or "vmess" => "tcp",
+        "hysteria2" or "hy2" or "tuic" => "udp",
+        _ => "tcp"
+    };
 }

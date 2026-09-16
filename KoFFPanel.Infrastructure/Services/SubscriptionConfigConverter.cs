@@ -435,7 +435,10 @@ public static class SubscriptionConfigConverter
 
         var root = new JsonObject
         {
-            ["outbounds"] = outbounds
+            ["log"] = new JsonObject { ["disabled"] = true },
+            ["inbounds"] = new JsonArray(),
+            ["outbounds"] = outbounds,
+            ["route"] = new JsonObject { ["final"] = "select" }
         };
 
         return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
