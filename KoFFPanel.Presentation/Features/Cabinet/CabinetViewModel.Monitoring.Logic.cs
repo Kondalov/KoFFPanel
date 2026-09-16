@@ -79,8 +79,8 @@ public partial class CabinetViewModel
 
     private async Task<HashSet<string>> GetActiveUsernamesAsync(ISshService localSsh, bool isSingBox)
     {
-        string cmd = isSingBox ? "(([ -s /var/log/sing-box/access.log ] && tail -n 100 /var/log/sing-box/access.log) || journalctl -u sing-box -n 100 --no-pager 2>/dev/null) | grep 'inbound connection'" :
-                     "tail -n 200 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
+        string cmd = isSingBox ? "(([ -s /var/log/sing-box/access.log ] && tail -n 500 /var/log/sing-box/access.log) || journalctl -u sing-box -n 500 --no-pager 2>/dev/null) | grep 'inbound connection'" :
+                     "tail -n 500 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
 
         string recentLogs = await localSsh.ExecuteCommandAsync(cmd);
         var activeUsernames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -325,9 +325,11 @@ public partial class CabinetViewModel
                 _previousTrafficStats[email] = currentBytes;
             }
 
-            if (activeUsernames.Contains(email))
+            var log = allOnlineStats.FirstOrDefault(s => string.Equals(s.Email, email, StringComparison.OrdinalIgnoreCase));
+            bool isOnlineNow = activeUsernames.Contains(email) || (log != null && log.ActiveSessions > 0);
+
+            if (isOnlineNow)
             {
-                var log = allOnlineStats.FirstOrDefault(s => s.Email == email);
                 activeConnections = log != null && log.ActiveSessions > 0 ? log.ActiveSessions : 1;
                 lastOnline = DateTime.Now;
 
@@ -341,7 +343,9 @@ public partial class CabinetViewModel
             }
             else
             {
-                activeConnections = (snapshot.LastOnline.HasValue && (DateTime.Now - snapshot.LastOnline.Value).TotalMinutes <= 3) ? 1 : 0;
+                activeConnections = (snapshot.LastOnline.HasValue && (DateTime.Now - snapshot.LastOnline.Value).TotalMinutes <= 3)
+                    ? Math.Max(1, snapshot.ClientRef.ActiveConnections)
+                    : 0;
             }
 
             bool shouldDeactivate = false;
