@@ -150,13 +150,18 @@ public class ServerMonitorService : IServerMonitorService
 
         if (string.IsNullOrWhiteSpace(rawLogs)) return stats;
 
-        var userIps = new Dictionary<string, HashSet<string>>();
+        // Данные по пользователю: (последний IP, количество активных сессий)
+        var userStats = new Dictionary<string, (string LastIp, int ActiveSessions)>(StringComparer.OrdinalIgnoreCase);
         var lines = rawLogs.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
 
         if (coreType.ToLower() == "sing-box")
         {
             var connIdToIp = new Dictionary<string, string>();
+            var connIdToPort = new Dictionary<string, string>();
+            var connIdToProto = new Dictionary<string, string>();
             var connIdToUser = new Dictionary<string, string>();
+            var connIdToTime = new Dictionary<string, DateTime>();
+            DateTime? maxLogTime = null;
 
             foreach (var line in lines)
             {
@@ -179,26 +184,55 @@ public class ServerMonitorService : IServerMonitorService
 
                     if (string.IsNullOrEmpty(connId)) continue;
 
-                    // ИЩЕМ IP
+                    // Timestamp (напр. 2026-09-16 13:17:49)
+                    var timeMatch = System.Text.RegularExpressions.Regex.Match(cleanLine, @"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})");
+                    if (timeMatch.Success && DateTime.TryParse(timeMatch.Groups[1].Value, out var dt))
+                    {
+                        connIdToTime[connId] = dt;
+                        if (!maxLogTime.HasValue || dt > maxLogTime.Value)
+                            maxLogTime = dt;
+                    }
+
+                    // Протокол/инбаунд
+                    var protoMatch = System.Text.RegularExpressions.Regex.Match(cleanLine, @"inbound/(\w+)\[");
+                    if (protoMatch.Success)
+                    {
+                        connIdToProto[connId] = protoMatch.Groups[1].Value.ToLowerInvariant();
+                    }
+
+                    // ИЩЕМ IP и порт
+                    string rawAddr = "";
                     if (cleanLine.Contains("remoteAddr:"))
                     {
                         var ipMatch = System.Text.RegularExpressions.Regex.Match(cleanLine, @"remoteAddr:\s*([0-9a-fA-F\.\:\[\]]+)");
-                        if (ipMatch.Success)
-                        {
-                            string ip = ipMatch.Groups[1].Value.Trim();
-                            ip = ip.Contains(":") && !ip.StartsWith("[") ? ip.Split(':')[0] : ip;
-                            connIdToIp[connId] = ip.Replace("[", "").Replace("]", "");
-                        }
+                        if (ipMatch.Success) rawAddr = ipMatch.Groups[1].Value.Trim();
                     }
                     else if (cleanLine.Contains("inbound connection from"))
                     {
                         var ipMatch = System.Text.RegularExpressions.Regex.Match(cleanLine, @"inbound connection from\s*([0-9a-fA-F\.\:\[\]]+)");
-                        if (ipMatch.Success)
+                        if (ipMatch.Success) rawAddr = ipMatch.Groups[1].Value.Trim();
+                    }
+
+                    if (!string.IsNullOrEmpty(rawAddr))
+                    {
+                        string ip = rawAddr;
+                        string port = "";
+                        if (ip.StartsWith("[") && ip.Contains("]"))
                         {
-                            string ip = ipMatch.Groups[1].Value.Trim();
-                            ip = ip.Contains(":") && !ip.StartsWith("[") ? ip.Split(':')[0] : ip;
-                            connIdToIp[connId] = ip.Replace("[", "").Replace("]", "");
+                            int close = ip.IndexOf(']');
+                            string rest = ip.Substring(close + 1);
+                            ip = ip.Substring(1, close - 1);
+                            if (rest.StartsWith(":")) port = rest.Substring(1);
                         }
+                        else if (ip.Contains(':'))
+                        {
+                            int lastColon = ip.LastIndexOf(':');
+                            port = ip.Substring(lastColon + 1);
+                            ip = ip.Substring(0, lastColon);
+                        }
+
+                        connIdToIp[connId] = ip.Replace("[", "").Replace("]", "");
+                        if (!string.IsNullOrEmpty(port)) connIdToPort[connId] = port;
                     }
 
                     // ИЩЕМ ЮЗЕРА
@@ -211,49 +245,156 @@ public class ServerMonitorService : IServerMonitorService
                 catch { }
             }
 
-            // Маппинг: Объединяем IP и Пользователя по общему ID соединения
+            var userConnections = new Dictionary<string, List<(DateTime? Time, string Proto, string Ip, string Port)>>(StringComparer.OrdinalIgnoreCase);
+
             foreach (var kvp in connIdToUser)
             {
                 string connId = kvp.Key;
                 string user = kvp.Value;
 
-                if (!userIps.ContainsKey(user)) userIps[user] = new HashSet<string>();
+                if (!connIdToIp.TryGetValue(connId, out string? ip) || string.IsNullOrEmpty(ip))
+                    continue;
 
-                if (connIdToIp.ContainsKey(connId))
+                connIdToPort.TryGetValue(connId, out string? port);
+                connIdToProto.TryGetValue(connId, out string? proto);
+                connIdToTime.TryGetValue(connId, out DateTime connTime);
+
+                DateTime? time = connTime != default ? connTime : null;
+                proto ??= "unknown";
+                port ??= "";
+
+                if (!userConnections.ContainsKey(user))
+                    userConnections[user] = new List<(DateTime? Time, string Proto, string Ip, string Port)>();
+
+                userConnections[user].Add((time, proto, ip, port));
+            }
+
+            foreach (var kvp in userConnections)
+            {
+                string user = kvp.Key;
+                var conns = kvp.Value;
+
+                var latestConn = conns.OrderByDescending(c => c.Time ?? DateTime.MinValue).FirstOrDefault();
+                string lastIp = latestConn.Ip ?? conns.Last().Ip;
+
+                var activeSessionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var c in conns)
                 {
-                    userIps[user].Add(connIdToIp[connId]);
+                    bool isActive = true;
+                    if (maxLogTime.HasValue && c.Time.HasValue)
+                    {
+                        isActive = (maxLogTime.Value - c.Time.Value).TotalSeconds <= 180;
+                    }
+
+                    if (isActive)
+                    {
+                        // Для UDP-протоколов (Hysteria2, TUIC) отдельный локальный порт = отдельное устройство
+                        // Для TCP-протоколов (VLESS, Trojan) группируем по протокол:IP во избежание раздувания от коротких сокетов
+                        string sessionKey = (c.Proto == "hysteria2" || c.Proto == "tuic") && !string.IsNullOrEmpty(c.Port)
+                            ? $"{c.Proto}:{c.Ip}:{c.Port}"
+                            : $"{c.Proto}:{c.Ip}";
+                        activeSessionKeys.Add(sessionKey);
+                    }
                 }
+
+                int activeSessions = activeSessionKeys.Count;
+                if (activeSessions == 0 && conns.Count > 0)
+                    activeSessions = 1;
+
+                userStats[user] = (lastIp, activeSessions);
             }
         }
         else
         {
-            // Старая логика Xray остается без изменений
+            var userConnections = new Dictionary<string, List<(DateTime? Time, string Tag, string Ip, string Port)>>(StringComparer.OrdinalIgnoreCase);
+            DateTime? maxLogTime = null;
+
             foreach (var line in lines)
             {
                 try
                 {
                     string user = "Unknown";
                     string ip = "";
-                    var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    string port = "";
+                    string tag = "xray";
+                    DateTime? time = null;
 
+                    var timeMatch = System.Text.RegularExpressions.Regex.Match(line, @"(\d{4}/\d{2}/\d{2}\s+\d{2}:\d{2}:\d{2})");
+                    if (timeMatch.Success && DateTime.TryParse(timeMatch.Groups[1].Value.Replace('/', '-'), out var dt))
+                    {
+                        time = dt;
+                        if (!maxLogTime.HasValue || dt > maxLogTime.Value)
+                            maxLogTime = dt;
+                    }
+
+                    var tagMatch = System.Text.RegularExpressions.Regex.Match(line, @"\[(.*?)\]");
+                    if (tagMatch.Success) tag = tagMatch.Groups[1].Value.Trim().ToLowerInvariant();
+
+                    var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                     for (int i = 0; i < parts.Length; i++)
                     {
                         if (parts[i].StartsWith("email:")) user = parts[i].Replace("email:", "").Trim();
-                        else if (parts[i].StartsWith("[") && parts[i].EndsWith("]")) user = parts[i].Trim('[', ']');
+                        else if (parts[i].StartsWith("[") && parts[i].EndsWith("]"))
+                        {
+                            string pot = parts[i].Trim('[', ']');
+                            if (!string.IsNullOrEmpty(pot) && pot != tag) user = pot;
+                        }
 
                         if (parts[i] == "accepted" && i > 0)
                         {
-                            ip = parts[i - 1].Split(':')[0].Replace("tcp:", "").Replace("udp:", "").Trim();
+                            string rawAddr = parts[i - 1].Replace("tcp:", "").Replace("udp:", "").Trim();
+                            if (rawAddr.Contains(':'))
+                            {
+                                var addrParts = rawAddr.Split(':');
+                                ip = addrParts[0];
+                                if (addrParts.Length > 1) port = addrParts[1];
+                            }
+                            else
+                            {
+                                ip = rawAddr;
+                            }
                         }
                     }
 
                     if (user != "Unknown" && !string.IsNullOrEmpty(ip))
                     {
-                        if (!userIps.ContainsKey(user)) userIps[user] = new HashSet<string>();
-                        userIps[user].Add(ip);
+                        if (!userConnections.ContainsKey(user))
+                            userConnections[user] = new List<(DateTime? Time, string Tag, string Ip, string Port)>();
+
+                        userConnections[user].Add((time, tag, ip, port));
                     }
                 }
                 catch { }
+            }
+
+            foreach (var kvp in userConnections)
+            {
+                string user = kvp.Key;
+                var conns = kvp.Value;
+
+                var latestConn = conns.OrderByDescending(c => c.Time ?? DateTime.MinValue).FirstOrDefault();
+                string lastIp = latestConn.Ip ?? conns.Last().Ip;
+
+                var activeSessionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var c in conns)
+                {
+                    bool isActive = true;
+                    if (maxLogTime.HasValue && c.Time.HasValue)
+                    {
+                        isActive = (maxLogTime.Value - c.Time.Value).TotalSeconds <= 180;
+                    }
+
+                    if (isActive)
+                    {
+                        activeSessionKeys.Add($"{c.Tag}:{c.Ip}");
+                    }
+                }
+
+                int activeSessions = activeSessionKeys.Count;
+                if (activeSessions == 0 && conns.Count > 0)
+                    activeSessions = 1;
+
+                userStats[user] = (lastIp, activeSessions);
             }
         }
 
@@ -288,9 +429,10 @@ public class ServerMonitorService : IServerMonitorService
 
         try
         {
-            foreach (var kvp in userIps)
+            foreach (var kvp in userStats)
             {
-                string lastIp = kvp.Value.LastOrDefault()?.Trim() ?? "";
+                string lastIp = kvp.Value.LastIp?.Trim() ?? "";
+                int activeSessions = kvp.Value.ActiveSessions;
                 string country = dbError != "" ? dbError : "??";
 
                 if (hasGeoDb && geoReader != null && !string.IsNullOrEmpty(lastIp))
@@ -329,7 +471,7 @@ public class ServerMonitorService : IServerMonitorService
                 {
                     Email = kvp.Key,
                     LastIp = lastIp,
-                    ActiveSessions = kvp.Value.Count,
+                    ActiveSessions = activeSessions,
                     Country = country
                 });
             }
