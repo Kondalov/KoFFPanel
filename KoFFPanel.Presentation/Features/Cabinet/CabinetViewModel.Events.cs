@@ -42,8 +42,7 @@ public partial class CabinetViewModel
         }
 
         bool isSingBox = SelectedServer.CoreType == "sing-box";
-        bool isTrustTunnel = SelectedServer.CoreType == "trusttunnel";
-        string activeCoreName = isSingBox ? "Sing-box" : (isTrustTunnel ? "TrustTunnel" : "Xray-core");
+        string activeCoreName = isSingBox ? "Sing-box" : "Xray-core";
 
         System.Windows.Application.Current.Dispatcher.Invoke(() => ServerStatus = $"Синхронизация БД с {activeCoreName}...");
 
@@ -57,14 +56,7 @@ public partial class CabinetViewModel
         try
         {
             bool coreSyncSuccess = isSingBox ? await _singBoxUserManager.SyncUsersToCoreAsync(ssh, Clients) :
-                                   (isTrustTunnel ? await _trustTunnelUserManager.SyncUsersToCoreAsync(ssh, Clients) :
-                                   await _userManager.SyncUsersToCoreAsync(ssh, Clients));
-
-            bool hasTrustTunnelExtra = SelectedServer.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel");
-            if (hasTrustTunnelExtra && !isTrustTunnel)
-            {
-                await _trustTunnelUserManager.SyncUsersToCoreAsync(ssh, Clients);
-            }
+                                   await _userManager.SyncUsersToCoreAsync(ssh, Clients);
 
             if (coreSyncSuccess)
             {
@@ -76,12 +68,10 @@ public partial class CabinetViewModel
                 {
                     var links = new List<string>();
 
-                    // ДОБАВЛЕНЫ НОВЫЕ ПРОТОКОЛЫ ДЛЯ ОТПРАВКИ В HTTPS-ПОДПИСКУ
                     if (client.IsVlessEnabled && !string.IsNullOrEmpty(client.VlessLink) && client.VlessLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.VlessLink);
                     if (client.IsHysteria2Enabled && !string.IsNullOrEmpty(client.Hysteria2Link) && client.Hysteria2Link.StartsWith("hy2://", StringComparison.OrdinalIgnoreCase)) links.Add(client.Hysteria2Link);
+                    if (client.IsTuicEnabled && !string.IsNullOrEmpty(client.TuicLink) && client.TuicLink.StartsWith("tuic://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TuicLink);
                     if (client.IsTrojanEnabled && !string.IsNullOrEmpty(client.TrojanLink) && client.TrojanLink.StartsWith("trojan://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TrojanLink);
-                    if (client.IsShadowsocksEnabled && !string.IsNullOrEmpty(client.ShadowsocksLink) && client.ShadowsocksLink.StartsWith("ss://", StringComparison.OrdinalIgnoreCase)) links.Add(client.ShadowsocksLink);
-                    if (client.IsTrustTunnelEnabled && !string.IsNullOrEmpty(client.TrustTunnelLink) && client.TrustTunnelLink.StartsWith("vless://", StringComparison.OrdinalIgnoreCase)) links.Add(client.TrustTunnelLink);
 
                     await _subscriptionService.UpdateUserSubscriptionAsync(ssh, client.Uuid ?? "", links);
                 }

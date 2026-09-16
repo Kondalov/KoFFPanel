@@ -107,21 +107,21 @@ public class VpnClient : INotifyPropertyChanged
         set { _hysteria2Link = value; OnPropertyChanged(); }
     }
 
-    private bool _isTrustTunnelEnabled = false;
-    public bool IsTrustTunnelEnabled
-    {
-        get => _isTrustTunnelEnabled;
-        set { _isTrustTunnelEnabled = value; OnPropertyChanged(); }
-    }
-
-    private string _trustTunnelLink = "";
-    public string TrustTunnelLink
-    {
-        get => _trustTunnelLink;
-        set { _trustTunnelLink = value; OnPropertyChanged(); }
-    }
-
     // === НОВЫЕ ПРОТОКОЛЫ ===
+    private bool _isTuicEnabled = false;
+    public bool IsTuicEnabled
+    {
+        get => _isTuicEnabled;
+        set { _isTuicEnabled = value; OnPropertyChanged(); }
+    }
+
+    private string _tuicLink = "";
+    public string TuicLink
+    {
+        get => _tuicLink;
+        set { _tuicLink = value; OnPropertyChanged(); }
+    }
+
     private bool _isTrojanEnabled = false;
     public bool IsTrojanEnabled
     {
@@ -134,20 +134,6 @@ public class VpnClient : INotifyPropertyChanged
     {
         get => _trojanLink;
         set { _trojanLink = value; OnPropertyChanged(); }
-    }
-
-    private bool _isShadowsocksEnabled = false;
-    public bool IsShadowsocksEnabled
-    {
-        get => _isShadowsocksEnabled;
-        set { _isShadowsocksEnabled = value; OnPropertyChanged(); }
-    }
-
-    private string _shadowsocksLink = "";
-    public string ShadowsocksLink
-    {
-        get => _shadowsocksLink;
-        set { _shadowsocksLink = value; OnPropertyChanged(); }
     }
     // ========================
 

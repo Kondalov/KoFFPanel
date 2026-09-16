@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Domain.Entities;
+using KoFFPanel.Domain.Entities;
 using KoFFPanel.Application.Interfaces;
 using System.Threading.Tasks;
 
@@ -6,7 +6,7 @@ namespace KoFFPanel.Application.Interfaces.ProtocolBuilders;
 
 public interface IProtocolBuilder
 {
-    string ProtocolType { get; }      // Внутреннее имя (vless, hysteria2, trusttunnel)
+    string ProtocolType { get; }      // Внутреннее имя (vless, hysteria2, tuic, trojan)
     string DisplayName { get; }       // Имя для UI в Мастере установки
     string TransportType { get; }     // Транспорт "tcp" или "udp" (очень важно для проверки портов!)
     int DefaultPort { get; }          // Порт, который умный алгоритм предложит первым

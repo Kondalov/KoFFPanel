@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
 using KoFFPanel.Application.Constants;
@@ -29,35 +29,9 @@ public partial class ProtocolSetupItem : ObservableObject
     [ObservableProperty] private bool _isValid = true;
     [ObservableProperty] private string _validationMessage = "Ожидание...";
 
-    [ObservableProperty] private string _ttUsername = "ADMIN";
-    [ObservableProperty] private string _ttPassword = "";
-
-    public bool IsTrustTunnel => Builder.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase);
-
-    public ProtocolSetupItem(IProtocolBuilder builder, string existingAdminUuid = "")
+    public ProtocolSetupItem(IProtocolBuilder builder)
     {
         Builder = builder;
-
-        if (IsTrustTunnel)
-        {
-            // Умный UI: Если в базе уже есть UUID, показываем его. Если сервер чистый - генерируем.
-            if (!string.IsNullOrWhiteSpace(existingAdminUuid))
-            {
-                TtPassword = existingAdminUuid;
-            }
-            else
-            {
-                GenerateTtPassword();
-            }
-        }
-    }
-
-    [CommunityToolkit.Mvvm.Input.RelayCommand]
-    private void GenerateTtPassword()
-    {
-        const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-        var random = new Random();
-        TtPassword = new string(Enumerable.Repeat(chars, 16).Select(s => s[random.Next(s.Length)]).ToArray());
     }
 }
 
@@ -76,13 +50,9 @@ public partial class DeployWizardViewModel : ObservableObject, IDisposable
     public Action? CloseAction { get; set; }
     public Action<string>? OnInstallRequested { get; set; }
 
-    [ObservableProperty] private bool _isXraySelected = true;
-    [ObservableProperty] private bool _isSingBoxSelected;
-    [ObservableProperty] private bool _isTrustTunnelSelected;
-    [ObservableProperty] private bool _isCustomSelected;
-
+    [ObservableProperty] private bool _isSingBoxSelected = true;
     [ObservableProperty] private bool _isNotInstalling = true;
-    [ObservableProperty] private string _statusMessage = "Выберите ядро и нужные протоколы для установки.";
+    [ObservableProperty] private string _statusMessage = "Отметьте нужные протоколы для установки.";
 
     public ObservableCollection<ProtocolSetupItem> AvailableProtocols { get; } = new();
 
@@ -121,7 +91,7 @@ public partial class DeployWizardViewModel : ObservableObject, IDisposable
             }
 
             LoadProtocolsForCurrentCore();
-            StatusMessage = "Успешно! Выберите ядро и отметьте протоколы.";
+            StatusMessage = "Успешно! Отметьте нужные протоколы для установки.";
             _logger.Log("WIZARD-TRACE", "[SUCCESS] Мастер загружен.");
         }
         catch (Exception ex)
@@ -131,56 +101,17 @@ public partial class DeployWizardViewModel : ObservableObject, IDisposable
         }
     }
 
-    partial void OnIsXraySelectedChanged(bool value)
-    {
-        if (value) { IsSingBoxSelected = false; IsTrustTunnelSelected = false; LoadProtocolsForCurrentCore(); }
-    }
-
-    partial void OnIsSingBoxSelectedChanged(bool value)
-    {
-        if (value) { IsXraySelected = false; IsTrustTunnelSelected = false; LoadProtocolsForCurrentCore(); }
-    }
-
-    partial void OnIsTrustTunnelSelectedChanged(bool value)
-    {
-        if (value) { IsXraySelected = false; IsSingBoxSelected = false; LoadProtocolsForCurrentCore(); }
-    }
-
-    private string GetSelectedCoreType()
-    {
-        if (IsSingBoxSelected) return CoreTypes.SingBox;
-        if (IsTrustTunnelSelected) return CoreTypes.TrustTunnel;
-        return CoreTypes.Xray;
-    }
+    private string GetSelectedCoreType() => CoreTypes.SingBox;
 
     private void LoadProtocolsForCurrentCore()
     {
         foreach (var p in AvailableProtocols) p.PropertyChanged -= OnProtocolPropertyChanged;
         AvailableProtocols.Clear();
 
-        if (IsCustomSelected) return;
-
-        // === ИСПРАВЛЕНИЕ: Получаем реальный UUID из базы, чтобы UI не врал ===
-        string existingAdminUuid = "";
-        if (_server != null && !string.IsNullOrEmpty(_server.IpAddress))
-        {
-            try
-            {
-                using (var db = new KoFFPanel.Infrastructure.Data.AppDbContext())
-                {
-                    var admin = db.Clients.FirstOrDefault(c => c.ServerIp == _server.IpAddress && c.Email == "ADMIN");
-                    if (admin != null) existingAdminUuid = admin.Uuid;
-                }
-            }
-            catch { }
-        }
-        // ====================================================================
-
-        var builders = _protocolFactory.GetAvailableProtocols(GetSelectedCoreType());
+        var builders = _protocolFactory.GetAvailableProtocols(CoreTypes.SingBox);
         foreach (var builder in builders)
         {
-            // Передаем реальный UUID в элемент UI
-            var item = new ProtocolSetupItem(builder, existingAdminUuid);
+            var item = new ProtocolSetupItem(builder);
 
             if (_server?.Inbounds != null)
             {
@@ -191,10 +122,6 @@ public partial class DeployWizardViewModel : ObservableObject, IDisposable
                     item.PortText = existing.Port.ToString();
                     item.IsValid = true;
                     item.ValidationMessage = "Установлен (Включите для переустановки)";
-                }
-                else if (builder.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase))
-                {
-                    item.PortText = "5443";
                 }
             }
 
@@ -279,8 +206,6 @@ public partial class DeployWizardViewModel : ObservableObject, IDisposable
     {
         _logger.Log("WIZARD-TRACE", "[ACTION] Старт установки");
 
-        if (IsCustomSelected) return;
-
         var selectedItems = AvailableProtocols.Where(p => p.IsSelected).ToList();
         if (!selectedItems.Any())
         {
@@ -333,7 +258,7 @@ public partial class DeployWizardViewModel : ObservableObject, IDisposable
         StatusMessage = "🚀 Развертывание ядра и портов... (Подождите)";
         IsNotInstalling = false;
 
-        var protocolsToInstall = selectedItems.Select(p => (p.Builder, int.Parse(p.PortText), p.IsTrustTunnel ? p.TtUsername : null, p.IsTrustTunnel ? p.TtPassword : null)).ToList();
+        var protocolsToInstall = selectedItems.Select(p => (p.Builder, int.Parse(p.PortText))).ToList();
 
         var (success, log) = await _deploymentService.DeployFullStackAsync(_ssh, _server, GetSelectedCoreType(), protocolsToInstall);
 

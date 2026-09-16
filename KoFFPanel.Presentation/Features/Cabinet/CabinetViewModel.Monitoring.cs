@@ -114,15 +114,9 @@ public partial class CabinetViewModel
         // ИСПРАВЛЕНИЕ: Определяем ядро динамически на каждом шаге цикла, 
         // чтобы изменения из БД (если они произошли) применялись мгновенно.
         bool isSingBox = profile.CoreType == "sing-box";
-        bool isTrustTunnel = profile.CoreType == "trusttunnel";
 
-        string displayCoreName = isSingBox ? "Sing-box" : (isTrustTunnel ? "TrustTunnel" : "Xray-core");
-        if (profile.Inbounds.Any(i => i.Protocol.ToLower() == "trusttunnel") && !isTrustTunnel)
-        {
-            displayCoreName += " + TrustTunnel";
-        }
-
-        string serviceName = isSingBox ? "sing-box" : (isTrustTunnel ? "trusttunnel" : "xray");
+        string displayCoreName = isSingBox ? "Sing-box" : "Xray-core";
+        string serviceName = isSingBox ? "sing-box" : "xray";
 
         var pingResult = await _monitorService.PingServerAsync(ip);
         PingMs = pingResult.Success ? pingResult.RoundtripTime : 0;
@@ -135,9 +129,9 @@ public partial class CabinetViewModel
         int tcpCount = await GetTcpConnectionsCountAsync(localSsh, res.TcpConnections);
         TcpConnections = tcpCount;
 
-        string fallback = await localSsh.ExecuteCommandAsync("systemctl is-active sing-box xray trusttunnel 2>/dev/null");
+        string fallback = await localSsh.ExecuteCommandAsync("systemctl is-active sing-box xray 2>/dev/null");
 
-        bool sbActive = false, xrActive = false, ttActive = false;
+        bool sbActive = false, xrActive = false;
 
         // ИСПРАВЛЕНИЕ: Парсим статусы ТОЛЬКО если сервер реально ответил.
         if (!string.IsNullOrWhiteSpace(fallback))
@@ -145,7 +139,6 @@ public partial class CabinetViewModel
             var fbLines = fallback.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             sbActive = fbLines.Length > 0 && fbLines[0].Trim() == "active";
             xrActive = fbLines.Length > 1 && fbLines[1].Trim() == "active";
-            ttActive = fbLines.Length > 2 && fbLines[2].Trim() == "active";
         }
 
         string actualDisplayCore = displayCoreName;
@@ -153,25 +146,21 @@ public partial class CabinetViewModel
         else if (sbActive) actualDisplayCore = "Sing-box";
         else if (xrActive) actualDisplayCore = "Xray-core";
 
-        if (ttActive && !actualDisplayCore.Contains("TrustTunnel", StringComparison.OrdinalIgnoreCase))
-            actualDisplayCore = string.Equals(actualDisplayCore, "TrustTunnel", StringComparison.OrdinalIgnoreCase) ? "TrustTunnel" : actualDisplayCore + " + TrustTunnel";
-
         string coreStatusStr = "Stopped";
         if (actualDisplayCore.Contains("Sing-box", StringComparison.OrdinalIgnoreCase) && sbActive) coreStatusStr = "Active";
         else if (actualDisplayCore.Contains("Xray", StringComparison.OrdinalIgnoreCase) && xrActive) coreStatusStr = "Active";
-        else if (actualDisplayCore.Contains("TrustTunnel", StringComparison.OrdinalIgnoreCase) && ttActive) coreStatusStr = "Active";
 
         string journalLogs = await localSsh.ExecuteCommandAsync($"journalctl -u {serviceName} -n 5 --no-pager");
-        string accessLogs = await GetAccessLogsAsync(localSsh, isSingBox, isTrustTunnel);
-        string grepTest = await GetParserTestLogsAsync(localSsh, isSingBox, isTrustTunnel);
+        string accessLogs = await GetAccessLogsAsync(localSsh, isSingBox);
+        string grepTest = await GetParserTestLogsAsync(localSsh, isSingBox);
 
         var coreStats = await _monitorService.GetCoreStatusInfoAsync(localSsh, profile.CoreType);
         var allOnlineStats = await _monitorService.GetUserOnlineStatsAsync(localSsh, profile.CoreType);
 
-        var activeUsernames = await GetActiveUsernamesAsync(localSsh, isSingBox, isTrustTunnel);
-        var violationsBatch = await ProcessViolationsAsync(localSsh, isSingBox, isTrustTunnel, activeUsernames);
+        var activeUsernames = await GetActiveUsernamesAsync(localSsh, isSingBox);
+        var violationsBatch = await ProcessViolationsAsync(localSsh, isSingBox, activeUsernames);
 
-        var trafficStats = await CalculateTrafficStatsAsync(localSsh, isSingBox, isTrustTunnel, activeUsernames);
+        var trafficStats = await CalculateTrafficStatsAsync(localSsh, isSingBox, activeUsernames);
 
         var trafficBatch = new Dictionary<string, long>();
         var connectionBatch = new List<(string Email, string Ip, string Country)>();
@@ -195,9 +184,8 @@ public partial class CabinetViewModel
                 string detectedCoreType = SelectedServer.CoreType;
                 if (sbActive) detectedCoreType = "sing-box";
                 else if (xrActive) detectedCoreType = "xray";
-                else if (ttActive) detectedCoreType = "trusttunnel";
 
-                if (SelectedServer.CoreType != detectedCoreType && (sbActive || xrActive || ttActive))
+                if (SelectedServer.CoreType != detectedCoreType && (sbActive || xrActive))
                 {
                     _logger.Log("MONITORING", $"[FOOLPROOF] Обнаружено расхождение ядра! БД: {SelectedServer.CoreType}, Реал: {detectedCoreType}. Обновляем...");
                     SelectedServer.CoreType = detectedCoreType;
@@ -210,7 +198,6 @@ public partial class CabinetViewModel
             if (dbNeedsUpdate && SelectedServer != null)
             {
                 if (isSingBox) _ = _singBoxUserManager.SaveTrafficToDbAsync(ip, Clients);
-                else if (isTrustTunnel) _ = _trustTunnelUserManager.SaveTrafficToDbAsync(ip, Clients);
                 else _ = _userManager.SaveTrafficToDbAsync(ip, Clients);
             }
 

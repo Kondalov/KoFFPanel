@@ -1,4 +1,4 @@
-﻿using KoFFPanel.Application.Constants;
+using KoFFPanel.Application.Constants;
 using KoFFPanel.Application.Interfaces.ProtocolBuilders;
 using System;
 using System.Collections.Generic;
@@ -23,16 +23,12 @@ public sealed class ProtocolFactory
             CoreTypes.SingBox => _builders.Where(b =>
                 b.ProtocolType.Equals("vless", StringComparison.OrdinalIgnoreCase) ||
                 b.ProtocolType.Equals("hysteria2", StringComparison.OrdinalIgnoreCase) ||
-                b.ProtocolType.Equals("trojan", StringComparison.OrdinalIgnoreCase) ||
-                b.ProtocolType.Equals("shadowsocks", StringComparison.OrdinalIgnoreCase)),
+                b.ProtocolType.Equals("tuic", StringComparison.OrdinalIgnoreCase) ||
+                b.ProtocolType.Equals("trojan", StringComparison.OrdinalIgnoreCase)),
 
             CoreTypes.Xray => _builders.Where(b =>
                 (b.ProtocolType.Equals("vless", StringComparison.OrdinalIgnoreCase) && b.TransportType == "tcp") ||
-                b.ProtocolType.Equals("trojan", StringComparison.OrdinalIgnoreCase) ||
-                b.ProtocolType.Equals("shadowsocks", StringComparison.OrdinalIgnoreCase)),
-
-            CoreTypes.TrustTunnel => _builders.Where(b =>
-                b.ProtocolType.Equals("trusttunnel", StringComparison.OrdinalIgnoreCase)),
+                b.ProtocolType.Equals("trojan", StringComparison.OrdinalIgnoreCase)),
 
             _ => Enumerable.Empty<IProtocolBuilder>()
         };

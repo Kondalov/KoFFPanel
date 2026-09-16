@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace KoFFPanel.Domain.Entities;
 
@@ -10,7 +10,7 @@ public class ServerInbound
     // Название для удобства (например: "Основной VLESS", "Резервный Hysteria")
     public string Tag { get; set; } = "";
 
-    // Тип протокола: vless, hysteria2, trusttunnel
+    // Тип протокола: vless, hysteria2, tuic, trojan
     public string Protocol { get; set; } = "vless";
 
     // Тот самый порт, который будет проверять наш Умный алгоритм

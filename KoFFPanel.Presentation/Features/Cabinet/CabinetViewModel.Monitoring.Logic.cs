@@ -61,28 +61,25 @@ public partial class CabinetViewModel
         catch { return fallback; }
     }
 
-    private async Task<string> GetAccessLogsAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel)
+    private async Task<string> GetAccessLogsAsync(ISshService localSsh, bool isSingBox)
     {
         return await localSsh.ExecuteCommandAsync(
             isSingBox ? "tail -n 5 /var/log/sing-box/access.log 2>/dev/null || journalctl -u sing-box -n 5 --no-pager | grep INFO || echo 'Нет логов'" :
-            isTrustTunnel ? "journalctl -u trusttunnel -n 5 --no-pager || echo 'Нет логов'" :
             "tail -n 5 /var/log/xray/access.log 2>/dev/null || echo 'Нет логов'"
         );
     }
 
-    private async Task<string> GetParserTestLogsAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel)
+    private async Task<string> GetParserTestLogsAsync(ISshService localSsh, bool isSingBox)
     {
         return await localSsh.ExecuteCommandAsync(
             isSingBox ? "tail -n 50 /var/log/sing-box/access.log 2>/dev/null | grep -iE 'inbound connection|sniff' | tail -n 3" :
-            isTrustTunnel ? "journalctl -u trusttunnel -n 50 --no-pager | tail -n 3" :
             "tail -n 50 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected' | tail -n 3"
         );
     }
 
-    private async Task<HashSet<string>> GetActiveUsernamesAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel)
+    private async Task<HashSet<string>> GetActiveUsernamesAsync(ISshService localSsh, bool isSingBox)
     {
         string cmd = isSingBox ? "tail -n 100 /var/log/sing-box/access.log 2>/dev/null | grep 'inbound connection'" :
-                     isTrustTunnel ? "journalctl -u trusttunnel --since \"1 min ago\" --no-pager" :
                      "tail -n 200 /var/log/xray/access.log 2>/dev/null | grep 'accepted'";
 
         string recentLogs = await localSsh.ExecuteCommandAsync(cmd);
@@ -133,11 +130,10 @@ public partial class CabinetViewModel
         }
     }
 
-    private async Task<List<(string Email, string ViolationType)>> ProcessViolationsAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel, HashSet<string> activeUsernames)
+    private async Task<List<(string Email, string ViolationType)>> ProcessViolationsAsync(ISshService localSsh, bool isSingBox, HashSet<string> activeUsernames)
     {
         List<string> torrentDomains = await LoadTorrentDomainsAsync();
         string rawViolationLogs = isSingBox ? await localSsh.ExecuteCommandAsync("journalctl -u sing-box --since \"1 min ago\" --no-pager | grep -iE 'inbound connection|sniffed'") :
-                                 isTrustTunnel ? "" :
                                  await localSsh.ExecuteCommandAsync("tail -n 200 /var/log/xray/access.log 2>/dev/null | grep -E 'accepted|rejected|torrent-logger'");
 
         var violationsBatch = new List<(string Email, string ViolationType)>();
@@ -213,11 +209,11 @@ public partial class CabinetViewModel
         }
     }
 
-    private async Task<Dictionary<string, long>> CalculateTrafficStatsAsync(ISshService localSsh, bool isSingBox, bool isTrustTunnel, HashSet<string> activeUsernames)
+    private async Task<Dictionary<string, long>> CalculateTrafficStatsAsync(ISshService localSsh, bool isSingBox, HashSet<string> activeUsernames)
     {
         Dictionary<string, long> trafficStats;
 
-        if (!isSingBox && !isTrustTunnel)
+        if (!isSingBox)
         {
             trafficStats = await _userManager.GetTrafficStatsAsync(localSsh);
             foreach (var kvp in trafficStats)
@@ -426,8 +422,7 @@ public partial class CabinetViewModel
         var ssh = _currentMonitoringSsh; var server = SelectedServer;
         if (ssh == null || !ssh.IsConnected || server == null) return;
         string ip = server.IpAddress ?? "";
-        var realUsers = server.CoreType == "sing-box" ? await _singBoxUserManager.GetUsersAsync(ssh, ip) :
-                        (server.CoreType == "trusttunnel" ? await _trustTunnelUserManager.GetUsersAsync(ssh, ip) : await _userManager.GetUsersAsync(ssh, ip));
+        var realUsers = server.CoreType == "sing-box" ? await _singBoxUserManager.GetUsersAsync(ssh, ip) : await _userManager.GetUsersAsync(ssh, ip);
         System.Windows.Application.Current.Dispatcher.Invoke(() => SyncClientsCollection(realUsers));
     }
 
@@ -437,8 +432,7 @@ public partial class CabinetViewModel
         if (ssh == null || !ssh.IsConnected || server == null) return;
         string email = client.Email ?? "Unknown"; string ip = server.IpAddress ?? "";
         ServerStatus = $"Блокировка {email} ({reason})...";
-        var (success, msg) = server.CoreType == "sing-box" ? await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, false) :
-                            (server.CoreType == "trusttunnel" ? await _trustTunnelUserManager.ToggleUserStatusAsync(ssh, ip, email, false) : await _userManager.ToggleUserStatusAsync(ssh, ip, email, false));
+        var (success, msg) = server.CoreType == "sing-box" ? await _singBoxUserManager.ToggleUserStatusAsync(ssh, ip, email, false) : await _userManager.ToggleUserStatusAsync(ssh, ip, email, false);
         ServerStatus = success ? $"Онлайн ({email} заблокирован)" : $"Ошибка блокировки: {msg}";
     }
 }

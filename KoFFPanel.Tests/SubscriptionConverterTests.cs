@@ -12,6 +12,7 @@ public class SubscriptionConverterTests
     {
         "vless://e7b686d0-40e9-4e71-92be-6cf7b4478144@192.168.1.100:443?type=tcp&security=reality&pbk=AbCdEf123456&fp=chrome&sni=dl.google.com&sid=abcdef01&flow=xtls-rprx-vision#My-VLESS-Reality",
         "hy2://my-hy2-pass@192.168.1.100:8443?sni=bing.com&insecure=1&obfs=salamander&obfs-password=obfspass123&alpn=h3#My-Hysteria2",
+        "tuic://e7b686d0-40e9-4e71-92be-6cf7b4478144:mypassword@192.168.1.100:8444?sni=bing.com&alpn=h3&congestion_control=bbr&allow_insecure=1#My-TUIC",
         "trojan://my-trojan-pass@192.168.1.100:2083?sni=bing.com&security=tls#My-Trojan"
     };
 
@@ -49,6 +50,22 @@ public class SubscriptionConverterTests
     }
 
     [Fact]
+    public void ParseUri_Tuic_ShouldExtractFieldsCorrectly()
+    {
+        string tuic = _sampleLinks[2];
+        var parsed = SubscriptionConfigConverter.ParseUri(tuic);
+
+        Assert.NotNull(parsed);
+        Assert.Equal("tuic", parsed.Protocol);
+        Assert.Equal("192.168.1.100", parsed.Server);
+        Assert.Equal(8444, parsed.Port);
+        Assert.Equal("e7b686d0-40e9-4e71-92be-6cf7b4478144:mypassword", parsed.UuidOrPassword);
+        Assert.Equal("My-TUIC", parsed.Name);
+        Assert.Equal("bing.com", parsed.Params["sni"]);
+        Assert.Equal("h3", parsed.Params["alpn"]);
+    }
+
+    [Fact]
     public void GenerateClashYaml_WithValidLinks_ShouldProduceValidClashConfiguration()
     {
         string yaml = SubscriptionConfigConverter.GenerateClashYaml(_sampleLinks);
@@ -58,6 +75,7 @@ public class SubscriptionConverterTests
         Assert.Contains("proxy-groups:", yaml);
         Assert.Contains("type: vless", yaml);
         Assert.Contains("type: hysteria2", yaml);
+        Assert.Contains("type: tuic", yaml);
         Assert.Contains("type: trojan", yaml);
         Assert.Contains("🔄 AUTO - Самый быстрый", yaml);
         Assert.Contains("🛡️ РЕЗЕРВ - Failover", yaml);
@@ -73,7 +91,7 @@ public class SubscriptionConverterTests
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         Assert.True(root.TryGetProperty("outbounds", out var outbounds));
-        Assert.True(outbounds.GetArrayLength() >= 5); // vless, hy2, trojan, auto, select, direct, block
+        Assert.True(outbounds.GetArrayLength() >= 6); // vless, hy2, tuic, trojan, auto, select, direct, block
     }
 
     [Fact]

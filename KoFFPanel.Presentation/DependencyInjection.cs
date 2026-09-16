@@ -76,7 +76,6 @@ public static class DependencyInjection
 
         services.AddTransient<ISingBoxConfiguratorService, SingBoxConfiguratorService>();
         services.AddTransient<ISingBoxUserManagerService, SingBoxUserManagerService>();
-        services.AddTransient<ITrustTunnelUserManagerService, TrustTunnelUserManagerService>();
 
         services.AddTransient<IServerSelectionService, ServerSelectionService>();
         services.AddTransient<ISmartPortValidator, SmartPortValidator>();
@@ -91,11 +90,10 @@ public static class DependencyInjection
         services.AddTransient<IFilePickerService, FilePickerService>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.VlessRealityBuilder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.Hysteria2Builder>();
-        services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrustTunnelBuilder>();
         services.AddTransient<FraudScoringWindow>();
         // ДОБАВЛЕНЫ НОВЫЕ ПРОТОКОЛЫ
+        services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TuicBuilder>();
         services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.TrojanBuilder>();
-        services.AddTransient<KoFFPanel.Application.Interfaces.ProtocolBuilders.IProtocolBuilder, KoFFPanel.Infrastructure.Services.ProtocolBuilders.ShadowsocksBuilder>();
 
         // 3. ViewModels
         services.AddSingleton<CabinetViewModel>();

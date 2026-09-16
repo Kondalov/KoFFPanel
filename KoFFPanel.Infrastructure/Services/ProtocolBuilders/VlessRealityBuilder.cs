@@ -39,7 +39,7 @@ public class VlessRealityBuilder : IProtocolBuilder
             privateKey = privateKey,
             publicKey = publicKey,
             shortId = shortId,
-            sni = "google.com"
+            sni = "dl.google.com"
         };
 
         return new ServerInbound

@@ -77,4 +77,18 @@ public class DatabaseArchitectureTests : IDisposable
         Assert.NotNull(client);
         Assert.Equal("1.1.1.1", client.ServerIp);
     }
+
+    [Fact]
+    public void InitializeDatabaseOptimization_ShouldMigrateDevDbSuccessfully()
+    {
+        string devDb = AppDbContext.GetDatabasePath();
+        if (!File.Exists(devDb)) return;
+
+        using var dbContext = new AppDbContext();
+        dbContext.InitializeDatabaseOptimization();
+
+        // Проверяем, что запрос к Clients выполняется без ошибок
+        var count = dbContext.Clients.Count();
+        Assert.True(count >= 0);
+    }
 }

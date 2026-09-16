@@ -19,9 +19,8 @@ public class SmartPortValidator : ISmartPortValidator
 
     private string GetTransport(string protocol) => protocol.ToLower() switch
     {
-        "vless" or "trojan" or "trusttunnel" => "tcp",
-        "hysteria2" or "hy2" => "udp",
-        "shadowsocks" or "ss" => "tcp,udp",
+        "vless" or "trojan" => "tcp",
+        "hysteria2" or "hy2" or "tuic" => "udp",
         _ => "tcp"
     };
 
@@ -69,7 +68,7 @@ public class SmartPortValidator : ISmartPortValidator
             {
                 _logger.Log("PORT-VALIDATOR", $"Проверка порта {port}. Ответ ОС: {sysCheck.Trim()}");
 
-                if (sysCheck.Contains("sing-box") || sysCheck.Contains("xray") || sysCheck.Contains("trusttunnel"))
+                if (sysCheck.Contains("sing-box") || sysCheck.Contains("xray"))
                 {
                     return (true, "Занят нашим ядром (Допустимо)");
                 }
@@ -84,10 +83,7 @@ public class SmartPortValidator : ISmartPortValidator
     // Уровень 5: Умный Auto-Suggest
     public async Task<int> SuggestBestPortAsync(ISshService ssh, string serverId, string protocolType)
     {
-        // Пытаемся всеми силами занять 443 или 2443 для TrustTunnel!
-        int[] preferredPorts = protocolType.ToLower() == "trusttunnel" 
-            ? new[] { 2443, 443, 8443, 4433 } 
-            : new[] { 443, 8443, 4433, 2053, 2083, 8080 };
+        int[] preferredPorts = new[] { 443, 8443, 4433, 2053, 2083, 8080 };
 
         foreach (int port in preferredPorts)
         {
