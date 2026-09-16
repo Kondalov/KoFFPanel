@@ -153,6 +153,9 @@ echo 'READY|Сервер готов к установке.'
                     inboundDb = await p.Builder.GenerateNewInboundAsync(ssh, p.Port);
                 }
 
+                // Удаляем все устаревшие inbound'ы с тем же портом (иначе возникает конфликт портов в конфиге ядра)
+                profile.Inbounds.RemoveAll(i => i.Port == p.Port && !ReferenceEquals(i, inboundDb));
+
                 if (!profile.Inbounds.Contains(inboundDb))
                     profile.Inbounds.Add(inboundDb);
             }
@@ -399,8 +402,14 @@ cd /tmp && rm -rf /tmp/singbox_install
 
     private async Task DeployJsonCoreConfigAsync(ISshService ssh, VpnProfile profile, string core, string sudoPrefix)
     {
+        // Дедуплицируем по порту: если осталось несколько inbound'ов на одном порту — берём последний (наиболее свежий)
+        var uniqueInbounds = profile.Inbounds
+            .GroupBy(i => i.Port)
+            .Select(g => g.Last())
+            .ToList();
+
         var inboundsArray = new JsonArray();
-        foreach (var inbound in profile.Inbounds)
+        foreach (var inbound in uniqueInbounds)
         {
             var settings = JsonNode.Parse(inbound.SettingsJson);
             var node = core == "sing-box" ? BuildSingBoxInbound(inbound, settings) : BuildXrayInbound(inbound, settings);
