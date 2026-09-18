@@ -147,6 +147,30 @@ public partial class CabinetViewModel : ObservableObject, IRecipient<CoreDeploye
         {
             RecalculateActiveUsers();
         }
+        else if (e.PropertyName == nameof(VpnClient.IsAntiFraudEnabled) && sender is VpnClient client)
+        {
+            _ = SaveClientAntiFraudSettingAsync(client);
+        }
+    }
+
+    private async Task SaveClientAntiFraudSettingAsync(VpnClient client)
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<KoFFPanel.Infrastructure.Data.AppDbContext>();
+            var dbClient = await db.Clients.FirstOrDefaultAsync(c => c.Uuid == client.Uuid || (c.Email == client.Email && c.ServerIp == client.ServerIp));
+            if (dbClient != null && dbClient.IsAntiFraudEnabled != client.IsAntiFraudEnabled)
+            {
+                dbClient.IsAntiFraudEnabled = client.IsAntiFraudEnabled;
+                await db.SaveChangesAsync();
+                _logger.Log("ANTIFRAUD-SETTING", $"Обновлен IsAntiFraudEnabled={client.IsAntiFraudEnabled} для {client.Email}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Log("ANTIFRAUD-SETTING-ERR", $"Ошибка сохранения настройки антифрода для {client.Email}: {ex.Message}");
+        }
     }
 
     private void RecalculateActiveUsers()

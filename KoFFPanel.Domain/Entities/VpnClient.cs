@@ -26,6 +26,22 @@ public class VpnClient : INotifyPropertyChanged
         set { _isAntiFraudEnabled = value; OnPropertyChanged(); }
     }
 
+    private bool _isFraud = false;
+    [NotMapped]
+    public bool IsFraud
+    {
+        get => _isFraud;
+        set { _isFraud = value; OnPropertyChanged(); }
+    }
+
+    private string _fraudReason = "";
+    [NotMapped]
+    public string FraudReason
+    {
+        get => _fraudReason;
+        set { _fraudReason = value; OnPropertyChanged(); }
+    }
+
     private bool _isP2PBlocked = true;
     public bool IsP2PBlocked
     {

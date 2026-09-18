@@ -33,6 +33,7 @@ public class AntiFraudService : IAntiFraudService
     {
         if (!client.IsAntiFraudEnabled) return (false, "");
         string email = client.Email ?? "Unknown";
+        string cacheKey = $"{serverIp}:{email}";
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -44,10 +45,10 @@ public class AntiFraudService : IAntiFraudService
         {
             log = new ClientBehaviorLog { ServerIp = serverIp, Email = email, Date = today, RiskScore = 0 };
             db.BehaviorLogs.Add(log);
-            ClearInMemCachesForNewDay(email);
+            ClearInMemCachesForNewDay(cacheKey);
         }
 
-        UpdateMetrics(log, client, currentIp, trafficDelta);
+        UpdateMetrics(log, client, currentIp, trafficDelta, cacheKey);
         CalculateRiskScore(log);
 
         await db.SaveChangesAsync(token);
@@ -60,52 +61,50 @@ public class AntiFraudService : IAntiFraudService
         return (false, "");
     }
 
-    private void UpdateMetrics(ClientBehaviorLog log, VpnClient client, string currentIp, long trafficDelta)
+    private void UpdateMetrics(ClientBehaviorLog log, VpnClient client, string currentIp, long trafficDelta, string cacheKey)
     {
-        string email = log.Email;
-
         if (client.ActiveConnections > log.MaxConcurrentSessions)
             log.MaxConcurrentSessions = client.ActiveConnections;
 
         string asn = ResolveAsnFromIp(currentIp);
         if (!string.IsNullOrEmpty(asn))
         {
-            var userAsns = _dailyAsns.GetOrAdd(email, _ => new ConcurrentDictionary<string, byte>());
+            var userAsns = _dailyAsns.GetOrAdd(cacheKey, _ => new ConcurrentDictionary<string, byte>());
             userAsns.TryAdd(asn, 0);
             log.UniqueAsnCount = userAsns.Count;
         }
 
         // Вызов защищенного метода проверки геолокации
-        UpdateGeoMetrics(log, email, client.Country);
+        UpdateGeoMetrics(log, cacheKey, client.Country);
 
         if (trafficDelta > 524_288_000L && trafficDelta < 50_000_000_000L)
             log.BytesUsedSpike += trafficDelta;
     }
 
-    private void UpdateGeoMetrics(ClientBehaviorLog log, string email, string? rawCountry)
+    private void UpdateGeoMetrics(ClientBehaviorLog log, string cacheKey, string? rawCountry)
     {
         string curCode = GetValidCountryCode(rawCountry);
 
         if (string.IsNullOrEmpty(curCode)) return;
 
-        if (!_lastCountryCode.TryGetValue(email, out string? lastCode) || string.IsNullOrEmpty(lastCode))
+        if (!_lastCountryCode.TryGetValue(cacheKey, out string? lastCode) || string.IsNullOrEmpty(lastCode))
         {
-            _lastCountryCode[email] = curCode;
-            _lastCountryTime[email] = DateTime.Now;
+            _lastCountryCode[cacheKey] = curCode;
+            _lastCountryTime[cacheKey] = DateTime.Now;
             return;
         }
 
         if (lastCode != curCode)
         {
-            if (_lastCountryTime.TryGetValue(email, out DateTime lastTime) && (DateTime.Now - lastTime).TotalHours < 2)
+            if (_lastCountryTime.TryGetValue(cacheKey, out DateTime lastTime) && (DateTime.Now - lastTime).TotalHours < 2)
             {
                 log.GeoJumpsCount++;
-                _logger.Log("ANTIFRAUD", $"Зафиксирован GeoJump для {email}: {lastCode} -> {curCode}");
+                _logger.Log("ANTIFRAUD", $"Зафиксирован GeoJump для {cacheKey}: {lastCode} -> {curCode}");
             }
-            _lastCountryCode[email] = curCode;
+            _lastCountryCode[cacheKey] = curCode;
         }
 
-        _lastCountryTime[email] = DateTime.Now;
+        _lastCountryTime[cacheKey] = DateTime.Now;
     }
 
     private string GetValidCountryCode(string? rawCountry)
@@ -125,8 +124,8 @@ public class AntiFraudService : IAntiFraudService
     {
         int score = 0;
 
-        if (log.MaxConcurrentSessions > 8) score += (log.MaxConcurrentSessions - 8) * 10;
-        if (log.UniqueAsnCount > 3) score += (log.UniqueAsnCount - 3) * 20;
+        if (log.MaxConcurrentSessions > 5) score += (log.MaxConcurrentSessions - 5) * 20;
+        if (log.UniqueAsnCount > 3) score += (log.UniqueAsnCount - 3) * 25;
         if (log.GeoJumpsCount > 0) score += log.GeoJumpsCount * 80;
         if (log.BytesUsedSpike > 0) score += 30;
 
@@ -142,13 +141,36 @@ public class AntiFraudService : IAntiFraudService
 
         if (!IPAddress.TryParse(cleanIp, out var parsedIp)) return "";
 
-        // Проверка наличия локальной базы ASN
-        string asnDbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-ASN.mmdb");
-        if (File.Exists(asnDbPath))
+        // Проверка наличия локальной базы ASN с поиском по каталогам
+        string dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "GeoLite2-ASN.mmdb");
+        if (!File.Exists(dbPath))
+        {
+            string fallbackPath = Path.Combine(Directory.GetCurrentDirectory(), "GeoLite2-ASN.mmdb");
+            if (File.Exists(fallbackPath))
+            {
+                dbPath = fallbackPath;
+            }
+            else
+            {
+                var currentDir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+                while (currentDir != null)
+                {
+                    string checkPath = Path.Combine(currentDir.FullName, "GeoLite2-ASN.mmdb");
+                    if (File.Exists(checkPath))
+                    {
+                        dbPath = checkPath;
+                        break;
+                    }
+                    currentDir = currentDir.Parent;
+                }
+            }
+        }
+
+        if (File.Exists(dbPath))
         {
             try
             {
-                using var reader = new MaxMind.GeoIP2.DatabaseReader(asnDbPath);
+                using var reader = new MaxMind.GeoIP2.DatabaseReader(dbPath);
                 if (reader.TryAsn(parsedIp, out var asnResponse) && asnResponse?.AutonomousSystemNumber != null)
                 {
                     return $"AS{asnResponse.AutonomousSystemNumber}";
@@ -157,11 +179,11 @@ public class AntiFraudService : IAntiFraudService
             catch { }
         }
 
-        // Защищенный fallback: группируем по /24 для IPv4 (не /16) или по первому блоку для IPv6, чтобы не спамить ложными ASN
+        // Защищенный fallback: группируем по /16 для IPv4 во избежание ложных ASN от динамических пулов сотовых вышек
         if (parsedIp.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
         {
             var bytes = parsedIp.GetAddressBytes();
-            return $"NET_{bytes[0]}.{bytes[1]}.{bytes[2]}";
+            return $"NET_{bytes[0]}.{bytes[1]}";
         }
         return "NET_IPv6";
     }
@@ -196,7 +218,7 @@ public class AntiFraudService : IAntiFraudService
             await db.SaveChangesAsync(token);
         }
 
-        ClearInMemCachesForNewDay(email);
+        ClearInMemCachesForNewDay($"{serverIp}:{email}");
         _logger.Log("ANTIFRAUD", $"Сброшены суточные метрики риска для {email} на {serverIp}");
     }
 
@@ -215,10 +237,17 @@ public class AntiFraudService : IAntiFraudService
         }
     }
 
-    private void ClearInMemCachesForNewDay(string email)
+    private void ClearInMemCachesForNewDay(string key)
     {
-        _dailyAsns.TryRemove(email, out _);
-        _lastCountryCode.TryRemove(email, out _);
-        _lastCountryTime.TryRemove(email, out _);
+        _dailyAsns.TryRemove(key, out _);
+        _lastCountryCode.TryRemove(key, out _);
+        _lastCountryTime.TryRemove(key, out _);
+
+        foreach (var k in _dailyAsns.Keys.Where(k => k.EndsWith($":{key}", StringComparison.OrdinalIgnoreCase)).ToList())
+        {
+            _dailyAsns.TryRemove(k, out _);
+            _lastCountryCode.TryRemove(k, out _);
+            _lastCountryTime.TryRemove(k, out _);
+        }
     }
 }
