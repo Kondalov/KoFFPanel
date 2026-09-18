@@ -191,11 +191,37 @@ public class VpnClient : INotifyPropertyChanged
         set { _lastIp = value; OnPropertyChanged(); }
     }
 
+    [NotMapped]
+    public bool IsOnline => ActiveConnections > 0;
+
+    private DateTime? _connectedAt;
+    [NotMapped]
+    public DateTime? ConnectedAt
+    {
+        get => _connectedAt ?? (ActiveConnections > 0 ? LastOnline : null);
+        set { _connectedAt = value; OnPropertyChanged(); }
+    }
+
     private int _activeConnections = 0;
     public int ActiveConnections
     {
         get => _activeConnections;
-        set { _activeConnections = value; OnPropertyChanged(); }
+        set
+        {
+            if (_activeConnections != value)
+            {
+                bool wasOnline = _activeConnections > 0;
+                bool nowOnline = value > 0;
+                _activeConnections = value;
+                OnPropertyChanged();
+
+                if (wasOnline != nowOnline)
+                {
+                    OnPropertyChanged(nameof(IsOnline));
+                    ConnectedAt = nowOnline ? DateTime.Now : null;
+                }
+            }
+        }
     }
 
     private DateTime? _lastOnline;

@@ -146,4 +146,38 @@ public class AntiFraudTests
         bool shieldErrorExists = Enum.TryParse<Wpf.Ui.Controls.SymbolRegular>("ShieldError24", out _);
         Assert.True(shieldErrorExists);
     }
+
+    [Fact]
+    public void ClientOnlineState_WhenConnectionsChange_ShouldUpdateIsOnlineAndConnectedAt()
+    {
+        var client = new VpnClient { ActiveConnections = 0 };
+        Assert.False(client.IsOnline);
+        Assert.Null(client.ConnectedAt);
+
+        // User connects
+        client.ActiveConnections = 1;
+        Assert.True(client.IsOnline);
+        Assert.NotNull(client.ConnectedAt);
+        var connectedTime = client.ConnectedAt.Value;
+        Assert.True((DateTime.Now - connectedTime).TotalSeconds < 2);
+
+        // User disconnects
+        client.ActiveConnections = 0;
+        Assert.False(client.IsOnline);
+        Assert.Null(client.ConnectedAt);
+    }
+
+    [Fact]
+    public void ClientOnlineState_NewConnection_ShouldHaveNewerConnectedAt()
+    {
+        var clientOld = new VpnClient { ActiveConnections = 0 };
+        var clientNew = new VpnClient { ActiveConnections = 0 };
+
+        clientOld.ActiveConnections = 1;
+        clientOld.ConnectedAt = DateTime.Now.AddMinutes(-10);
+
+        clientNew.ActiveConnections = 1; // connected just now
+
+        Assert.True(clientNew.ConnectedAt > clientOld.ConnectedAt);
+    }
 }
