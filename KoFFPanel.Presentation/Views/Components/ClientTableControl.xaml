@@ -528,7 +528,7 @@
                                                             </Style.Triggers>
                                                         </Style>
                                                     </Border.Style>
-                                                    <ui:SymbolIcon Symbol="ShieldAlert24"
+                                                    <ui:SymbolIcon Symbol="ShieldError24"
                                                                    Foreground="#FFFF3366"
                                                                    FontSize="14" />
                                                 </Border>

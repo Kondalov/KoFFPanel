@@ -139,4 +139,11 @@ public class AntiFraudTests
 
         Assert.Equal(2, distinctDevices);
     }
+
+    [Fact]
+    public void VerifySymbolExists()
+    {
+        bool shieldErrorExists = Enum.TryParse<Wpf.Ui.Controls.SymbolRegular>("ShieldError24", out _);
+        Assert.True(shieldErrorExists);
+    }
 }
