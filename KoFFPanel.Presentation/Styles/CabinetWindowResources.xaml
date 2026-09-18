@@ -103,6 +103,8 @@
                 Value="Left" />
         <Setter Property="VerticalContentAlignment"
                 Value="Center" />
+        <Setter Property="Cursor"
+                Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="DataGridColumnHeader">
@@ -112,10 +114,21 @@
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
                                 Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                              RecognizesAccessKey="True"
-                                              SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                            <StackPanel Orientation="Horizontal"
+                                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                        HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}">
+                                <ContentPresenter RecognizesAccessKey="True"
+                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"
+                                                  VerticalAlignment="Center" />
+                                <Path x:Name="SortArrow"
+                                      Visibility="Collapsed"
+                                      Width="7"
+                                      Height="5"
+                                      Margin="6,0,0,0"
+                                      Stretch="Fill"
+                                      VerticalAlignment="Center"
+                                      Fill="#00f2ff" />
+                            </StackPanel>
                         </Border>
                         <Thumb x:Name="PART_LeftHeaderGripper"
                                HorizontalAlignment="Left"
@@ -127,6 +140,24 @@
                                Style="{StaticResource ColumnHeaderGripperStyle}" />
                     </Grid>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="SortDirection"
+                                 Value="Ascending">
+                            <Setter TargetName="SortArrow"
+                                    Property="Visibility"
+                                    Value="Visible" />
+                            <Setter TargetName="SortArrow"
+                                    Property="Data"
+                                    Value="M 0 4 L 3.5 0 L 7 4 Z" />
+                        </Trigger>
+                        <Trigger Property="SortDirection"
+                                 Value="Descending">
+                            <Setter TargetName="SortArrow"
+                                    Property="Visibility"
+                                    Value="Visible" />
+                            <Setter TargetName="SortArrow"
+                                    Property="Data"
+                                    Value="M 0 0 L 3.5 4 L 7 0 Z" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver"
                                  Value="True">
                             <Setter TargetName="HeaderBorder"

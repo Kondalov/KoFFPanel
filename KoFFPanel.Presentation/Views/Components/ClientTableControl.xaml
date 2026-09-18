@@ -385,6 +385,8 @@
                           IsReadOnly="True"
                           Foreground="Transparent"
                           CanUserResizeColumns="True"
+                          CanUserSortColumns="True"
+                          Sorting="ClientsDataGrid_Sorting"
                           HorizontalScrollBarVisibility="Hidden"
                           VerticalScrollBarVisibility="Hidden"
                           ScrollViewer.CanContentScroll="True"
@@ -586,10 +588,12 @@
                         </DataGridTemplateColumn>
 
                         <DataGridTemplateColumn Width="Auto"
-                                                MinWidth="50">
+                                                MinWidth="50"
+                                                SortMemberPath="ActiveConnections"
+                                                CanUserSort="True">
                             <DataGridTemplateColumn.Header>
                                 <ui:SymbolIcon Symbol="Laptop24"
-                                               ToolTip="Устройства"
+                                               ToolTip="Устройства (сортировка: онлайн / офлайн / сброс)"
                                                Foreground="#B3FFFFFF" />
                             </DataGridTemplateColumn.Header>
                             <DataGridTemplateColumn.CellTemplate>
