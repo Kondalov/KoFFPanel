@@ -277,30 +277,22 @@ public class ServerMonitorService : IServerMonitorService
                 var latestConn = conns.OrderByDescending(c => c.Time ?? DateTime.MinValue).FirstOrDefault();
                 string lastIp = latestConn.Ip ?? conns.Last().Ip;
 
-                var activeSessionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var activeIps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var c in conns)
                 {
                     bool isActive = true;
                     if (maxLogTime.HasValue && c.Time.HasValue)
                     {
-                        isActive = (maxLogTime.Value - c.Time.Value).TotalSeconds <= 180;
+                        isActive = (maxLogTime.Value - c.Time.Value).TotalSeconds <= 120;
                     }
 
-                    if (isActive)
+                    if (isActive && !string.IsNullOrWhiteSpace(c.Ip))
                     {
-                        // Для UDP-протоколов (Hysteria2, TUIC) отдельный локальный порт = отдельное устройство
-                        // Для TCP-протоколов (VLESS, Trojan) группируем по протокол:IP во избежание раздувания от коротких сокетов
-                        string sessionKey = (c.Proto == "hysteria2" || c.Proto == "tuic") && !string.IsNullOrEmpty(c.Port)
-                            ? $"{c.Proto}:{c.Ip}:{c.Port}"
-                            : $"{c.Proto}:{c.Ip}";
-                        activeSessionKeys.Add(sessionKey);
+                        activeIps.Add(c.Ip);
                     }
                 }
 
-                int activeSessions = activeSessionKeys.Count;
-                if (activeSessions == 0 && conns.Count > 0)
-                    activeSessions = 1;
-
+                int activeSessions = activeIps.Count;
                 userStats[user] = (lastIp, activeSessions);
             }
         }
@@ -375,25 +367,22 @@ public class ServerMonitorService : IServerMonitorService
                 var latestConn = conns.OrderByDescending(c => c.Time ?? DateTime.MinValue).FirstOrDefault();
                 string lastIp = latestConn.Ip ?? conns.Last().Ip;
 
-                var activeSessionKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var activeIps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var c in conns)
                 {
                     bool isActive = true;
                     if (maxLogTime.HasValue && c.Time.HasValue)
                     {
-                        isActive = (maxLogTime.Value - c.Time.Value).TotalSeconds <= 180;
+                        isActive = (maxLogTime.Value - c.Time.Value).TotalSeconds <= 120;
                     }
 
-                    if (isActive)
+                    if (isActive && !string.IsNullOrWhiteSpace(c.Ip))
                     {
-                        activeSessionKeys.Add($"{c.Tag}:{c.Ip}");
+                        activeIps.Add(c.Ip);
                     }
                 }
 
-                int activeSessions = activeSessionKeys.Count;
-                if (activeSessions == 0 && conns.Count > 0)
-                    activeSessions = 1;
-
+                int activeSessions = activeIps.Count;
                 userStats[user] = (lastIp, activeSessions);
             }
         }

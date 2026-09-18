@@ -14,6 +14,12 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/KoFFPanel.Presentation;component/Styles/CabinetWindowResources.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <Style TargetType="ScrollBar">
+                <Setter Property="Width" Value="0" />
+                <Setter Property="Height" Value="0" />
+                <Setter Property="Opacity" Value="0" />
+                <Setter Property="Visibility" Value="Collapsed" />
+            </Style>
         </ResourceDictionary>
     </ui:FluentWindow.Resources>
 
@@ -61,6 +67,8 @@
                       Foreground="White"
                       CanUserResizeColumns="True"
                       HorizontalScrollBarVisibility="Hidden"
+                      VerticalScrollBarVisibility="Hidden"
+                      ScrollViewer.CanContentScroll="True"
                       ColumnHeaderStyle="{StaticResource StandardDataGridHeader}"
                       CellStyle="{StaticResource StandardDataGridCell}"
                       RowStyle="{StaticResource StandardDataGridRow}">
@@ -68,15 +76,6 @@
                     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="Transparent" />
                     <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="Transparent" />
                     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="Transparent" />
-                    <Style TargetType="ScrollBar">
-                        <Style.Triggers>
-                            <Trigger Property="Orientation" Value="Horizontal">
-                                <Setter Property="Height" Value="0" />
-                                <Setter Property="Opacity" Value="0" />
-                                <Setter Property="Visibility" Value="Collapsed" />
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
                 </DataGrid.Resources>
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="ДАТА"

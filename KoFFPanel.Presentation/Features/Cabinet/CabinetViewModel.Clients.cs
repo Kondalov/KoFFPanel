@@ -143,7 +143,6 @@ public partial class CabinetViewModel
             if (success)
             {
                 client.IsActive = newState;
-                if (newState && (client.Note?.StartsWith("ФРОД:") == true || client.Note == "Превышен лимит" || client.Note == "Истек срок")) client.Note = "";
                 ServerStatus = $"Онлайн ({email} {(newState ? "активирован" : "отключен")})";
             }
             else
@@ -172,8 +171,8 @@ public partial class CabinetViewModel
 
         try
         {
-            // 1. Запоминаем, была ли пометка о фроде ДО открытия окна редактирования
-            bool hadFraudNote = client.Note?.StartsWith("ФРОД", StringComparison.OrdinalIgnoreCase) == true;
+            // 1. Запоминаем, был ли статус фрода ДО открытия окна редактирования
+            bool hadFraud = client.IsFraud;
 
             var window = _serviceProvider.GetRequiredService<AddClientWindow>();
             if (System.Windows.Application.Current.MainWindow != null) window.Owner = System.Windows.Application.Current.MainWindow;
@@ -194,13 +193,12 @@ public partial class CabinetViewModel
 
                     if (success)
                     {
-                        // 2. УМНЫЙ АЛГОРИТМ ПРОВЕРКИ СБРОСА
-                        // Если пометка была, а теперь заметка пустая — обнуляем риск-скоринг
-                        bool isNoteClearedManually = hadFraudNote && string.IsNullOrWhiteSpace(vm.Note);
-                        if (isNoteClearedManually)
+                        if (hadFraud)
                         {
                             var antiFraud = _serviceProvider.GetRequiredService<IAntiFraudService>();
                             await antiFraud.ResetDailyRiskAsync(ip, email);
+                            client.IsFraud = false;
+                            client.FraudReason = "";
                         }
 
                         client.TrafficLimit = newLimit; client.ExpiryDate = vm.ExpiryDate; client.Note = vm.Note;

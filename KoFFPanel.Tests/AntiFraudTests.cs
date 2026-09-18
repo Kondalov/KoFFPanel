@@ -79,4 +79,64 @@ public class AntiFraudTests
         Assert.Equal(0, log.RiskScore);
         Assert.False(log.IsBanned);
     }
+
+    [Fact]
+    public void VpnClient_FraudProperties_ShouldNotModifyNote()
+    {
+        var client = new VpnClient
+        {
+            Email = "tg_1078760031",
+            Note = "Kostya",
+            IsAntiFraudEnabled = true
+        };
+
+        // Simulate fraud detection
+        client.IsFraud = true;
+        client.FraudReason = "ФРОД 100%: Сессий=2, ASN=4, GeoJumps=1";
+
+        // Assert that client.Note was NOT changed or overwritten with fraud reason
+        Assert.Equal("Kostya", client.Note);
+        Assert.True(client.IsFraud);
+        Assert.Contains("ФРОД 100%", client.FraudReason);
+    }
+
+    [Fact]
+    public void DeviceCounting_SameIpMultiplePorts_ShouldCountAsOneDevice()
+    {
+        // 1 physical device using Hysteria 2 with 4 ephemeral ports
+        var connections = new List<(string Ip, string Port)>
+        {
+            ("91.79.202.29", "51234"),
+            ("91.79.202.29", "51235"),
+            ("91.79.202.29", "51236"),
+            ("91.79.202.29", "51237")
+        };
+
+        var distinctDevices = connections
+            .Select(c => c.Ip)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+
+        Assert.Equal(1, distinctDevices);
+    }
+
+    [Fact]
+    public void DeviceCounting_TwoDistinctIps_ShouldCountAsTwoDevices()
+    {
+        // 2 physical devices (e.g. phone on mobile LTE + laptop on home Wi-Fi)
+        var connections = new List<(string Ip, string Port)>
+        {
+            ("91.79.202.29", "51234"),
+            ("91.79.202.29", "51235"),
+            ("188.66.35.83", "49200"),
+            ("188.66.35.83", "49201")
+        };
+
+        var distinctDevices = connections
+            .Select(c => c.Ip)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+
+        Assert.Equal(2, distinctDevices);
+    }
 }

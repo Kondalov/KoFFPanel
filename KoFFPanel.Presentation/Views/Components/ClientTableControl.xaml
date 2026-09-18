@@ -503,10 +503,36 @@
                                         </Button>
 
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Note}"
-                                                       FontWeight="Bold"
-                                                       FontSize="15"
-                                                       Foreground="White" />
+                                            <StackPanel Orientation="Horizontal"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Note}"
+                                                           FontWeight="Bold"
+                                                           FontSize="15"
+                                                           Foreground="White"
+                                                           VerticalAlignment="Center" />
+                                                <Border Margin="8,0,0,0"
+                                                        VerticalAlignment="Center"
+                                                        Background="#33FF3366"
+                                                        BorderBrush="#FFFF3366"
+                                                        BorderThickness="1"
+                                                        CornerRadius="6"
+                                                        Padding="4,2"
+                                                        ToolTip="{Binding FraudReason}">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsFraud}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <ui:SymbolIcon Symbol="ShieldAlert24"
+                                                                   Foreground="#FFFF3366"
+                                                                   FontSize="14" />
+                                                </Border>
+                                            </StackPanel>
                                             <TextBlock Text="{Binding Email}"
                                                        FontSize="12"
                                                        Foreground="#999999"

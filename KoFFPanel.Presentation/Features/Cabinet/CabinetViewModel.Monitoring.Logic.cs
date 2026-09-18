@@ -286,8 +286,8 @@ public partial class CabinetViewModel
         string? Country,
         bool ShouldDeactivate,
         string? BlockReason,
-        bool UpdateNote,
-        string? NewNote
+        bool IsFraud,
+        string? FraudReason
     );
 
     private async Task<List<ClientCycleResult>> EvaluateClientsInBackgroundAsync(
@@ -307,7 +307,7 @@ public partial class CabinetViewModel
             string email = snapshot.Email;
             string currentIp = "";
             long delta = 0;
-            int activeConnections = snapshot.IsActive ? 0 : 0;
+            int activeConnections = 0;
             DateTime? lastOnline = snapshot.LastOnline;
             string? lastIp = null;
             string? country = snapshot.Country;
@@ -326,32 +326,26 @@ public partial class CabinetViewModel
             }
 
             var log = allOnlineStats.FirstOrDefault(s => string.Equals(s.Email, email, StringComparison.OrdinalIgnoreCase));
-            bool isOnlineNow = activeUsernames.Contains(email) || (log != null && log.ActiveSessions > 0);
+            bool isOnlineNow = (log != null && log.ActiveSessions > 0);
 
-            if (isOnlineNow)
+            if (isOnlineNow && log != null)
             {
-                activeConnections = log != null && log.ActiveSessions > 0 ? log.ActiveSessions : 1;
+                activeConnections = log.ActiveSessions;
                 lastOnline = DateTime.Now;
-
-                if (log != null)
-                {
-                    lastIp = log.LastIp;
-                    currentIp = log.LastIp ?? "";
-                    if (!string.IsNullOrEmpty(log.Country)) country = log.Country;
-                    connectionBatch.Add((email, log.LastIp ?? "", country ?? ""));
-                }
+                lastIp = log.LastIp;
+                currentIp = log.LastIp ?? "";
+                if (!string.IsNullOrEmpty(log.Country)) country = log.Country;
+                connectionBatch.Add((email, log.LastIp ?? "", country ?? ""));
             }
             else
             {
-                activeConnections = (snapshot.LastOnline.HasValue && (DateTime.Now - snapshot.LastOnline.Value).TotalMinutes <= 3)
-                    ? Math.Max(1, snapshot.ClientRef.ActiveConnections)
-                    : 0;
+                activeConnections = 0;
             }
 
             bool shouldDeactivate = false;
             string? blockReason = null;
-            bool updateNote = false;
-            string? newNote = null;
+            bool isFraudDetected = false;
+            string fraudReason = "";
 
             if (snapshot.IsActive)
             {
@@ -374,21 +368,12 @@ public partial class CabinetViewModel
                     };
 
                     var (isFraud, reason) = await antiFraudService.EvaluateClientAsync(SelectedServer.IpAddress ?? "", tempClient, currentIp, delta);
-
-                    if (isFraud && snapshot.Note != reason)
-                    {
-                        updateNote = true;
-                        newNote = reason;
-                    }
-                    else if (!isFraud && snapshot.Note != null && snapshot.Note.StartsWith("ФРОД"))
-                    {
-                        updateNote = true;
-                        newNote = "";
-                    }
+                    isFraudDetected = isFraud;
+                    fraudReason = reason;
                 }
             }
 
-            results.Add(new ClientCycleResult(snapshot.ClientRef, email, delta, activeConnections, lastOnline, lastIp, country, shouldDeactivate, blockReason, updateNote, newNote));
+            results.Add(new ClientCycleResult(snapshot.ClientRef, email, delta, activeConnections, lastOnline, lastIp, country, shouldDeactivate, blockReason, isFraudDetected, fraudReason));
         }
 
         return results;
@@ -409,17 +394,14 @@ public partial class CabinetViewModel
             if (client.LastOnline != r.LastOnline) client.LastOnline = r.LastOnline;
             if (r.LastIp != null && client.LastIp != r.LastIp) client.LastIp = r.LastIp;
             if (r.Country != null && client.Country != r.Country) client.Country = r.Country;
+            if (client.IsFraud != r.IsFraud) client.IsFraud = r.IsFraud;
+            if (client.FraudReason != (r.FraudReason ?? "")) client.FraudReason = r.FraudReason ?? "";
 
             if (r.ShouldDeactivate && client.IsActive)
             {
                 client.IsActive = false;
                 dbNeedsUpdate = true;
                 _ = BlockUserAsync(client, r.BlockReason ?? "Блокировка");
-            }
-            else if (r.UpdateNote && client.Note != r.NewNote)
-            {
-                client.Note = r.NewNote ?? "";
-                dbNeedsUpdate = true;
             }
         }
         return dbNeedsUpdate;
